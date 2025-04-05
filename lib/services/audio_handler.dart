@@ -10,29 +10,59 @@ import 'storage_service.dart';
 // --- Global Handler Instance Management ---
 MyAudioHandler? _audioHandlerInstance;
 
+bool _isAudioHandlerInitializing = false;
+
 Future<MyAudioHandler> initAudioService() async {
   if (_audioHandlerInstance != null) {
     debugPrint("initAudioService: Handler already initialized.");
     return _audioHandlerInstance!;
   }
-  debugPrint("initAudioService: Initializing NEW Audio Handler instance...");
-  _audioHandlerInstance = await AudioService.init<MyAudioHandler>(
-    builder: () => MyAudioHandler._internal(),
-    config: const AudioServiceConfig(
-      androidNotificationChannelId:
-          'com.yourapp.audiobook_player.channel.audio', // Replace
-      androidNotificationChannelName: 'Audiobook Playback',
-      androidNotificationOngoing: true,
-      androidStopForegroundOnPause: true,
-    ),
-  );
-  debugPrint("initAudioService: Audio Handler instance assigned globally.");
-  return _audioHandlerInstance!;
+
+  // Add safety to prevent multiple simultaneous initializations
+  if (_isAudioHandlerInitializing) {
+    debugPrint(
+      "initAudioService: Initialization already in progress. Waiting...",
+    );
+    // Wait for initialization to complete
+    for (int i = 0; i < 50; i++) {
+      await Future.delayed(const Duration(milliseconds: 100));
+      if (_audioHandlerInstance != null) {
+        return _audioHandlerInstance!;
+      }
+    }
+    throw Exception("Timeout waiting for audio handler initialization");
+  }
+
+  _isAudioHandlerInitializing = true;
+
+  try {
+    debugPrint("initAudioService: Initializing NEW Audio Handler instance...");
+    _audioHandlerInstance = await AudioService.init<MyAudioHandler>(
+      builder: () => MyAudioHandler._internal(),
+      config: const AudioServiceConfig(
+        androidNotificationChannelId: 'com.example.widdle_reader.channel.audio',
+        androidNotificationChannelName: 'Audiobook Playback',
+        androidNotificationOngoing: true,
+        androidStopForegroundOnPause: true,
+      ),
+    );
+    debugPrint("initAudioService: Audio Handler instance assigned globally.");
+    return _audioHandlerInstance!;
+  } catch (e, stackTrace) {
+    debugPrint("CRITICAL ERROR initializing AudioService: $e");
+    debugPrint("$stackTrace");
+    _isAudioHandlerInitializing = false;
+    rethrow;
+  } finally {
+    _isAudioHandlerInitializing = false;
+  }
 }
 
 MyAudioHandler getAudioHandlerInstance() {
   if (_audioHandlerInstance == null) {
-    throw Exception("CRITICAL: Audio handler has not been initialized...");
+    throw Exception(
+      "CRITICAL: Audio handler has not been initialized yet. Call initAudioService() first.",
+    );
   }
   debugPrint("getAudioHandlerInstance: Returning valid instance.");
   return _audioHandlerInstance!;
@@ -46,14 +76,12 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   String? _currentAudiobookId;
 
   // --- Stream Controllers & Overrides ---
-
-  // *** FIX: Override the field directly to match BaseAudioHandler ***
-  // BaseAudioHandler defines 'queue' as a BehaviorSubject field.
+  // Override the field directly to match BaseAudioHandler
   @override
   final BehaviorSubject<List<MediaItem>> queue =
       BehaviorSubject<List<MediaItem>>.seeded([]);
 
-  // BaseAudioHandler defines 'mediaItem' as a BehaviorSubject field.
+  // BaseAudioHandler defines 'mediaItem' as a BehaviorSubject field
   @override
   final BehaviorSubject<MediaItem?> mediaItem =
       BehaviorSubject<MediaItem?>.seeded(null);
@@ -61,18 +89,34 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   // --- Constructor ---
   MyAudioHandler._internal() {
     debugPrint("MyAudioHandler._internal() constructor START");
-    _loadEmptyPlaylist();
-    _notifyAudioHandlerAboutPlaybackEvents();
-    _listenForDurationChanges();
-    _listenForCurrentSongIndexChanges();
-    _listenForSequenceStateChanges();
+    _initializePlayer();
     debugPrint("MyAudioHandler._internal() constructor END");
   }
 
   // --- Internal Setup ---
+  Future<void> _initializePlayer() async {
+    try {
+      // Set up empty playlist
+      await _loadEmptyPlaylist();
+
+      // Set up event listeners
+      _notifyAudioHandlerAboutPlaybackEvents();
+      _listenForDurationChanges();
+      _listenForCurrentSongIndexChanges();
+      _listenForSequenceStateChanges();
+
+      debugPrint("Player successfully initialized");
+    } catch (e, stackTrace) {
+      debugPrint("Error initializing player: $e");
+      debugPrint("$stackTrace");
+      // Don't rethrow - we want to at least create the handler
+    }
+  }
+
   Future<void> _loadEmptyPlaylist() async {
     try {
       await _player.setAudioSource(_playlist);
+      debugPrint("Empty playlist loaded successfully");
     } catch (e) {
       debugPrint(
         "_loadEmptyPlaylist: Error setting initial empty playlist: $e",
@@ -86,35 +130,58 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
     String? startChapterId,
     Duration? startPosition,
   }) async {
+    debugPrint(
+      "loadPlaylist: Loading audiobook '${audiobook.title}' with ${audiobook.chapters.length} chapters",
+    );
+
     _currentAudiobookId = audiobook.id;
     final mediaItems = audiobook.chapters.map((c) => c.toMediaItem()).toList();
 
-    // *** FIX: Emit via the overridden queue subject ***
+    // Add items to queue subject
     queue.add(mediaItems);
+    debugPrint("Queue updated with ${mediaItems.length} items");
 
     final audioSources =
         mediaItems
             .map((item) => AudioSource.uri(Uri.file(item.id), tag: item))
             .toList();
-    await _playlist.clear();
-    if (audioSources.isNotEmpty) {
-      await _playlist.addAll(audioSources);
-    } else {
-      queue.add([]);
-      mediaItem.add(null);
-      return;
-    } // FIX: Emit via subjects
-    int startIndex = 0;
-    if (startChapterId != null) {
-      startIndex = mediaItems.indexWhere((i) => i.id == startChapterId);
-      if (startIndex == -1) startIndex = 0;
-    }
+
     try {
+      await _playlist.clear();
+      debugPrint("Playlist cleared");
+
+      if (audioSources.isNotEmpty) {
+        await _playlist.addAll(audioSources);
+        debugPrint("Added ${audioSources.length} sources to playlist");
+      } else {
+        debugPrint("No audio sources to add");
+        queue.add([]);
+        mediaItem.add(null);
+        return;
+      }
+
+      // Find start index
+      int startIndex = 0;
+      if (startChapterId != null) {
+        debugPrint("Looking for start chapter ID: $startChapterId");
+        startIndex = mediaItems.indexWhere((i) => i.id == startChapterId);
+        if (startIndex == -1) {
+          debugPrint("Start chapter ID not found, defaulting to index 0");
+          startIndex = 0;
+        } else {
+          debugPrint("Found start chapter at index $startIndex");
+        }
+      }
+
+      // Set the audio source
+      debugPrint("Setting audio source with initial index $startIndex");
       await _player.setAudioSource(
         _playlist,
         initialIndex: startIndex,
         initialPosition: startPosition ?? Duration.zero,
       );
+
+      // Update current media item
       final sequence = _player.sequence;
       MediaItem? currentItem =
           (sequence != null &&
@@ -122,32 +189,33 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
                   startIndex < sequence.length)
               ? sequence[startIndex].tag as MediaItem?
               : null;
-      mediaItem.add(currentItem); // FIX: Emit via subject
+
+      mediaItem.add(currentItem);
+      debugPrint("Current media item set to: ${currentItem?.title ?? 'null'}");
+
+      // Update duration if available
       if (currentItem != null) {
         _player.durationStream.first.then((d) {
           if (d != null && mediaItem.value?.id == currentItem.id) {
             mediaItem.add(currentItem.copyWith(duration: d));
+            debugPrint("Updated duration for current item: $d");
           }
-        }); // FIX: Emit via subject
+        });
       }
-    } catch (e) {
+    } catch (e, stackTrace) {
+      debugPrint("ERROR in loadPlaylist: $e");
+      debugPrint("$stackTrace");
       mediaItem.add(null);
       queue.add([]);
-      debugPrint("Error setting source: $e");
-    } // FIX: Emit via subjects
+    }
   }
 
-  // This method signature likely needs to change if the queue override changed,
-  // but since QueueHandler requires addQueueItems, we keep it.
-  // However, it remains effectively unused in this implementation.
+  // QueueHandler requires this method, keep it even if unused
   @override
-  Future<void> addQueueItems(List<MediaItem> mediaItems) async {
+  Future<void> addQueueItems(List<MediaItem> items) async {
     debugPrint(
-      "addQueueItems called but ignored - use loadPlaylist custom action.",
+      "addQueueItems called but ignored - use loadPlaylist custom action instead",
     );
-    // If BaseAudioHandler handles queue directly, this might need implementation
-    // or could potentially be removed if not strictly needed by the mixin implementation.
-    // For now, keep it as a no-op.
   }
 
   // --- Event Listening ---
@@ -157,8 +225,16 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
         final playing = _player.playing;
         playbackState.add(
           playbackState.value.copyWith(
-            controls: [/* ... controls ... */],
-            systemActions: const {/* ... system actions ... */},
+            controls: [
+              MediaControl.skipToPrevious,
+              if (playing) MediaControl.pause else MediaControl.play,
+              MediaControl.skipToNext,
+            ],
+            systemActions: const {
+              MediaAction.seek,
+              MediaAction.seekForward,
+              MediaAction.seekBackward,
+            },
             androidCompactActionIndices: const [0, 1, 3],
             processingState: _mapProcessingState(_player.processingState),
             playing: playing,
@@ -175,8 +251,8 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
     );
   }
 
-  AudioProcessingState _mapProcessingState(ProcessingState s) {
-    switch (s) {
+  AudioProcessingState _mapProcessingState(ProcessingState state) {
+    switch (state) {
       case ProcessingState.idle:
         return AudioProcessingState.idle;
       case ProcessingState.loading:
@@ -192,20 +268,23 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
 
   void _listenForDurationChanges() {
     _player.durationStream.distinct().listen((duration) {
-      final ci = mediaItem.value; // Read from subject
-      if (duration != null && ci != null && ci.duration != duration) {
-        final ui = ci.copyWith(duration: duration);
-        final currentQueue = List<MediaItem>.from(
-          queue.value,
-        ); // Read from subject
-        final idx = currentQueue.indexWhere((i) => i.id == ui.id);
+      final currentItem = mediaItem.value;
+      if (duration != null &&
+          currentItem != null &&
+          currentItem.duration != duration) {
+        final updatedItem = currentItem.copyWith(duration: duration);
+
+        // Update the item in the queue as well
+        final currentQueue = List<MediaItem>.from(queue.value);
+        final idx = currentQueue.indexWhere((i) => i.id == updatedItem.id);
         if (idx != -1) {
-          currentQueue[idx] = ui;
-          queue.add(currentQueue); // Emit via subject
+          currentQueue[idx] = updatedItem;
+          queue.add(currentQueue);
         }
-        if (mediaItem.value?.id == ui.id) {
-          // Read from subject
-          mediaItem.add(ui); // Emit via subject
+
+        // Update current item if it's the same ID
+        if (mediaItem.value?.id == updatedItem.id) {
+          mediaItem.add(updatedItem);
         }
       }
     });
@@ -213,8 +292,10 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
 
   void _listenForCurrentSongIndexChanges() {
     _player.currentIndexStream.distinct().listen((index) {
-      final currentQueue = queue.value; // Read from subject
+      final currentQueue = queue.value;
       final oldIdx = playbackState.value.queueIndex;
+
+      // Save position when changing tracks (if not at end of playlist)
       if (_currentAudiobookId != null &&
           oldIdx != null &&
           oldIdx < currentQueue.length &&
@@ -224,54 +305,66 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
           specificChapterId: currentQueue[oldIdx].id,
         );
       }
-      MediaItem? ni =
+
+      // Update current media item
+      MediaItem? newItem =
           (index != null && index < currentQueue.length)
               ? currentQueue[index]
               : null;
-      if (mediaItem.value?.id != ni?.id) {
-        // Read from subject
-        mediaItem.add(ni); // Emit via subject
+
+      if (mediaItem.value?.id != newItem?.id) {
+        mediaItem.add(newItem);
       }
     });
   }
 
   void _listenForSequenceStateChanges() {
-    _player.sequenceStateStream.listen((SequenceState? ss) {
-      final seq = ss?.sequence;
-      final idx = ss?.currentIndex;
-      if (seq == null || seq.isEmpty) {
+    _player.sequenceStateStream.listen((SequenceState? state) {
+      final sequence = state?.sequence;
+      final index = state?.currentIndex;
+
+      if (sequence == null || sequence.isEmpty) {
         if (queue.value.isNotEmpty) {
           queue.add([]);
           mediaItem.add(null);
         }
         return;
-      } // Read/Emit via subjects
-      final items = seq.map((s) => s.tag as MediaItem).toList();
+      }
+
+      // Update queue
+      final items = sequence.map((s) => s.tag as MediaItem).toList();
       if (!listEquals(queue.value, items)) {
         queue.add(items);
-      } // Read/Emit via subject
-      MediaItem? ni = (idx != null && idx < items.length) ? items[idx] : null;
-      if (mediaItem.value?.id != ni?.id) {
-        mediaItem.add(ni);
-      } // Read/Emit via subject
+      }
+
+      // Update current item
+      MediaItem? newItem =
+          (index != null && index < items.length) ? items[index] : null;
+
+      if (mediaItem.value?.id != newItem?.id) {
+        mediaItem.add(newItem);
+      }
     });
   }
 
   // --- Playback Control Overrides ---
   @override
   Future<void> play() => _player.play();
+
   @override
   Future<void> pause() => _player.pause();
+
   @override
   Future<void> seek(Duration position) => _player.seek(position);
+
   @override
   Future<void> stop() async {
     await _saveCurrentPosition(isFinishing: true);
     await _player.stop();
     _currentAudiobookId = null;
     await _playlist.clear();
-    queue.add([]); // Emit via subject
-    mediaItem.add(null); // Emit via subject
+    queue.add([]);
+    mediaItem.add(null);
     playbackState.add(
       playbackState.value.copyWith(
         processingState: AudioProcessingState.idle,
@@ -301,26 +394,32 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
 
   @override
   Future<void> skipToQueueItem(int index) async {
-    final qLen = queue.value.length; // Read from subject
-    if (index < 0 || index >= qLen) return;
+    final queueLength = queue.value.length;
+    if (index < 0 || index >= queueLength) return;
+
     if (_player.processingState != ProcessingState.completed &&
         index != _player.currentIndex) {
       await _saveCurrentPosition();
     }
+
     await _player.seek(Duration.zero, index: index);
   }
 
   @override
   Future<void> rewind() async {
-    final newPos = _player.position - const Duration(seconds: 15);
-    await _player.seek(newPos < Duration.zero ? Duration.zero : newPos);
+    final newPosition = _player.position - const Duration(seconds: 15);
+    await _player.seek(
+      newPosition < Duration.zero ? Duration.zero : newPosition,
+    );
   }
 
   @override
   Future<void> fastForward() async {
-    final newPos = _player.position + const Duration(seconds: 15);
-    final dur = _player.duration;
-    await _player.seek(dur != null && newPos > dur ? dur : newPos);
+    final newPosition = _player.position + const Duration(seconds: 15);
+    final duration = _player.duration;
+    await _player.seek(
+      duration != null && newPosition > duration ? duration : newPosition,
+    );
   }
 
   // --- Custom Actions ---
@@ -329,7 +428,39 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
     String name, [
     Map<String, dynamic>? extras,
   ]) async {
-    /* ... same logic ... */
+    debugPrint("Custom action received: $name");
+
+    switch (name) {
+      case 'loadPlaylist':
+        if (extras != null) {
+          final audiobook = extras['audiobook'] as Audiobook?;
+          final startChapterId = extras['startChapterId'] as String?;
+          final startPosition = extras['startPosition'] as Duration?;
+
+          if (audiobook != null) {
+            debugPrint("Loading playlist for audiobook: ${audiobook.title}");
+            await loadPlaylist(
+              audiobook,
+              startChapterId: startChapterId,
+              startPosition: startPosition,
+            );
+            return true;
+          } else {
+            debugPrint("No audiobook provided in loadPlaylist extras");
+          }
+        }
+        return false;
+
+      case 'savePosition':
+        final isFinishing = extras?['isFinishing'] == true;
+        debugPrint("Saving position (isFinishing=$isFinishing)");
+        await _saveCurrentPosition(isFinishing: isFinishing);
+        return true;
+
+      default:
+        debugPrint("Unknown custom action: $name");
+        return false;
+    }
   }
 
   // --- Position Saving ---
@@ -338,61 +469,94 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
     String? specificChapterId,
   }) async {
     MediaItem? item;
-    final q = queue.value; // Read from subject
+    final currentQueue = queue.value;
+
+    // Determine which chapter ID to use
     if (specificChapterId != null) {
       try {
-        item = q.firstWhere((i) => i.id == specificChapterId);
+        item = currentQueue.firstWhere((i) => i.id == specificChapterId);
+        debugPrint("Using specific chapter ID: $specificChapterId");
       } catch (e) {
+        debugPrint("Specific chapter ID not found: $specificChapterId");
         item = null;
       }
     } else {
       item = mediaItem.value;
-    } // Read from subject
-    final cid = item?.id;
-    final aid = _currentAudiobookId;
-    if (aid != null && aid.isNotEmpty && cid != null && cid.isNotEmpty) {
-      final pos = _player.position;
-      final pSave =
-          (isFinishing || pos < const Duration(seconds: 2))
+      debugPrint("Using current media item: ${item?.title ?? 'null'}");
+    }
+
+    final chapterId = item?.id;
+    final audiobookId = _currentAudiobookId;
+
+    if (audiobookId != null &&
+        audiobookId.isNotEmpty &&
+        chapterId != null &&
+        chapterId.isNotEmpty) {
+      final position = _player.position;
+
+      // Reset position if finishing or at the start
+      final positionToSave =
+          (isFinishing || position < const Duration(seconds: 2))
               ? Duration.zero
-              : pos;
+              : position;
+
       try {
-        await _storageService.saveLastPosition(aid, cid, pSave);
+        debugPrint(
+          "Saving position for audiobook $audiobookId, chapter $chapterId: $positionToSave",
+        );
+        await _storageService.saveLastPosition(
+          audiobookId,
+          chapterId,
+          positionToSave,
+        );
       } catch (e) {
-        /* log */
+        debugPrint("Error saving position: $e");
       }
+    } else {
+      debugPrint("Not saving position - missing audiobookId or chapterId");
     }
   }
 
   // --- Audio Focus Handling ---
-  // Use 'dynamic' workaround for 'AudioInterruption' if IDE complains.
   @override
   Future<void> onAudioFocusGained(dynamic interruption) async {
-    /* ... same logic using dynamic ... */
+    debugPrint("Audio focus gained");
+    // Resume playback if it was playing before
+    if (playbackState.value.playing) {
+      await play();
+    }
   }
+
   @override
   Future<void> onAudioFocusLost(dynamic interruption) async {
-    /* ... same logic using dynamic ... */
+    debugPrint("Audio focus lost");
+    // Pause when focus is lost
+    await pause();
   }
+
   @override
   Future<void> onAudioBecomingNoisy() async {
-    /* ... same logic ... */
+    debugPrint("Audio becoming noisy (e.g., headphones unplugged)");
+    // Pause when headphones disconnected
+    await pause();
   }
 
   // --- Service Lifecycle ---
   @override
   Future<void> onTaskRemoved() async {
+    debugPrint("Task removed - stopping service");
     await stop();
   }
 
   @override
   Future<void> dispose() async {
+    debugPrint("Disposing audio handler");
     await _saveCurrentPosition(isFinishing: true);
     await _player.dispose();
-    queue.close(); // Close the subject
-    mediaItem.close(); // Close the subject
+    queue.close();
+    mediaItem.close();
     _audioHandlerInstance = null;
     await super.stop();
-    debugPrint("dispose: Audio Handler Disposed completely.");
+    debugPrint("Audio Handler Disposed completely");
   }
 }

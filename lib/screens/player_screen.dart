@@ -1,18 +1,17 @@
 import 'package:audio_service/audio_service.dart';
 import 'package:flutter/material.dart';
 import 'package:rxdart/rxdart.dart';
-import 'dart:async'; // Import for Future.delayed
+import 'dart:async';
 
 // Import local models, handler, widgets, and helpers
 import '../models/audiobook.dart';
-import '../services/audio_handler.dart'; // Import handler and getAudioHandlerInstance
-// *** POTENTIAL FIX: Ensure correct relative path for PlayerControls ***
-// If PlayerControls is in the *same directory* as PlayerScreen, use:
-// import 'player_controls.dart';
-// If PlayerControls is in a 'widgets' subdirectory relative to 'lib':
-import 'player_controls.dart'; // Import player controls widget (assuming it's in lib/widgets)
-import '../widgets/seekbar.dart'; // Import seekbar widget and PositionData (assuming it's in lib/widgets)
-import '../utils/helpers.dart'; // Import formatDuration and buildCoverWidget
+import '../services/audio_handler.dart';
+import 'player_controls.dart';
+import '../widgets/seekbar.dart';
+import '../utils/helpers.dart';
+
+// Flag to track if initialization is in progress (to prevent multiple simultaneous attempts)
+bool _initializingAudioHandler = false;
 
 class PlayerScreen extends StatefulWidget {
   const PlayerScreen({super.key});
@@ -28,8 +27,10 @@ class _PlayerScreenState extends State<PlayerScreen>
   // Current audiobook data
   Audiobook? _audiobook;
   // State flags
-  bool _isLoading = true; // Start as true, set to false when ready
-  bool _isHandlerInitialized = false; // Tracks if handler instance is obtained
+  bool _isLoading = true;
+  bool _isHandlerInitialized = false;
+  String? _errorMessage;
+  bool _canRetry = true;
 
   /// Combined stream for Seekbar UI updates.
   Stream<PositionData> get _positionDataStream {
@@ -54,46 +55,115 @@ class _PlayerScreenState extends State<PlayerScreen>
     super.initState();
     debugPrint("PlayerScreen: initState START");
     WidgetsBinding.instance.addObserver(this);
-    // Initialize handler and load data directly in initState.
-    // Using addPostFrameCallback is usually for accessing context-dependent things
-    // immediately after build, which isn't strictly necessary here.
-    _initializeHandlerAndLoadData();
+
+    // Use a post-frame callback to ensure the context is ready
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _initializeHandlerAndLoadData();
+    });
+
     debugPrint(
-      "PlayerScreen: initState END (called _initializeHandlerAndLoadData)",
+      "PlayerScreen: initState END (scheduled _initializeHandlerAndLoadData)",
     );
+  }
+
+  /// Safely initialize the audio handler
+  Future<bool> _safelyInitializeAudioHandler() async {
+    try {
+      // If handler is already initialized globally, just use it
+      try {
+        _audioHandler = getAudioHandlerInstance();
+        debugPrint(
+          "PlayerScreen: Successfully obtained existing audio handler instance",
+        );
+        return true;
+      } catch (e) {
+        debugPrint(
+          "PlayerScreen: No existing handler available, will initialize a new one",
+        );
+      }
+
+      // If an initialization is already in progress, wait for it
+      if (_initializingAudioHandler) {
+        debugPrint(
+          "PlayerScreen: Audio handler initialization already in progress, waiting...",
+        );
+        int attempts = 0;
+        const maxAttempts = 50; // 5 seconds with 100ms delay
+
+        while (_initializingAudioHandler && attempts < maxAttempts) {
+          await Future.delayed(const Duration(milliseconds: 100));
+          attempts++;
+
+          // Try to get the handler
+          try {
+            _audioHandler = getAudioHandlerInstance();
+            debugPrint(
+              "PlayerScreen: Successfully obtained audio handler after waiting",
+            );
+            return true;
+          } catch (e) {
+            // Continue waiting
+          }
+        }
+
+        if (attempts >= maxAttempts) {
+          throw Exception("Timeout waiting for audio handler initialization");
+        }
+      }
+
+      // Start a new initialization
+      _initializingAudioHandler = true;
+      try {
+        debugPrint("PlayerScreen: Starting audio handler initialization");
+        await initAudioService();
+        _audioHandler = getAudioHandlerInstance();
+        debugPrint("PlayerScreen: Successfully initialized new audio handler");
+        return true;
+      } finally {
+        _initializingAudioHandler = false;
+      }
+    } catch (e, stackTrace) {
+      debugPrint("PlayerScreen: Error initializing audio handler: $e");
+      debugPrint("$stackTrace");
+      return false;
+    }
   }
 
   /// Initializes the audio handler reference and loads initial audiobook data.
   Future<void> _initializeHandlerAndLoadData() async {
     debugPrint("PlayerScreen: _initializeHandlerAndLoadData START");
+
     if (_isHandlerInitialized) {
       debugPrint("PlayerScreen: Handler already initialized. Exiting.");
       return;
     }
 
     try {
-      // *** DIAGNOSTIC: Optional Small Delay ***
-      // Keep this delay temporarily if you suspect extreme timing issues.
-      // If the error is resolved without it later, you can remove it.
-      // const diagnosticDelay = Duration(milliseconds: 50);
-      // await Future.delayed(diagnosticDelay);
-      // debugPrint("PlayerScreen: Delay finished, attempting getAudioHandlerInstance()...");
+      // Add a small delay to ensure context is fully ready
+      await Future.delayed(const Duration(milliseconds: 100));
 
-      // Get the single handler instance (throws if not ready)
-      _audioHandler = getAudioHandlerInstance();
-      _isHandlerInitialized =
-          true; // Mark as initialized AFTER getting instance
-      debugPrint("PlayerScreen: Audio handler instance obtained successfully.");
+      // Check if still mounted after delay
+      if (!mounted) {
+        debugPrint("PlayerScreen: Widget no longer mounted after delay");
+        return;
+      }
 
-      // Check if route arguments exist AFTER handler is obtained
-      // Use 'mounted' check before accessing context.
+      // Try to initialize the audio handler
+      final bool success = await _safelyInitializeAudioHandler();
+      if (!success) {
+        throw Exception("Failed to initialize audio handler");
+      }
+
+      _isHandlerInitialized = true;
+
+      // Get route arguments
       if (!mounted) {
         debugPrint(
-          "PlayerScreen: Widget not mounted after getting handler. Exiting.",
+          "PlayerScreen: Widget no longer mounted after initializing handler",
         );
         return;
       }
-      // It's safer to check context availability before calling ModalRoute.of
+
       final args = ModalRoute.of(context)?.settings.arguments;
       debugPrint("PlayerScreen: Route arguments received: $args");
 
@@ -124,38 +194,29 @@ class _PlayerScreenState extends State<PlayerScreen>
 
       // Update UI state to reflect loading finished
       if (mounted) {
-        debugPrint(
-          "PlayerScreen: Setting _isLoading to false and calling setState...",
-        );
         setState(() {
           _isLoading = false;
+          _errorMessage = null;
         });
-        debugPrint("PlayerScreen: setState called.");
-      } else {
-        debugPrint(
-          "PlayerScreen: Widget not mounted before final setState. Cannot update UI.",
-        );
+        debugPrint("PlayerScreen: Loading complete.");
       }
     } catch (e, stackTrace) {
-      // Catch errors during initialization (including handler not ready)
       debugPrint("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
       debugPrint(
         "PlayerScreen: ERROR during _initializeHandlerAndLoadData: $e",
       );
       debugPrint("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
       debugPrint("$stackTrace");
+
       if (mounted) {
-        // Set loading false anyway to stop spinner, maybe show error in UI
         setState(() {
           _isLoading = false;
+          _errorMessage = "Failed to initialize player: ${e.toString()}";
         });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Error initializing player: ${e.toString()}")),
-        );
       }
-    } finally {
-      debugPrint("PlayerScreen: _initializeHandlerAndLoadData END");
     }
+
+    debugPrint("PlayerScreen: _initializeHandlerAndLoadData END");
   }
 
   /// Sends the 'loadPlaylist' custom action to the audio handler.
@@ -164,11 +225,11 @@ class _PlayerScreenState extends State<PlayerScreen>
     String? startChapterId,
     Duration? startPosition,
   ) async {
-    // Handler should be initialized before calling this.
     assert(
       _audioHandler != null,
       "Handler cannot be null when loading playlist",
     );
+
     debugPrint(
       "PlayerScreen: Sending 'loadPlaylist' custom action to handler...",
     );
@@ -186,23 +247,47 @@ class _PlayerScreenState extends State<PlayerScreen>
       );
       debugPrint("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
       debugPrint("$stackTrace");
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text("Error starting playback.")),
         );
       }
+      rethrow;
     }
+  }
+
+  void _retryInitialization() {
+    if (!_canRetry) return;
+
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+      _canRetry = false; // Prevent multiple rapid retries
+    });
+
+    Future.delayed(const Duration(seconds: 1), () {
+      if (mounted) {
+        setState(() {
+          _canRetry = true;
+        });
+      }
+    });
+
+    _initializeHandlerAndLoadData();
   }
 
   @override
   void dispose() {
     debugPrint("PlayerScreen: dispose called.");
     WidgetsBinding.instance.removeObserver(this);
+
     // Save position only if handler was successfully initialized
     if (_isHandlerInitialized && _audioHandler != null) {
       _audioHandler!.customAction('savePosition');
       debugPrint("PlayerScreen: Requested position save on dispose.");
     }
+
     super.dispose();
   }
 
@@ -210,6 +295,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
     debugPrint("PlayerScreen: App lifecycle changed to: $state");
+
     // Save position only if handler was successfully initialized
     if (!_isHandlerInitialized || _audioHandler == null) return;
 
@@ -233,8 +319,10 @@ class _PlayerScreenState extends State<PlayerScreen>
     debugPrint(
       "PlayerScreen: build executing... _isLoading=$_isLoading, _isHandlerInitialized=$_isHandlerInitialized",
     );
+
     final String audiobookTitle =
         _isLoading ? "Loading..." : (_audiobook?.title ?? "Audiobook Player");
+
     // Use the flag to determine readiness, ensuring handler is not null if ready
     final bool handlerReady = _isHandlerInitialized && _audioHandler != null;
 
@@ -267,27 +355,72 @@ class _PlayerScreenState extends State<PlayerScreen>
           ),
         ],
       ),
-      // Show loading indicator OR the player content
+      // Show loading indicator, error message, or the player content
       body:
-          _isLoading || !handlerReady
-              ? const Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    CircularProgressIndicator(),
-                    SizedBox(height: 15),
-                    Text("Loading Player..."),
-                  ],
-                ),
-              )
-              // Pass the confirmed non-nullable handler to the content builder
-              : _buildPlayerContent(_audioHandler!),
+          _isLoading
+              ? _buildLoadingWidget()
+              : (_errorMessage != null
+                  ? _buildErrorWidget()
+                  : (!handlerReady
+                      ? _buildErrorWidget(
+                        customMessage: "Audio player not initialized properly",
+                      )
+                      : _buildPlayerContent(_audioHandler!))),
+    );
+  }
+
+  Widget _buildLoadingWidget() {
+    return const Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          CircularProgressIndicator(),
+          SizedBox(height: 15),
+          Text("Loading Player..."),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildErrorWidget({String? customMessage}) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(20.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.error_outline, size: 48, color: Colors.orange),
+            const SizedBox(height: 20),
+            Text(
+              customMessage ?? _errorMessage ?? "An error occurred",
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 16),
+            ),
+            const SizedBox(height: 24),
+            ElevatedButton.icon(
+              icon: const Icon(Icons.refresh),
+              label: const Text("Try Again"),
+              onPressed: _canRetry ? _retryInitialization : null,
+            ),
+            const SizedBox(height: 12),
+            TextButton(
+              child: const Text("Go Back"),
+              onPressed: () {
+                if (Navigator.canPop(context)) {
+                  Navigator.of(context).pop();
+                }
+              },
+            ),
+          ],
+        ),
+      ),
     );
   }
 
   /// Builds the main content widget when the player is ready.
   Widget _buildPlayerContent(MyAudioHandler handler) {
     debugPrint("PlayerScreen: _buildPlayerContent executing...");
+
     // This check should ideally not be needed if _isLoading=false guarantees _audiobook is set.
     if (_audiobook == null) {
       debugPrint(
@@ -380,7 +513,6 @@ class _PlayerScreenState extends State<PlayerScreen>
                 stream: handler.mediaItem,
                 builder: (context, mediaSnapshot) {
                   return PlayerControls(
-                    // Ensure PlayerControls widget exists and is imported correctly
                     audioHandler: handler,
                     state: state,
                     mediaItem: mediaSnapshot.data,
@@ -479,12 +611,3 @@ class _PlayerScreenState extends State<PlayerScreen>
     );
   }
 }
-
-// Ensure PositionData class is defined (often placed in seekbar.dart or utils)
-// If it's not defined elsewhere, include it here or import it.
-// class PositionData {
-//   final Duration position;
-//   final Duration bufferedPosition;
-//   final Duration duration;
-//   PositionData(this.position, this.bufferedPosition, this.duration);
-// }
