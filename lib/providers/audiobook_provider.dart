@@ -18,15 +18,61 @@ class AudiobookProvider extends ChangeNotifier {
   String? _errorMessage;
   bool _permissionPermanentlyDenied = false;
 
+  // New property for custom titles
+  final Map<String, String> _customTitles = {};
+
   // Getters for state
   List<Audiobook> get audiobooks => _audiobooks;
   bool get isLoading => _isLoading;
   String? get errorMessage => _errorMessage;
   bool get permissionPermanentlyDenied => _permissionPermanentlyDenied;
 
-  // Constructor: Load audiobooks when the provider is created.
+  // Constructor: Load audiobooks when the provider is created
   AudiobookProvider() {
-    loadAudiobooks();
+    _loadCustomTitles().then((_) => loadAudiobooks());
+  }
+
+  /// Loads saved custom titles from preferences
+  Future<void> _loadCustomTitles() async {
+    try {
+      final savedTitles = await _storageService.loadCustomTitles();
+      _customTitles.clear();
+      _customTitles.addAll(savedTitles);
+      debugPrint("Loaded ${_customTitles.length} custom titles");
+    } catch (e) {
+      debugPrint("Error loading custom titles: $e");
+    }
+  }
+
+  /// Saves custom titles to preferences
+  Future<void> _saveCustomTitles() async {
+    try {
+      await _storageService.saveCustomTitles(_customTitles);
+      debugPrint("Saved ${_customTitles.length} custom titles");
+    } catch (e) {
+      debugPrint("Error saving custom titles: $e");
+    }
+  }
+
+  /// Gets the title for an audiobook, using custom title if available
+  String getTitleForAudiobook(Audiobook book) {
+    return _customTitles[book.id] ?? book.title;
+  }
+
+  /// Sets a custom title for an audiobook
+  Future<void> setCustomTitle(String audiobookId, String newTitle) async {
+    if (newTitle.trim().isEmpty) {
+      // If empty, remove the custom title
+      _customTitles.remove(audiobookId);
+    } else {
+      // Otherwise save the new title
+      _customTitles[audiobookId] = newTitle.trim();
+    }
+
+    await _saveCustomTitles();
+
+    // Update the display
+    notifyListeners();
   }
 
   /// Loads audiobook details from saved folder paths using StorageService.
@@ -74,7 +120,9 @@ class AudiobookProvider extends ChangeNotifier {
       }
       // Sort the loaded books alphabetically.
       loadedBooks.sort(
-        (a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase()),
+        (a, b) => getTitleForAudiobook(
+          a,
+        ).toLowerCase().compareTo(getTitleForAudiobook(b).toLowerCase()),
       );
       _audiobooks = loadedBooks; // Update the internal list.
       debugPrint(
@@ -185,7 +233,9 @@ class AudiobookProvider extends ChangeNotifier {
             _audiobooks.add(newBook); // Add the new book to the list.
             // Sort the library alphabetically after adding.
             _audiobooks.sort(
-              (a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase()),
+              (a, b) => getTitleForAudiobook(
+                a,
+              ).toLowerCase().compareTo(getTitleForAudiobook(b).toLowerCase()),
             );
             // Save the updated list of folder paths (all non-nullable Strings).
             // The map creates a new list of non-nullable strings.
@@ -216,6 +266,40 @@ class AudiobookProvider extends ChangeNotifier {
       _errorMessage = "An unexpected error occurred while adding the folder.";
       _isLoading = false;
       notifyListeners();
+    }
+  }
+
+  /// Remove an audiobook from the library
+  Future<bool> removeAudiobook(String audiobookId) async {
+    try {
+      // Find the index of the audiobook to remove
+      final int index = _audiobooks.indexWhere(
+        (book) => book.id == audiobookId,
+      );
+
+      if (index == -1) {
+        debugPrint("Audiobook not found for removal: $audiobookId");
+        return false;
+      }
+
+      // Remove the audiobook from our list
+      _audiobooks.removeAt(index);
+
+      // Remove any custom title for this audiobook
+      _customTitles.remove(audiobookId);
+      await _saveCustomTitles();
+
+      // Save the updated list of folder paths
+      await _storageService.saveAudiobookFolders(
+        _audiobooks.map((b) => b.id).toList(),
+      );
+
+      debugPrint("Successfully removed audiobook: $audiobookId");
+      notifyListeners();
+      return true;
+    } catch (e) {
+      debugPrint("Error removing audiobook: $e");
+      return false;
     }
   }
 

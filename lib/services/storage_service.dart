@@ -4,7 +4,9 @@ import 'package:flutter/foundation.dart'; // For debugPrint
 class StorageService {
   static const _foldersKey = 'audiobook_folders';
   static const _lastPositionPrefix = 'last_pos_';
+  static const _customTitlesKey = 'custom_titles';
 
+  /// Saves a list of audiobook folder paths to shared preferences
   Future<void> saveAudiobookFolders(List<String> paths) async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -15,6 +17,7 @@ class StorageService {
     }
   }
 
+  /// Loads list of audiobook folder paths from shared preferences
   Future<List<String>> loadAudiobookFolders() async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -34,10 +37,6 @@ class StorageService {
     String chapterId,
     Duration position,
   ) async {
-    // Input validation (optional but good practice)
-    // assert(audiobookId.isNotEmpty, "audiobookId cannot be empty in saveLastPosition");
-    // assert(chapterId.isNotEmpty, "chapterId cannot be empty in saveLastPosition");
-
     try {
       final prefs = await SharedPreferences.getInstance();
       final key = '$_lastPositionPrefix$audiobookId';
@@ -55,7 +54,6 @@ class StorageService {
   /// Loads the last playback position (chapter ID and position) for a given audiobook.
   /// Returns null if no position is saved or if data is invalid.
   Future<Map<String, dynamic>?> loadLastPosition(String audiobookId) async {
-    // assert(audiobookId.isNotEmpty, "audiobookId cannot be empty in loadLastPosition");
     try {
       final prefs = await SharedPreferences.getInstance();
       final key = '$_lastPositionPrefix$audiobookId';
@@ -73,10 +71,7 @@ class StorageService {
             debugPrint(
               'Loaded position for $audiobookId: $chapterId at ${position.inMilliseconds}ms',
             );
-            return {
-              'chapterId': chapterId, // Non-nullable String
-              'position': position, // Non-nullable Duration
-            };
+            return {'chapterId': chapterId, 'position': position};
           } else {
             debugPrint(
               'Invalid position data format for $audiobookId: "$savedData"',
@@ -100,7 +95,6 @@ class StorageService {
 
   /// Clears the saved playback position for a specific audiobook.
   Future<void> clearLastPosition(String audiobookId) async {
-    // assert(audiobookId.isNotEmpty, "audiobookId cannot be empty in clearLastPosition");
     try {
       final prefs = await SharedPreferences.getInstance();
       final key = '$_lastPositionPrefix$audiobookId';
@@ -108,6 +102,50 @@ class StorageService {
       debugPrint('Cleared position for $audiobookId');
     } catch (e) {
       debugPrint("Error clearing last position for $audiobookId: $e");
+    }
+  }
+
+  /// Saves custom titles for audiobooks
+  Future<void> saveCustomTitles(Map<String, String> customTitles) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+
+      // Convert map to a list of strings in format "id|title"
+      final List<String> titlesList = [];
+      customTitles.forEach((id, title) {
+        titlesList.add("$id|$title");
+      });
+
+      await prefs.setStringList(_customTitlesKey, titlesList);
+      debugPrint("Saved ${titlesList.length} custom titles");
+    } catch (e) {
+      debugPrint("Error saving custom titles: $e");
+    }
+  }
+
+  /// Loads custom titles for audiobooks
+  Future<Map<String, String>> loadCustomTitles() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final titlesList = prefs.getStringList(_customTitlesKey) ?? [];
+
+      // Convert list back to map
+      final Map<String, String> customTitles = {};
+      for (final item in titlesList) {
+        final parts = item.split('|');
+        if (parts.length >= 2) {
+          // Join any remaining parts in case the title itself contains |
+          final id = parts[0];
+          final title = parts.sublist(1).join('|');
+          customTitles[id] = title;
+        }
+      }
+
+      debugPrint("Loaded ${customTitles.length} custom titles");
+      return customTitles;
+    } catch (e) {
+      debugPrint("Error loading custom titles: $e");
+      return {}; // Return empty map on error
     }
   }
 }

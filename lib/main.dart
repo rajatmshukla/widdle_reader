@@ -1,13 +1,16 @@
 // lib/main.dart
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:flutter/services.dart';
 
 import 'providers/audiobook_provider.dart';
+import 'providers/theme_provider.dart';
 import 'screens/splash_screen.dart';
 import 'screens/library_screen.dart';
-import 'screens/player_screen.dart';
-import 'screens/simple_player_screen.dart'; // Import the simplified player screen
+import 'screens/simple_player_screen.dart';
+import 'screens/settings_screen.dart';
 import 'services/audio_handler.dart';
+import 'theme.dart';
 
 // Global flag for audio service initialization
 bool _audioServiceInitialized = false;
@@ -19,6 +22,12 @@ Future<void> main() async {
   // Ensure Flutter bindings are initialized
   WidgetsFlutterBinding.ensureInitialized();
   debugPrint("WidgetsFlutterBinding initialized.");
+
+  // Set preferred orientations
+  await SystemChrome.setPreferredOrientations([
+    DeviceOrientation.portraitUp,
+    DeviceOrientation.portraitDown,
+  ]);
 
   // Try to initialize audio service, but don't block app launch if it fails
   try {
@@ -75,24 +84,27 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ChangeNotifierProvider(
-      create: (context) => AudiobookProvider(),
-      child: MaterialApp(
-        title: 'Audiobook Player',
-        theme: ThemeData(
-          // Your theme settings remain the same...
-          brightness: Brightness.dark,
-          primarySwatch: Colors.teal,
-          // ... other theme settings
-        ),
-        debugShowCheckedModeBanner: false,
-        initialRoute: '/splash',
-        routes: {
-          '/splash': (context) => const SplashScreen(),
-          '/library': (context) => const LibraryScreen(),
-          '/player':
-              (context) =>
-                  const SimplePlayerScreen(), // Use the simplified player
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => AudiobookProvider()),
+        ChangeNotifierProvider(create: (_) => ThemeProvider()),
+      ],
+      child: Consumer<ThemeProvider>(
+        builder: (context, themeProvider, _) {
+          return MaterialApp(
+            title: 'Widdle Reader',
+            debugShowCheckedModeBanner: false,
+            theme: AppTheme.lightTheme(themeProvider.seedColor),
+            darkTheme: AppTheme.darkTheme(themeProvider.seedColor),
+            themeMode: themeProvider.themeMode,
+            initialRoute: '/splash',
+            routes: {
+              '/splash': (context) => const SplashScreen(),
+              '/library': (context) => const LibraryScreen(),
+              '/player': (context) => const SimplePlayerScreen(),
+              '/settings': (context) => const SettingsScreen(),
+            },
+          );
         },
       ),
     );

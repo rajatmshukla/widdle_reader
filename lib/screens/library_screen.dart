@@ -1,14 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-// Import permission_handler for openAppSettings
 
 import '../providers/audiobook_provider.dart';
+import '../providers/theme_provider.dart';
 import '../widgets/audiobook_tile.dart';
 import '../models/audiobook.dart';
-import '../services/storage_service.dart'; // Keep for loading position
+import '../services/storage_service.dart';
+import '../theme.dart';
 
 class LibraryScreen extends StatelessWidget {
-  // Use super parameters
   const LibraryScreen({super.key});
 
   // Function to check for and load last played position
@@ -44,84 +44,357 @@ class LibraryScreen extends StatelessWidget {
     Navigator.pushNamed(context, '/player', arguments: arguments);
   }
 
+  // Show the edit title dialog
+  Future<void> _showEditTitleDialog(
+    BuildContext context,
+    Audiobook audiobook,
+    AudiobookProvider provider,
+  ) async {
+    final currentTitle = provider.getTitleForAudiobook(audiobook);
+    final TextEditingController controller = TextEditingController(
+      text: currentTitle,
+    );
+
+    final result = await showDialog<String>(
+      context: context,
+      builder:
+          (context) => AlertDialog(
+            title: const Text('Edit Title'),
+            content: TextField(
+              controller: controller,
+              decoration: const InputDecoration(
+                labelText: 'Audiobook Title',
+                border: OutlineInputBorder(),
+              ),
+              autofocus: true,
+              textCapitalization: TextCapitalization.words,
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(context, controller.text),
+                child: const Text('Save'),
+              ),
+            ],
+          ),
+    );
+
+    if (result != null) {
+      await provider.setCustomTitle(audiobook.id, result);
+    }
+  }
+
+  // Show the delete confirmation dialog
+  Future<void> _showDeleteConfirmationDialog(
+    BuildContext context,
+    Audiobook audiobook,
+    AudiobookProvider provider,
+  ) async {
+    final title = provider.getTitleForAudiobook(audiobook);
+
+    final result = await showDialog<bool>(
+      context: context,
+      builder:
+          (context) => AlertDialog(
+            title: const Text('Remove Audiobook'),
+            content: Text(
+              'Are you sure you want to remove "$title" from your library?\n\n'
+              'This will not delete the files from your device, only remove it from the app.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(context, true),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Theme.of(context).colorScheme.error,
+                  foregroundColor: Theme.of(context).colorScheme.onError,
+                ),
+                child: const Text('Remove'),
+              ),
+            ],
+          ),
+    );
+
+    if (result == true) {
+      await provider.removeAudiobook(audiobook.id);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Removed "$title" from library'),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+          ),
+        );
+      }
+    }
+  }
+
+  // Show the long-press actions menu
+  void _showLongPressMenu(
+    BuildContext context,
+    Audiobook audiobook,
+    AudiobookProvider provider,
+  ) {
+    final title = provider.getTitleForAudiobook(audiobook);
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder:
+          (context) => Container(
+            padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
+            child: SafeArea(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    title,
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+                    textAlign: TextAlign.center,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 24),
+                  ListTile(
+                    leading: Icon(
+                      Icons.edit_rounded,
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+                    title: const Text('Edit Title'),
+                    onTap: () {
+                      Navigator.pop(context);
+                      _showEditTitleDialog(context, audiobook, provider);
+                    },
+                  ),
+                  ListTile(
+                    leading: Icon(
+                      Icons.delete_outline_rounded,
+                      color: Theme.of(context).colorScheme.error,
+                    ),
+                    title: const Text('Remove from Library'),
+                    onTap: () {
+                      Navigator.pop(context);
+                      _showDeleteConfirmationDialog(
+                        context,
+                        audiobook,
+                        provider,
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 8),
+                ],
+              ),
+            ),
+          ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     // Use watch for automatic rebuilds when provider notifies listeners
     final provider = context.watch<AudiobookProvider>();
+    final themeProvider = context.watch<ThemeProvider>();
+    final colorScheme = Theme.of(context).colorScheme;
 
     return Scaffold(
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
-        title: const Text('Widdle Reader Library'),
+        title: const Text(
+          'Widdle Reader',
+          style: TextStyle(fontWeight: FontWeight.w600, letterSpacing: 0.5),
+        ),
+        backgroundColor: colorScheme.surface.withOpacity(0.7),
+        leading: IconButton(
+          icon: Container(
+            padding: const EdgeInsets.all(6),
+            decoration: BoxDecoration(
+              color: colorScheme.surfaceVariant.withOpacity(0.7),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Icon(Icons.settings),
+          ),
+          tooltip: "Settings",
+          onPressed: () {
+            Navigator.pushNamed(context, '/settings');
+          },
+        ),
         actions: [
-          // Refresh button
+          // Theme toggle button
           IconButton(
-            icon: const Icon(Icons.refresh),
-            tooltip: "Refresh Widdle Reader",
-            onPressed:
+            icon: Icon(
+              themeProvider.isDarkMode
+                  ? Icons
+                      .wb_sunny_rounded // Show sun icon in dark mode
+                  : Icons.nightlight_round, // Show moon icon in light mode
+              color: colorScheme.primary,
+            ),
+            tooltip:
+                themeProvider.isDarkMode
+                    ? "Switch to Light Theme"
+                    : "Switch to Dark Theme",
+            onPressed: () {
+              themeProvider.toggleTheme();
+            },
+          ),
+          // Refresh button
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 300),
+            child:
                 provider.isLoading
-                    ? null
-                    : () => provider.loadAudiobooks(), // Disable while loading
+                    ? Container(
+                      margin: const EdgeInsets.all(8),
+                      width: 40,
+                      height: 40,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: colorScheme.onPrimaryContainer,
+                      ),
+                    )
+                    : IconButton(
+                      icon: const Icon(Icons.refresh_rounded),
+                      tooltip: "Refresh Library",
+                      onPressed: () => provider.loadAudiobooks(),
+                    ),
           ),
         ],
       ),
-      body: Stack(
-        // Use Stack to overlay messages/indicators
-        children: [
-          // Main Content (List or Empty Message)
-          _buildBody(context, provider),
+      body: Container(
+        decoration: AppTheme.gradientBackground(context),
+        child: Stack(
+          // Use Stack to overlay messages/indicators
+          children: [
+            // Main Content (List or Empty Message)
+            _buildBody(context, provider),
 
-          // Loading Indicator (Only show during initial load or add folder)
-          if (provider.isLoading)
-            Container(
-              color: Colors.black.withOpacity(0.5),
-              child: const Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    CircularProgressIndicator(),
-                    SizedBox(height: 15),
-                    Text(
-                      "Loading...",
-                      style: TextStyle(color: Colors.white70, fontSize: 16),
+            // Loading Indicator (Only show during initial load or add folder)
+            if (provider.isLoading)
+              Container(
+                color: Colors.black.withOpacity(0.5),
+                child: Center(
+                  child: Card(
+                    elevation: 8,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(20),
                     ),
-                  ],
+                    child: Padding(
+                      padding: const EdgeInsets.all(20),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          CircularProgressIndicator(color: colorScheme.primary),
+                          const SizedBox(height: 16),
+                          Text(
+                            "Loading...",
+                            style: TextStyle(
+                              fontSize: 16,
+                              color: colorScheme.onSurface,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
                 ),
               ),
-            ),
 
-          // Error/Info Message Snackbar-like display
-          if (provider.errorMessage != null && !provider.isLoading)
-            _buildErrorMessage(context, provider),
-        ],
+            // Error/Info Message
+            if (provider.errorMessage != null && !provider.isLoading)
+              _buildErrorMessage(context, provider),
+          ],
+        ),
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed:
-            provider.isLoading
-                ? null
-                : () => provider.addAudiobookFolder(), // Disable while loading
-        tooltip: 'Add Audiobook Folder',
-        child: const Icon(Icons.add),
+      // Fancy floating action button
+      floatingActionButton: AnimatedScale(
+        scale: provider.isLoading ? 0.0 : 1.0,
+        duration: const Duration(milliseconds: 300),
+        child: FloatingActionButton.extended(
+          onPressed:
+              provider.isLoading ? null : () => provider.addAudiobookFolder(),
+          elevation: 4,
+          label: const Text('Add Book'),
+          icon: const Icon(Icons.add_rounded),
+          tooltip: 'Add Audiobook Folder',
+        ),
       ),
     );
   }
 
   Widget _buildBody(BuildContext context, AudiobookProvider provider) {
-    // Don't show loading here if it's handled by the overlay Stack
-    // if (provider.isLoading && provider.audiobooks.isEmpty) {
-    //   return const Center(child: CircularProgressIndicator());
-    // }
+    final colorScheme = Theme.of(context).colorScheme;
 
     if (provider.audiobooks.isEmpty && !provider.isLoading) {
       // Show add folder message if empty and not loading/no error
       if (provider.errorMessage == null &&
           !provider.permissionPermanentlyDenied) {
-        return const Center(
+        return Center(
           child: Padding(
-            padding: EdgeInsets.all(30.0),
-            child: Text(
-              'No audiobooks found.\nTap the + button to add a folder.',
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 16, color: Colors.grey),
+            padding: const EdgeInsets.all(30.0),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Empty library illustration
+                Icon(
+                  Icons.menu_book_outlined,
+                  size: 80,
+                  color: colorScheme.onSurface.withOpacity(0.3),
+                ),
+                const SizedBox(height: 24),
+                Text(
+                  'Your library is empty',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w500,
+                    color: colorScheme.onSurface,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Tap the + button to add an audiobook folder.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 16,
+                    color: colorScheme.onSurface.withOpacity(0.7),
+                  ),
+                ),
+                const SizedBox(height: 40),
+                // Help arrow pointing to FAB
+                Align(
+                  alignment: Alignment.bottomRight,
+                  child: Padding(
+                    padding: const EdgeInsets.only(right: 30),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          'Tap here',
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: colorScheme.primary,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Icon(
+                          Icons.arrow_downward_rounded,
+                          color: colorScheme.primary,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         );
@@ -130,18 +403,23 @@ class LibraryScreen extends StatelessWidget {
         return const SizedBox.shrink(); // Return empty space, error handled elsewhere
       }
     } else if (provider.audiobooks.isNotEmpty) {
-      // Display the list
+      // Display the list with physics for bounce effect
       return ListView.builder(
         padding: const EdgeInsets.only(
-          bottom: 80,
-        ), // Padding to avoid FAB overlap
+          bottom: 100,
+          top: 100,
+        ), // Padding for app bar and FAB
+        physics: const BouncingScrollPhysics(), // Add bounce effect
         itemCount: provider.audiobooks.length,
         itemBuilder: (context, index) {
           final audiobook = provider.audiobooks[index];
-          return AudiobookTile(
-            audiobook: audiobook,
-            // Pass the async function directly
+          return GestureDetector(
             onTap: () => _loadLastPositionAndNavigate(context, audiobook),
+            onLongPress: () => _showLongPressMenu(context, audiobook, provider),
+            child: AudiobookTile(
+              audiobook: audiobook,
+              customTitle: provider.getTitleForAudiobook(audiobook),
+            ),
           );
         },
       );
@@ -153,37 +431,49 @@ class LibraryScreen extends StatelessWidget {
 
   // Extracted error message widget
   Widget _buildErrorMessage(BuildContext context, AudiobookProvider provider) {
+    final colorScheme = Theme.of(context).colorScheme;
+
     return Positioned(
-      bottom: 80, // Position above FAB
+      bottom: 100, // Position above FAB
       left: 20,
       right: 20,
       child: Material(
         // Wrap with Material for elevation and shape
-        elevation: 4,
-        borderRadius: BorderRadius.circular(8),
+        elevation: 6,
+        borderRadius: BorderRadius.circular(16),
         color:
             provider.permissionPermanentlyDenied
                 ? Colors.orange[800]
-                : Colors.redAccent.withOpacity(0.9),
+                : colorScheme.errorContainer,
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
+              const Icon(
+                Icons.warning_amber_rounded,
+                color: Colors.white,
+                size: 24,
+              ),
+              const SizedBox(width: 12),
               Expanded(
                 child: Text(
                   provider.errorMessage!,
-                  style: const TextStyle(color: Colors.white),
-                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
               ),
               // Show settings button only if permission is permanently denied
               if (provider.permissionPermanentlyDenied)
-                IconButton(
+                TextButton.icon(
                   icon: const Icon(Icons.settings, color: Colors.white),
-                  tooltip: "Open App Settings",
-                  onPressed:
-                      () => provider.openSettings(), // Call provider method
+                  label: const Text(
+                    "Settings",
+                    style: TextStyle(color: Colors.white),
+                  ),
+                  onPressed: () => provider.openSettings(),
                 ),
             ],
           ),
