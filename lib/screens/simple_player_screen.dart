@@ -1,4 +1,3 @@
-// lib/screens/simple_player_screen.dart
 import 'package:flutter/material.dart';
 import '../models/audiobook.dart';
 import '../services/simple_audio_service.dart';
@@ -11,15 +10,19 @@ class SimplePlayerScreen extends StatefulWidget {
   State<SimplePlayerScreen> createState() => _SimplePlayerScreenState();
 }
 
-class _SimplePlayerScreenState extends State<SimplePlayerScreen> {
+class _SimplePlayerScreenState extends State<SimplePlayerScreen>
+    with WidgetsBindingObserver {
   final _audioService = SimpleAudioService();
   Audiobook? _audiobook;
   bool _isLoading = true;
   String? _errorMessage;
+  bool _isSpeedControlExpanded = false;
+  bool _canRetry = true;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadAudiobook();
     });
@@ -61,23 +64,65 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen> {
         startPosition: startPosition,
       );
 
+      // Enable notifications for this playback session
+      await _audioService.enableNotifications();
+
       setState(() {
         _isLoading = false;
       });
     } catch (e) {
-      setState(() {
-        _isLoading = false;
-        _errorMessage = "Failed to load audiobook: $e";
-      });
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _errorMessage = "Failed to load audiobook: $e";
+        });
+      }
     }
+  }
+
+  void _retryInitialization() {
+    if (!_canRetry) return;
+
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+      _canRetry = false; // Prevent multiple rapid retries
+    });
+
+    Future.delayed(const Duration(seconds: 1), () {
+      if (mounted) {
+        setState(() {
+          _canRetry = true;
+        });
+      }
+    });
+
+    _loadAudiobook();
   }
 
   @override
   void dispose() {
-    // Save position before leaving
-    _audioService.saveCurrentPosition();
-    _audioService.pause();
+    WidgetsBinding.instance.removeObserver(this);
+    // Don't stop playback, just detach UI
+    _audioService.detachFromUI();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    switch (state) {
+      case AppLifecycleState.paused:
+      case AppLifecycleState.inactive:
+      case AppLifecycleState.detached:
+        // App going to background or being killed
+        _audioService.saveCurrentPosition();
+        break;
+      case AppLifecycleState.resumed:
+        // App coming back to foreground
+        break;
+      default:
+        break;
+    }
   }
 
   @override
@@ -104,10 +149,23 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen> {
       ),
       body:
           _isLoading
-              ? const Center(child: CircularProgressIndicator())
+              ? _buildLoadingWidget()
               : (_errorMessage != null
                   ? _buildErrorWidget()
                   : _buildPlayerContent()),
+    );
+  }
+
+  Widget _buildLoadingWidget() {
+    return const Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          CircularProgressIndicator(),
+          SizedBox(height: 15),
+          Text("Loading Player..."),
+        ],
+      ),
     );
   }
 
@@ -129,7 +187,7 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen> {
             ElevatedButton.icon(
               icon: const Icon(Icons.refresh),
               label: const Text("Try Again"),
-              onPressed: _loadAudiobook,
+              onPressed: _canRetry ? _retryInitialization : null,
             ),
             const SizedBox(height: 12),
             TextButton(
@@ -214,12 +272,12 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen> {
             child: _buildProgressBar(),
           ),
 
-          const SizedBox(height: 5),
+          const SizedBox(height: 16),
 
-          // Speed control - Add this line
-          _buildSpeedControl(),
+          // Speed control button
+          Center(child: _buildSpeedControl()),
 
-          const SizedBox(height: 5),
+          const SizedBox(height: 16),
 
           // Controls
           _buildControls(),
@@ -247,10 +305,15 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen> {
               children: [
                 Slider(
                   min: 0,
-                  max: duration.inMilliseconds.toDouble(),
+                  max:
+                      duration.inMilliseconds > 0
+                          ? duration.inMilliseconds.toDouble()
+                          : 1.0,
                   value: position.inMilliseconds.toDouble().clamp(
                     0,
-                    duration.inMilliseconds.toDouble(),
+                    duration.inMilliseconds > 0
+                        ? duration.inMilliseconds.toDouble()
+                        : 1.0,
                   ),
                   onChanged: (value) {
                     _audioService.seek(Duration(milliseconds: value.round()));
@@ -269,6 +332,101 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen> {
               ],
             );
           },
+        );
+      },
+    );
+  }
+
+  Widget _buildSpeedControl() {
+    return StreamBuilder<double>(
+      stream: _audioService.speedStream,
+      builder: (context, snapshot) {
+        final currentSpeed = snapshot.data ?? 1.0;
+
+        return Column(
+          children: [
+            // Speed button
+            GestureDetector(
+              onTap: () {
+                setState(() {
+                  _isSpeedControlExpanded = !_isSpeedControlExpanded;
+                });
+              },
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 8,
+                ),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.surface,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.primary.withOpacity(0.5),
+                    width: 1.5,
+                  ),
+                ),
+                child: Text(
+                  "${currentSpeed.toStringAsFixed(1)}×",
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
+                ),
+              ),
+            ),
+
+            // Expandable speed slider
+            AnimatedCrossFade(
+              firstChild: const SizedBox(height: 0, width: double.infinity),
+              secondChild: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
+                child: Column(
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text("0.5×", style: TextStyle(fontSize: 12)),
+                        Text(
+                          "${currentSpeed.toStringAsFixed(1)}×",
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const Text("2.0×", style: TextStyle(fontSize: 12)),
+                      ],
+                    ),
+                    Slider(
+                      min: 0.5,
+                      max: 2.0,
+                      divisions: 15, // This creates steps of 0.1
+                      value: currentSpeed,
+                      onChanged: (value) {
+                        _audioService.setSpeed(value);
+                      },
+                      onChangeEnd: (value) {
+                        // Optional: auto-collapse after selecting a speed
+                        Future.delayed(const Duration(milliseconds: 500), () {
+                          if (mounted) {
+                            setState(() {
+                              _isSpeedControlExpanded = false;
+                            });
+                          }
+                        });
+                      },
+                    ),
+                  ],
+                ),
+              ),
+              crossFadeState:
+                  _isSpeedControlExpanded
+                      ? CrossFadeState.showSecond
+                      : CrossFadeState.showFirst,
+              duration: const Duration(milliseconds: 200),
+            ),
+          ],
         );
       },
     );
@@ -313,50 +471,6 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen> {
               icon: const Icon(Icons.forward_30),
               iconSize: 42,
               onPressed: () => _audioService.fastForward(),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  Widget _buildSpeedControl() {
-    return StreamBuilder<double>(
-      stream: _audioService.speedStream,
-      builder: (context, snapshot) {
-        final currentSpeed = snapshot.data ?? 1.0;
-
-        return Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Text(
-                    "Speed:",
-                    style: TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    "${currentSpeed.toStringAsFixed(1)}x",
-                    style: TextStyle(
-                      color: Theme.of(context).colorScheme.primary,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            Slider(
-              min: 0.5,
-              max: 2.0,
-              divisions:
-                  15, // This creates steps of 0.1 (15 steps between 0.5 and 2.0)
-              value: currentSpeed,
-              label: "${currentSpeed.toStringAsFixed(1)}x",
-              onChanged: (value) {
-                _audioService.setSpeed(value);
-              },
             ),
           ],
         );

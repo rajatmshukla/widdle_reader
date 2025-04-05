@@ -5,7 +5,6 @@ import 'package:provider/provider.dart';
 import '../providers/audiobook_provider.dart';
 import '../widgets/audiobook_tile.dart';
 import '../models/audiobook.dart';
-// import '../services/audio_handler.dart'; // Unused import removed
 import '../services/storage_service.dart'; // Keep for loading position
 
 class LibraryScreen extends StatelessWidget {
@@ -52,12 +51,12 @@ class LibraryScreen extends StatelessWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Audiobook Library'),
+        title: const Text('Widdle Reader Library'),
         actions: [
           // Refresh button
           IconButton(
             icon: const Icon(Icons.refresh),
-            tooltip: "Refresh Library",
+            tooltip: "Refresh Widdle Reader",
             onPressed:
                 provider.isLoading
                     ? null
