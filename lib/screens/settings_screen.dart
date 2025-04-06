@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 import 'package:provider/provider.dart';
 import '../providers/theme_provider.dart';
+import '../widgets/app_logo.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -259,8 +260,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
             child: Padding(
               padding: const EdgeInsets.all(16),
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
+                  // Add the logo at the top of the About section
+                  AppLogo(size: 80),
+                  const SizedBox(height: 16),
                   Text(
                     'Widdle Reader',
                     style: textTheme.titleMedium?.copyWith(

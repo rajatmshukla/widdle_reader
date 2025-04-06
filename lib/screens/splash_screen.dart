@@ -2,6 +2,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/theme_provider.dart';
+import '../widgets/app_logo.dart';
+import '../utils/helpers.dart'; // Assuming this path is correct
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -65,7 +67,6 @@ class _SplashScreenState extends State<SplashScreen>
   Widget build(BuildContext context) {
     final themeProvider = Provider.of<ThemeProvider>(context);
     final colorScheme = Theme.of(context).colorScheme;
-    final seedColor = themeProvider.seedColor;
 
     return Scaffold(
       body: Container(
@@ -82,63 +83,7 @@ class _SplashScreenState extends State<SplashScreen>
             opacity: _fadeAnimation,
             child: ScaleTransition(
               scale: _scaleAnimation,
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: <Widget>[
-                  // Custom icon with seed color
-                  Container(
-                    padding: const EdgeInsets.all(20),
-                    decoration: BoxDecoration(
-                      color: seedColor.withOpacity(0.2),
-                      borderRadius: BorderRadius.circular(32),
-                      boxShadow: [
-                        BoxShadow(
-                          color: seedColor.withOpacity(0.3),
-                          blurRadius: 15,
-                          offset: const Offset(0, 5),
-                        ),
-                      ],
-                    ),
-                    child: Icon(
-                      Icons.menu_book_rounded, // Rounded book icon
-                      size: 100.0,
-                      color: seedColor,
-                    ),
-                  ),
-                  const SizedBox(height: 30),
-
-                  // App title with bold text
-                  Text(
-                    'Widdle Reader',
-                    style: TextStyle(
-                      fontSize: 36.0,
-                      fontWeight: FontWeight.bold,
-                      color: colorScheme.onSurface,
-                      letterSpacing: 1.5,
-                      shadows: [
-                        Shadow(
-                          color: seedColor.withOpacity(0.3),
-                          blurRadius: 5,
-                          offset: const Offset(0, 2),
-                        ),
-                      ],
-                    ),
-                  ),
-
-                  const SizedBox(height: 10),
-
-                  // Tagline
-                  Text(
-                    'Your cute audiobook companion',
-                    style: TextStyle(
-                      fontSize: 16.0,
-                      fontWeight: FontWeight.w300,
-                      color: colorScheme.onSurface.withOpacity(0.8),
-                      letterSpacing: 0.5,
-                    ),
-                  ),
-                ],
-              ),
+              child: AppLogo(size: 150, showTitle: true, animate: true),
             ),
           ),
         ),

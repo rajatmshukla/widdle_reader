@@ -211,7 +211,11 @@ class LibraryScreen extends StatelessWidget {
       appBar: AppBar(
         title: const Text(
           'Widdle Reader',
-          style: TextStyle(fontWeight: FontWeight.w600, letterSpacing: 0.5),
+          style: TextStyle(
+            fontWeight: FontWeight.w700,
+            letterSpacing: 0.5,
+            fontSize: 16,
+          ),
         ),
         backgroundColor: colorScheme.surface.withOpacity(0.7),
         leading: IconButton(
@@ -229,23 +233,7 @@ class LibraryScreen extends StatelessWidget {
           },
         ),
         actions: [
-          // Theme toggle button
-          IconButton(
-            icon: Icon(
-              themeProvider.isDarkMode
-                  ? Icons
-                      .wb_sunny_rounded // Show sun icon in dark mode
-                  : Icons.nightlight_round, // Show moon icon in light mode
-              color: colorScheme.primary,
-            ),
-            tooltip:
-                themeProvider.isDarkMode
-                    ? "Switch to Light Theme"
-                    : "Switch to Dark Theme",
-            onPressed: () {
-              themeProvider.toggleTheme();
-            },
-          ),
+          // Theme toggle button removed
           // Refresh button
           AnimatedSwitcher(
             duration: const Duration(milliseconds: 300),
