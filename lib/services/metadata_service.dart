@@ -11,7 +11,7 @@ import '../models/chapter.dart';
 class MetadataService {
   final List<String> _supportedFormats = const [
     // Make const
-    '.mp3', '.m4a', '.wav', '.ogg', '.aac', '.flac', // Added flac
+    '.mp3', '.m4a', '.m4b', '.wav', '.ogg', '.aac', '.flac', // Added flac
   ];
 
   Future<Audiobook> getAudiobookDetails(String folderPath) async {
