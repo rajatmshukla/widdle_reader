@@ -139,7 +139,7 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
           icon: Container(
             padding: const EdgeInsets.all(6),
             decoration: BoxDecoration(
-              color: colorScheme.surfaceVariant.withOpacity(0.7),
+              color: colorScheme.surfaceContainerHighest.withOpacity(0.7),
               borderRadius: BorderRadius.circular(12),
             ),
             child: const Icon(Icons.arrow_back_rounded),
@@ -154,7 +154,7 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
             icon: Container(
               padding: const EdgeInsets.all(6),
               decoration: BoxDecoration(
-                color: colorScheme.surfaceVariant.withOpacity(0.7),
+                color: colorScheme.surfaceContainerHighest.withOpacity(0.7),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: const Icon(Icons.stop_circle_outlined),
@@ -430,9 +430,8 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
                             color:
                                 isPlaying
                                     ? colorScheme.primary
-                                    : colorScheme.surfaceVariant.withOpacity(
-                                      0.6,
-                                    ),
+                                    : colorScheme.surfaceContainerHighest
+                                        .withOpacity(0.6),
                             shape: BoxShape.circle,
                           ),
                           child: Center(
@@ -735,7 +734,7 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
             borderRadius: BorderRadius.circular(24),
           ),
           margin: const EdgeInsets.symmetric(horizontal: 16),
-          color: colorScheme.surfaceVariant.withOpacity(0.7),
+          color: colorScheme.surfaceContainerHighest.withOpacity(0.7),
           child: Padding(
             padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
             child: Row(

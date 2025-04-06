@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/theme_provider.dart';
 import '../widgets/app_logo.dart';
-import '../utils/helpers.dart'; // Assuming this path is correct
+// Assuming this path is correct
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
