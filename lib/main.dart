@@ -9,6 +9,7 @@ import 'screens/splash_screen.dart';
 import 'screens/library_screen.dart';
 import 'screens/simple_player_screen.dart';
 import 'screens/settings_screen.dart';
+
 import 'services/audio_handler.dart';
 import 'theme.dart';
 

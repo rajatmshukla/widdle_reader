@@ -124,16 +124,7 @@ Widget _buildDefaultCover(
           top: size * 0.1,
           right: size * 0.1,
           child: Icon(
-            Icons.music_note,
-            color: Colors.white.withOpacity(0.15),
-            size: size * 0.2,
-          ),
-        ),
-        Positioned(
-          bottom: size * 0.1,
-          left: size * 0.1,
-          child: Icon(
-            Icons.headphones,
+            Icons.menu_book_rounded,
             color: Colors.white.withOpacity(0.15),
             size: size * 0.2,
           ),

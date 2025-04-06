@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+  <!-- Use exact color from the code (primaryColor is passed from seedColor) -->
+  <defs>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="1"/>
+      <feOffset dx="0" dy="3.75" result="offsetblur"/>
+      <feComponentTransfer>
+        <feFuncA type="linear" slope="0.3"/>
+      </feComponentTransfer>
+      <feMerge> 
+        <feMergeNode/>
+        <feMergeNode in="SourceGraphic"/> 
+      </feMerge>
+    </filter>
+  </defs>
+  
+  <!-- Book shape exactly as in custom painter -->
+  <rect x="20" y="20" width="60" height="60" rx="15" fill="#2196F3" filter="url(#shadow)"/>
+  
+  <!-- Headphones arc with correct clockwise: false orientation (large arc flag=1) -->
+  <path d="M 10,40 A 50,50 1 0 0 90,40" stroke="#2196F3" stroke-opacity="0.6" stroke-width="9" stroke-linecap="round" fill="none"/>
+  
+  <!-- Earpads with exact size (width * 0.06) -->
+  <circle cx="10" cy="40" r="6" stroke="#2196F3" stroke-opacity="0.6" stroke-width="9" stroke-linecap="round" fill="none"/>
+  <circle cx="90" cy="40" r="6" stroke="#2196F3" stroke-opacity="0.6" stroke-width="9" stroke-linecap="round" fill="none"/>
+  
+  <!-- Eyes at exact positions -->
+  <circle cx="38" cy="45" r="4" fill="#000000"/>
+  <circle cx="62" cy="45" r="4" fill="#000000"/>
+  
+  <!-- Smile with exact path coordinates -->
+  <path d="M 40,60 Q 50,68 60,60" stroke="#000000" stroke-width="4" stroke-linecap="round" fill="none"/>
+</svg>

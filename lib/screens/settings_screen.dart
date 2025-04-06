@@ -40,7 +40,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           icon: Container(
             padding: const EdgeInsets.all(6),
             decoration: BoxDecoration(
-              color: colorScheme.surfaceVariant.withOpacity(0.7),
+              color: colorScheme.surfaceContainerHighest.withOpacity(0.7),
               borderRadius: BorderRadius.circular(12),
             ),
             child: const Icon(Icons.arrow_back_rounded),
@@ -350,7 +350,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               color:
                   isSelected
                       ? colorScheme.primaryContainer
-                      : colorScheme.surfaceVariant.withOpacity(0.3),
+                      : colorScheme.surfaceContainerHighest.withOpacity(0.3),
               borderRadius: BorderRadius.circular(16),
               border:
                   isSelected

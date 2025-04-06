@@ -353,14 +353,14 @@ class SimpleAudioService {
   Future<void> fastForward() async {
     if (_player.duration == null) return;
 
-    final newPosition = _player.position + const Duration(seconds: 15);
+    final newPosition = _player.position + const Duration(seconds: 30);
     final maxPosition = _player.duration!;
 
     await seek(newPosition > maxPosition ? maxPosition : newPosition);
   }
 
   Future<void> rewind() async {
-    final newPosition = _player.position - const Duration(seconds: 15);
+    final newPosition = _player.position - const Duration(seconds: 30);
     await seek(newPosition < Duration.zero ? Duration.zero : newPosition);
   }
 

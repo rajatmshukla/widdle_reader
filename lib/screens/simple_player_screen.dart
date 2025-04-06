@@ -564,29 +564,28 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
 
         return Column(
           children: [
-            // Speed button
+            // Speed button - back to original but without opaque container
             GestureDetector(
               onTap: () {
                 setState(() {
                   _isSpeedControlExpanded = !_isSpeedControlExpanded;
                 });
               },
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 200),
+              child: Container(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 16,
                   vertical: 8,
                 ),
                 decoration: BoxDecoration(
-                  color:
-                      _isSpeedControlExpanded
-                          ? colorScheme.primaryContainer
-                          : colorScheme.surface.withOpacity(0.7),
+                  color: colorScheme.primary, // Same color as play/pause button
                   borderRadius: BorderRadius.circular(20),
-                  border: Border.all(
-                    color: colorScheme.primary.withOpacity(0.5),
-                    width: 1.5,
-                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: colorScheme.primary.withOpacity(0.3),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
@@ -595,10 +594,7 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
                       "${currentSpeed.toStringAsFixed(1)}×",
                       style: TextStyle(
                         fontWeight: FontWeight.bold,
-                        color:
-                            _isSpeedControlExpanded
-                                ? colorScheme.onPrimaryContainer
-                                : colorScheme.primary,
+                        color: colorScheme.onPrimary, // Text color to match
                       ),
                     ),
                     const SizedBox(width: 4),
@@ -607,10 +603,7 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
                           ? Icons.keyboard_arrow_up_rounded
                           : Icons.keyboard_arrow_down_rounded,
                       size: 16,
-                      color:
-                          _isSpeedControlExpanded
-                              ? colorScheme.onPrimaryContainer
-                              : colorScheme.primary,
+                      color: colorScheme.onPrimary, // Icon color to match
                     ),
                   ],
                 ),
@@ -620,94 +613,66 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
             // Expandable speed slider
             AnimatedCrossFade(
               firstChild: const SizedBox(height: 0, width: double.infinity),
-              secondChild: Card(
-                margin: const EdgeInsets.only(top: 8, left: 20, right: 20),
-                elevation: 4,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-                  child: Column(
-                    children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text(
-                            "0.5×",
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: colorScheme.onSurface.withOpacity(0.7),
-                            ),
-                          ),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 4,
-                            ),
-                            decoration: BoxDecoration(
-                              color: colorScheme.primaryContainer,
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Text(
-                              "${currentSpeed.toStringAsFixed(1)}×",
-                              style: TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.bold,
-                                color: colorScheme.onPrimaryContainer,
-                              ),
-                            ),
-                          ),
-                          Text(
-                            "2.0×",
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: colorScheme.onSurface.withOpacity(0.7),
-                            ),
-                          ),
-                        ],
-                      ),
-                      SliderTheme(
-                        data: SliderThemeData(
-                          trackHeight: 4,
-                          activeTrackColor: colorScheme.primary,
-                          inactiveTrackColor: colorScheme.onSurface.withOpacity(
-                            0.2,
-                          ),
-                          thumbColor: colorScheme.primary,
-                          thumbShape: const RoundSliderThumbShape(
-                            enabledThumbRadius: 8,
-                          ),
-                          overlayColor: colorScheme.primary.withOpacity(0.2),
-                          overlayShape: const RoundSliderOverlayShape(
-                            overlayRadius: 16,
+              secondChild: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+                child: Column(
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          "0.5×",
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: colorScheme.onSurface.withOpacity(0.7),
                           ),
                         ),
-                        child: Slider(
-                          min: 0.5,
-                          max: 2.0,
-                          divisions: 15, // This creates steps of 0.1
-                          value: currentSpeed,
-                          onChanged: (value) {
-                            _audioService.setSpeed(value);
-                          },
-                          onChangeEnd: (value) {
-                            // Optional: auto-collapse after selecting a speed
-                            Future.delayed(
-                              const Duration(milliseconds: 500),
-                              () {
-                                if (mounted) {
-                                  setState(() {
-                                    _isSpeedControlExpanded = false;
-                                  });
-                                }
-                              },
-                            );
-                          },
+                        Text(
+                          "2.0×",
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: colorScheme.onSurface.withOpacity(0.7),
+                          ),
+                        ),
+                      ],
+                    ),
+                    SliderTheme(
+                      data: SliderThemeData(
+                        trackHeight: 4,
+                        activeTrackColor: colorScheme.primary,
+                        inactiveTrackColor: colorScheme.onSurface.withOpacity(
+                          0.2,
+                        ),
+                        thumbColor: colorScheme.primary,
+                        thumbShape: const RoundSliderThumbShape(
+                          enabledThumbRadius: 8,
+                        ),
+                        overlayColor: colorScheme.primary.withOpacity(0.2),
+                        overlayShape: const RoundSliderOverlayShape(
+                          overlayRadius: 16,
                         ),
                       ),
-                    ],
-                  ),
+                      child: Slider(
+                        min: 0.5,
+                        max: 2.0,
+                        divisions: 15, // This creates steps of 0.1
+                        value: currentSpeed,
+                        onChanged: (value) {
+                          _audioService.setSpeed(value);
+                        },
+                        onChangeEnd: (value) {
+                          // Optional: auto-collapse after selecting a speed
+                          Future.delayed(const Duration(milliseconds: 500), () {
+                            if (mounted) {
+                              setState(() {
+                                _isSpeedControlExpanded = false;
+                              });
+                            }
+                          });
+                        },
+                      ),
+                    ),
+                  ],
                 ),
               ),
               crossFadeState:

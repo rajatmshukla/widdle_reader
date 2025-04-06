@@ -407,7 +407,7 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
 
   @override
   Future<void> rewind() async {
-    final newPosition = _player.position - const Duration(seconds: 15);
+    final newPosition = _player.position - const Duration(seconds: 30);
     await _player.seek(
       newPosition < Duration.zero ? Duration.zero : newPosition,
     );
@@ -415,7 +415,7 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
 
   @override
   Future<void> fastForward() async {
-    final newPosition = _player.position + const Duration(seconds: 15);
+    final newPosition = _player.position + const Duration(seconds: 30);
     final duration = _player.duration;
     await _player.seek(
       duration != null && newPosition > duration ? duration : newPosition,

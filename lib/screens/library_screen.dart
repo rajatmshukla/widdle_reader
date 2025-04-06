@@ -222,7 +222,7 @@ class LibraryScreen extends StatelessWidget {
           icon: Container(
             padding: const EdgeInsets.all(6),
             decoration: BoxDecoration(
-              color: colorScheme.surfaceVariant.withOpacity(0.7),
+              color: colorScheme.surfaceContainerHighest.withOpacity(0.7),
               borderRadius: BorderRadius.circular(12),
             ),
             child: const Icon(Icons.settings),
