@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../models/audiobook.dart';
 import '../services/simple_audio_service.dart';
@@ -104,9 +105,17 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    // Save position before detaching UI
+    _savePositionBeforeDispose();
     // Don't stop playback, just detach UI
     _audioService.detachFromUI();
     super.dispose();
+  }
+
+  // Save position before leaving the screen
+  Future<void> _savePositionBeforeDispose() async {
+    // This ensures the progress bar in AudiobookTile will update when returning to library
+    await _audioService.saveCurrentPosition();
   }
 
   @override
@@ -144,9 +153,14 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
             ),
             child: const Icon(Icons.arrow_back_rounded),
           ),
-          onPressed: () {
-            _audioService.saveCurrentPosition();
-            Navigator.of(context).pop();
+          onPressed: () async {
+            // Save position and wait for it to complete before popping
+            await _audioService.saveCurrentPosition();
+            if (context.mounted) {
+              Navigator.of(
+                context,
+              ).pop(true); // Return with a result to trigger refresh
+            }
           },
         ),
         actions: [
@@ -159,9 +173,15 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
               ),
               child: const Icon(Icons.stop_circle_outlined),
             ),
-            onPressed: () {
-              _audioService.stop();
-              Navigator.of(context).pop();
+            onPressed: () async {
+              // Save position and wait for it to complete before stopping
+              await _audioService.saveCurrentPosition();
+              await _audioService.stop();
+              if (context.mounted) {
+                Navigator.of(
+                  context,
+                ).pop(true); // Return with result to trigger refresh
+              }
             },
           ),
         ],
@@ -266,7 +286,7 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
                   TextButton(
                     child: const Text("Go Back"),
                     onPressed: () {
-                      Navigator.of(context).pop();
+                      Navigator.of(context).pop(true); // Return with result
                     },
                   ),
                 ],
@@ -468,7 +488,11 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
                         selected: isPlaying,
                         selectedTileColor: colorScheme.primaryContainer
                             .withOpacity(0.3),
-                        onTap: () => _audioService.skipToChapter(index),
+                        onTap: () {
+                          _audioService.skipToChapter(index);
+                          // Save position immediately to update progress in library
+                          _audioService.saveCurrentPosition();
+                        },
                       );
                     },
                   );
@@ -523,6 +547,10 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
                     ),
                     onChanged: (value) {
                       _audioService.seek(Duration(milliseconds: value.round()));
+                    },
+                    onChangeEnd: (value) {
+                      // Save position when user manually seeks
+                      _audioService.saveCurrentPosition();
                     },
                   ),
                 ),
@@ -718,7 +746,11 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
                   icon: Icons.skip_previous_rounded,
                   size: 32,
                   color: colorScheme.onSurfaceVariant,
-                  onPressed: () => _audioService.skipToPrevious(),
+                  onPressed: () {
+                    _audioService.skipToPrevious();
+                    // Save position immediately to update progress in library
+                    _audioService.saveCurrentPosition();
+                  },
                 ),
 
                 // Play/Pause button
@@ -748,11 +780,12 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
                         color: colorScheme.onPrimary,
                       ),
                     ),
-                    onPressed:
-                        () =>
-                            isPlaying
-                                ? _audioService.pause()
-                                : _audioService.play(),
+                    onPressed: () {
+                      isPlaying ? _audioService.pause() : _audioService.play();
+
+                      // Save position after play/pause to update progress
+                      _audioService.saveCurrentPosition();
+                    },
                   ),
                 ),
 
@@ -761,7 +794,11 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
                   icon: Icons.skip_next_rounded,
                   size: 32,
                   color: colorScheme.onSurfaceVariant,
-                  onPressed: () => _audioService.skipToNext(),
+                  onPressed: () {
+                    _audioService.skipToNext();
+                    // Save position immediately to update progress in library
+                    _audioService.saveCurrentPosition();
+                  },
                 ),
 
                 // Fast forward button

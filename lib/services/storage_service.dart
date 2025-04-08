@@ -2,9 +2,11 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/foundation.dart'; // For debugPrint
 
 class StorageService {
+  // Key constants for SharedPreferences
   static const _foldersKey = 'audiobook_folders';
   static const _lastPositionPrefix = 'last_pos_';
   static const _customTitlesKey = 'custom_titles';
+  static const _progressCachePrefix = 'progress_cache_';
 
   /// Saves a list of audiobook folder paths to shared preferences
   Future<void> saveAudiobookFolders(List<String> paths) async {
@@ -43,6 +45,10 @@ class StorageService {
       // Store as "chapterId|milliseconds"
       final value = '$chapterId|${position.inMilliseconds}';
       await prefs.setString(key, value);
+
+      // Clear any cached progress percentage to force recalculation
+      await _clearProgressCache(audiobookId);
+
       debugPrint(
         'Saved position for $audiobookId: $chapterId at ${position.inMilliseconds}ms',
       );
@@ -99,6 +105,10 @@ class StorageService {
       final prefs = await SharedPreferences.getInstance();
       final key = '$_lastPositionPrefix$audiobookId';
       await prefs.remove(key);
+
+      // Also clear any cached progress
+      await _clearProgressCache(audiobookId);
+
       debugPrint('Cleared position for $audiobookId');
     } catch (e) {
       debugPrint("Error clearing last position for $audiobookId: $e");
@@ -146,6 +156,64 @@ class StorageService {
     } catch (e) {
       debugPrint("Error loading custom titles: $e");
       return {}; // Return empty map on error
+    }
+  }
+
+  /// Saves a cached progress percentage for quicker loading
+  Future<void> saveProgressCache(
+    String audiobookId,
+    double progressPercentage,
+  ) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final key = '$_progressCachePrefix$audiobookId';
+      await prefs.setDouble(key, progressPercentage);
+      debugPrint(
+        'Cached progress for $audiobookId: ${(progressPercentage * 100).toStringAsFixed(1)}%',
+      );
+    } catch (e) {
+      debugPrint("Error saving progress cache for $audiobookId: $e");
+    }
+  }
+
+  /// Loads a cached progress percentage if available
+  Future<double?> loadProgressCache(String audiobookId) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final key = '$_progressCachePrefix$audiobookId';
+      if (prefs.containsKey(key)) {
+        final progress = prefs.getDouble(key);
+        debugPrint(
+          'Loaded cached progress for $audiobookId: ${(progress ?? 0.0) * 100}%',
+        );
+        return progress;
+      }
+    } catch (e) {
+      debugPrint("Error loading progress cache for $audiobookId: $e");
+    }
+    return null;
+  }
+
+  /// Clears the cached progress percentage for an audiobook
+  Future<void> _clearProgressCache(String audiobookId) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final key = '$_progressCachePrefix$audiobookId';
+      await prefs.remove(key);
+      debugPrint('Cleared cached progress for $audiobookId');
+    } catch (e) {
+      debugPrint("Error clearing progress cache for $audiobookId: $e");
+    }
+  }
+
+  /// Resets all progress data for an audiobook (both position and progress cache)
+  Future<void> resetAudiobookProgress(String audiobookId) async {
+    try {
+      await clearLastPosition(audiobookId);
+      await _clearProgressCache(audiobookId);
+      debugPrint('Reset all progress data for $audiobookId');
+    } catch (e) {
+      debugPrint("Error resetting progress for $audiobookId: $e");
     }
   }
 }

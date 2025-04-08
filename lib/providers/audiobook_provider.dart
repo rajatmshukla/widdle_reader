@@ -75,6 +75,11 @@ class AudiobookProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  // Method to refresh UI without reloading audiobooks
+  void refreshUI() {
+    notifyListeners();
+  }
+
   /// Loads audiobook details from saved folder paths using StorageService.
   Future<void> loadAudiobooks() async {
     _isLoading = true;
@@ -293,6 +298,9 @@ class AudiobookProvider extends ChangeNotifier {
       await _storageService.saveAudiobookFolders(
         _audiobooks.map((b) => b.id).toList(),
       );
+
+      // Also clear any saved progress for this audiobook
+      await _storageService.resetAudiobookProgress(audiobookId);
 
       debugPrint("Successfully removed audiobook: $audiobookId");
       notifyListeners();

@@ -17,7 +17,13 @@ String formatDuration(Duration? d) {
   }
 }
 
+// Format progress percentage
+String formatProgressPercentage(double percentage) {
+  return '${(percentage * 100).round()}%';
+}
+
 // Enhanced cover widget with user's seed color and theme awareness
+// Removed progress indicators from the cover as requested
 Widget buildCoverWidget(
   BuildContext context,
   Audiobook audiobook, {

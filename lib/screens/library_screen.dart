@@ -8,8 +8,44 @@ import '../models/audiobook.dart';
 import '../services/storage_service.dart';
 import '../theme.dart';
 
-class LibraryScreen extends StatelessWidget {
+class LibraryScreen extends StatefulWidget {
   const LibraryScreen({super.key});
+
+  @override
+  State<LibraryScreen> createState() => _LibraryScreenState();
+}
+
+class _LibraryScreenState extends State<LibraryScreen>
+    with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    // Register to detect when app becomes active
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // When app comes to foreground, refresh the library
+    if (state == AppLifecycleState.resumed) {
+      _refreshLibrary();
+    }
+  }
+
+  // Refresh the library without a full reload
+  void _refreshLibrary() {
+    if (mounted) {
+      final provider = Provider.of<AudiobookProvider>(context, listen: false);
+      provider.refreshUI();
+      setState(() {});
+    }
+  }
 
   // Function to check for and load last played position
   Future<void> _loadLastPositionAndNavigate(
@@ -41,7 +77,22 @@ class LibraryScreen extends StatelessWidget {
       );
     }
 
-    Navigator.pushNamed(context, '/player', arguments: arguments);
+    // Use pushNamed and then refresh the UI when returning
+    final result = await Navigator.pushNamed(
+      context,
+      '/player',
+      arguments: arguments,
+    );
+
+    // When returning from player screen, force refresh the library to update progress
+    if (context.mounted) {
+      final provider = Provider.of<AudiobookProvider>(context, listen: false);
+      // Notify listeners to trigger UI update without a full reload
+      provider.refreshUI();
+
+      // Force update all AudiobookTile widgets
+      setState(() {});
+    }
   }
 
   // Show the edit title dialog
@@ -137,6 +188,46 @@ class LibraryScreen extends StatelessWidget {
     }
   }
 
+  // Show the reset progress confirmation dialog
+  Future<void> _showResetProgressDialog(
+    BuildContext context,
+    Audiobook audiobook,
+  ) async {
+    final title = Provider.of<AudiobookProvider>(
+      context,
+      listen: false,
+    ).getTitleForAudiobook(audiobook);
+
+    final result = await showDialog<bool>(
+      context: context,
+      builder:
+          (context) => AlertDialog(
+            title: const Text('Reset Progress'),
+            content: Text(
+              'Are you sure you want to reset your listening progress for "$title"?\n\n'
+              'This will mark the book as unread and remove your last position.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(context, true),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Theme.of(context).colorScheme.primary,
+                ),
+                child: const Text('Reset'),
+              ),
+            ],
+          ),
+    );
+
+    if (result == true && context.mounted) {
+      await _resetAudiobookProgress(context, audiobook);
+    }
+  }
+
   // Show the long-press actions menu
   void _showLongPressMenu(
     BuildContext context,
@@ -144,6 +235,7 @@ class LibraryScreen extends StatelessWidget {
     AudiobookProvider provider,
   ) {
     final title = provider.getTitleForAudiobook(audiobook);
+    final colorScheme = Theme.of(context).colorScheme;
 
     showModalBottomSheet(
       context: context,
@@ -151,6 +243,12 @@ class LibraryScreen extends StatelessWidget {
       builder:
           (context) => Container(
             padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
+            decoration: BoxDecoration(
+              color: colorScheme.surface,
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(24),
+              ),
+            ),
             child: SafeArea(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -168,7 +266,7 @@ class LibraryScreen extends StatelessWidget {
                   ListTile(
                     leading: Icon(
                       Icons.edit_rounded,
-                      color: Theme.of(context).colorScheme.primary,
+                      color: colorScheme.primary,
                     ),
                     title: const Text('Edit Title'),
                     onTap: () {
@@ -178,10 +276,28 @@ class LibraryScreen extends StatelessWidget {
                   ),
                   ListTile(
                     leading: Icon(
+                      Icons.restart_alt_rounded,
+                      color: colorScheme.secondary,
+                    ),
+                    title: const Text('Reset Progress'),
+                    subtitle: const Text(
+                      'Mark as unread and remove current position',
+                    ),
+                    onTap: () {
+                      Navigator.pop(context);
+                      _showResetProgressDialog(context, audiobook);
+                    },
+                  ),
+                  const Divider(),
+                  ListTile(
+                    leading: Icon(
                       Icons.delete_outline_rounded,
-                      color: Theme.of(context).colorScheme.error,
+                      color: colorScheme.error,
                     ),
                     title: const Text('Remove from Library'),
+                    subtitle: const Text(
+                      'Files will not be deleted from your device',
+                    ),
                     onTap: () {
                       Navigator.pop(context);
                       _showDeleteConfirmationDialog(
@@ -197,6 +313,57 @@ class LibraryScreen extends StatelessWidget {
             ),
           ),
     );
+  }
+
+  // Reset audiobook progress
+  Future<void> _resetAudiobookProgress(
+    BuildContext context,
+    Audiobook audiobook,
+  ) async {
+    try {
+      final storageService = StorageService();
+
+      // Use the enhanced reset method that clears both position and cached progress
+      await storageService.resetAudiobookProgress(audiobook.id);
+
+      // Force refresh the library to update all tiles
+      if (context.mounted) {
+        final provider = Provider.of<AudiobookProvider>(context, listen: false);
+        provider.refreshUI(); // Trigger UI refresh
+
+        // Force update widgets
+        setState(() {});
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('Progress reset successfully'),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+            action: SnackBarAction(
+              label: 'REFRESH',
+              onPressed: () {
+                provider.loadAudiobooks(); // Full reload if needed
+              },
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error resetting progress: $e'),
+            behavior: SnackBarBehavior.floating,
+            backgroundColor: Theme.of(context).colorScheme.error,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+          ),
+        );
+      }
+    }
   }
 
   @override
@@ -228,12 +395,13 @@ class LibraryScreen extends StatelessWidget {
             child: const Icon(Icons.settings),
           ),
           tooltip: "Settings",
-          onPressed: () {
-            Navigator.pushNamed(context, '/settings');
+          onPressed: () async {
+            await Navigator.pushNamed(context, '/settings');
+            // Refresh when returning from settings
+            _refreshLibrary();
           },
         ),
         actions: [
-          // Theme toggle button removed
           // Refresh button
           AnimatedSwitcher(
             duration: const Duration(milliseconds: 300),
@@ -282,7 +450,7 @@ class LibraryScreen extends StatelessWidget {
                           CircularProgressIndicator(color: colorScheme.primary),
                           const SizedBox(height: 16),
                           Text(
-                            "Loading...",
+                            "Loading Library...",
                             style: TextStyle(
                               fontSize: 16,
                               color: colorScheme.onSurface,
@@ -405,6 +573,9 @@ class LibraryScreen extends StatelessWidget {
             onTap: () => _loadLastPositionAndNavigate(context, audiobook),
             onLongPress: () => _showLongPressMenu(context, audiobook, provider),
             child: AudiobookTile(
+              key: ValueKey(
+                '${audiobook.id}-${DateTime.now().millisecondsSinceEpoch}',
+              ), // Force rebuild on navigation
               audiobook: audiobook,
               customTitle: provider.getTitleForAudiobook(audiobook),
             ),
