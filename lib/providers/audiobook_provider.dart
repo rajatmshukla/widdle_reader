@@ -18,6 +18,15 @@ class AudiobookProvider extends ChangeNotifier {
   String? _errorMessage;
   bool _permissionPermanentlyDenied = false;
 
+  // Map to store the last played timestamps for each audiobook
+  Map<String, int> _lastPlayedTimestamps = {};
+
+  // Map to store which books are completed
+  Map<String, bool> _completedBooks = {};
+
+  // Map to store which books are new (never played)
+  Map<String, bool> _newBooks = {};
+
   // New property for custom titles
   final Map<String, String> _customTitles = {};
 
@@ -26,6 +35,11 @@ class AudiobookProvider extends ChangeNotifier {
   bool get isLoading => _isLoading;
   String? get errorMessage => _errorMessage;
   bool get permissionPermanentlyDenied => _permissionPermanentlyDenied;
+
+  // New getters for book state
+  bool isNewBook(String audiobookId) => _newBooks[audiobookId] ?? false;
+  bool isCompletedBook(String audiobookId) =>
+      _completedBooks[audiobookId] ?? false;
 
   // Constructor: Load audiobooks when the provider is created
   AudiobookProvider() {
@@ -80,6 +94,129 @@ class AudiobookProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Loads the last played timestamps for all audiobooks
+  Future<void> _loadLastPlayedTimestamps() async {
+    _lastPlayedTimestamps.clear();
+    _completedBooks.clear();
+    _newBooks.clear();
+
+    for (final book in _audiobooks) {
+      // Get last played timestamp
+      final timestamp = await _storageService.getLastPlayedTimestamp(book.id);
+      _lastPlayedTimestamps[book.id] = timestamp;
+
+      // Check if book is completed
+      final isCompleted = await _storageService.isCompleted(book.id);
+      _completedBooks[book.id] = isCompleted;
+
+      // Calculate progress percentage to confirm completion status
+      final progress = await _storageService.loadProgressCache(book.id) ?? 0.0;
+      if (progress >= 0.99) {
+        _completedBooks[book.id] = true;
+        await _storageService.markAsCompleted(book.id);
+      }
+
+      // If timestamp is 0, the book has never been played (it's new)
+      _newBooks[book.id] = timestamp == 0;
+    }
+
+    // Sort audiobooks based on completion status and last played time
+    _sortAudiobooksByStatus();
+  }
+
+  /// Sorts audiobooks with completed books at the bottom and others by recently played
+  void _sortAudiobooksByStatus() {
+    _audiobooks.sort((a, b) {
+      final aCompleted = _completedBooks[a.id] ?? false;
+      final bCompleted = _completedBooks[b.id] ?? false;
+
+      // If one book is completed and the other isn't, the completed one goes to the bottom
+      if (aCompleted && !bCompleted) {
+        return 1; // a (completed) goes after b
+      } else if (!aCompleted && bCompleted) {
+        return -1; // a (not completed) goes before b
+      }
+
+      // If both are completed or both are not completed, sort by recency
+      final aTimestamp = _lastPlayedTimestamps[a.id] ?? 0;
+      final bTimestamp = _lastPlayedTimestamps[b.id] ?? 0;
+
+      // Most recent first (descending order)
+      return bTimestamp.compareTo(aTimestamp);
+    });
+  }
+
+  /// Records when a book is played, updates its timestamp and moves it accordingly in the list
+  Future<void> recordBookPlayed(String audiobookId) async {
+    // Update timestamp in storage
+    await _storageService.updateLastPlayedTimestamp(audiobookId);
+
+    // Update in-memory timestamp
+    _lastPlayedTimestamps[audiobookId] = DateTime.now().millisecondsSinceEpoch;
+
+    // Mark as not new anymore
+    _newBooks[audiobookId] = false;
+
+    // Check if the book is completed (>99% progress)
+    final progress =
+        await _storageService.loadProgressCache(audiobookId) ?? 0.0;
+    if (progress >= 0.99) {
+      _completedBooks[audiobookId] = true;
+      await _storageService.markAsCompleted(audiobookId);
+    } else {
+      _completedBooks[audiobookId] = false;
+      await _storageService.unmarkAsCompleted(audiobookId);
+    }
+
+    // Re-sort to ensure proper positioning
+    _sortAudiobooksByStatus();
+
+    // Notify listeners to refresh UI
+    notifyListeners();
+  }
+
+  /// Marks a book as completed without playing it (for testing or manual completion)
+  Future<void> markBookAsCompleted(String audiobookId) async {
+    _completedBooks[audiobookId] = true;
+    await _storageService.markAsCompleted(audiobookId);
+    await _storageService.saveProgressCache(audiobookId, 1.0); // 100% progress
+
+    // Re-sort to move the book to the bottom
+    _sortAudiobooksByStatus();
+
+    // Notify listeners to refresh UI
+    notifyListeners();
+  }
+
+  /// Updates completion status based on progress and reorder books accordingly
+  Future<void> updateCompletionStatus(String audiobookId) async {
+    // Get current progress percentage
+    final progress =
+        await _storageService.loadProgressCache(audiobookId) ?? 0.0;
+
+    // Consider book completed if progress is ≥99%
+    if (progress >= 0.99) {
+      if (!(_completedBooks[audiobookId] ?? false)) {
+        _completedBooks[audiobookId] = true;
+        await _storageService.markAsCompleted(audiobookId);
+
+        // Re-sort books to move this one to the bottom
+        _sortAudiobooksByStatus();
+        notifyListeners();
+      }
+    } else {
+      // If progress is <99% but book was marked as completed before, unmark it
+      if (_completedBooks[audiobookId] ?? false) {
+        _completedBooks[audiobookId] = false;
+        await _storageService.unmarkAsCompleted(audiobookId);
+
+        // Re-sort books
+        _sortAudiobooksByStatus();
+        notifyListeners();
+      }
+    }
+  }
+
   /// Loads audiobook details from saved folder paths using StorageService.
   Future<void> loadAudiobooks() async {
     _isLoading = true;
@@ -123,13 +260,13 @@ class AudiobookProvider extends ChangeNotifier {
           // Optionally add placeholder/error state for this specific book
         }
       }
-      // Sort the loaded books alphabetically.
-      loadedBooks.sort(
-        (a, b) => getTitleForAudiobook(
-          a,
-        ).toLowerCase().compareTo(getTitleForAudiobook(b).toLowerCase()),
-      );
-      _audiobooks = loadedBooks; // Update the internal list.
+
+      // Update the internal list.
+      _audiobooks = loadedBooks;
+
+      // Load timestamps and sort with completed books at bottom
+      await _loadLastPlayedTimestamps();
+
       debugPrint(
         "Finished loading ${loadedBooks.length} audiobooks from storage.",
       );
@@ -235,13 +372,16 @@ class AudiobookProvider extends ChangeNotifier {
               "No compatible chapters found in: $selectedDirectoryPath",
             );
           } else {
+            // Mark the new book as "new" (never played)
+            _newBooks[newBook.id] = true;
+            _lastPlayedTimestamps[newBook.id] = 0; // Never played timestamp
+            _completedBooks[newBook.id] = false; // Not completed
+
             _audiobooks.add(newBook); // Add the new book to the list.
-            // Sort the library alphabetically after adding.
-            _audiobooks.sort(
-              (a, b) => getTitleForAudiobook(
-                a,
-              ).toLowerCase().compareTo(getTitleForAudiobook(b).toLowerCase()),
-            );
+
+            // Sort the library to ensure proper order (completed at bottom, etc.)
+            _sortAudiobooksByStatus();
+
             // Save the updated list of folder paths (all non-nullable Strings).
             // The map creates a new list of non-nullable strings.
             await _storageService.saveAudiobookFolders(
@@ -293,6 +433,11 @@ class AudiobookProvider extends ChangeNotifier {
       // Remove any custom title for this audiobook
       _customTitles.remove(audiobookId);
       await _saveCustomTitles();
+
+      // Remove from timestamps and states
+      _lastPlayedTimestamps.remove(audiobookId);
+      _newBooks.remove(audiobookId);
+      _completedBooks.remove(audiobookId);
 
       // Save the updated list of folder paths
       await _storageService.saveAudiobookFolders(

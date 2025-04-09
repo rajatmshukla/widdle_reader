@@ -1,5 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart'; // Add this import for Provider
+import '../providers/audiobook_provider.dart'; // Add this import for AudiobookProvider
 import '../models/audiobook.dart';
 import '../services/simple_audio_service.dart';
 import '../utils/helpers.dart';
@@ -48,6 +50,15 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
 
       if (_audiobook == null) {
         throw Exception("Audiobook data missing");
+      }
+
+      // Get the AudiobookProvider
+      if (mounted) {
+        final provider = Provider.of<AudiobookProvider>(context, listen: false);
+
+        // Record that the book is being played (updates timestamp and sort order)
+        // This ensures the book moves to the top of the library when returning
+        await provider.recordBookPlayed(_audiobook!.id);
       }
 
       // Find the chapter index from the ID
@@ -105,8 +116,9 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    // Save position before detaching UI
+    // Save position before detaching UI and update timestamp
     _savePositionBeforeDispose();
+
     // Don't stop playback, just detach UI
     _audioService.detachFromUI();
     super.dispose();
@@ -114,8 +126,18 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
 
   // Save position before leaving the screen
   Future<void> _savePositionBeforeDispose() async {
-    // This ensures the progress bar in AudiobookTile will update when returning to library
-    await _audioService.saveCurrentPosition();
+    try {
+      // Save position to update progress in library
+      await _audioService.saveCurrentPosition();
+
+      // If the audiobook is loaded, update its last played timestamp
+      if (_audiobook != null && mounted) {
+        final provider = Provider.of<AudiobookProvider>(context, listen: false);
+        await provider.recordBookPlayed(_audiobook!.id);
+      }
+    } catch (e) {
+      debugPrint("Error in savePositionBeforeDispose: $e");
+    }
   }
 
   @override
@@ -126,6 +148,15 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
       case AppLifecycleState.detached:
         // App going to background or being killed
         _audioService.saveCurrentPosition();
+
+        // Also update the last played timestamp
+        if (_audiobook != null && mounted) {
+          final provider = Provider.of<AudiobookProvider>(
+            context,
+            listen: false,
+          );
+          provider.recordBookPlayed(_audiobook!.id);
+        }
         break;
       case AppLifecycleState.resumed:
         // App coming back to foreground
@@ -148,7 +179,9 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
           icon: Container(
             padding: const EdgeInsets.all(6),
             decoration: BoxDecoration(
-              color: colorScheme.surfaceContainerHighest.withOpacity(0.7),
+              color: colorScheme.surfaceContainerHighest.withAlpha(
+                (0.7 * 255).round(),
+              ), // Fix withOpacity deprecation
               borderRadius: BorderRadius.circular(12),
             ),
             child: const Icon(Icons.arrow_back_rounded),
@@ -156,7 +189,7 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
           onPressed: () async {
             // Save position and wait for it to complete before popping
             await _audioService.saveCurrentPosition();
-            if (context.mounted) {
+            if (mounted) {
               Navigator.of(
                 context,
               ).pop(true); // Return with a result to trigger refresh
@@ -168,7 +201,9 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
             icon: Container(
               padding: const EdgeInsets.all(6),
               decoration: BoxDecoration(
-                color: colorScheme.surfaceContainerHighest.withOpacity(0.7),
+                color: colorScheme.surfaceContainerHighest.withAlpha(
+                  (0.7 * 255).round(),
+                ), // Fix withOpacity deprecation
                 borderRadius: BorderRadius.circular(12),
               ),
               child: const Icon(Icons.stop_circle_outlined),
@@ -177,7 +212,7 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
               // Save position and wait for it to complete before stopping
               await _audioService.saveCurrentPosition();
               await _audioService.stop();
-              if (context.mounted) {
+              if (mounted) {
                 Navigator.of(
                   context,
                 ).pop(true); // Return with result to trigger refresh
@@ -249,7 +284,9 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
                   Container(
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
-                      color: colorScheme.errorContainer.withOpacity(0.2),
+                      color: colorScheme.errorContainer.withAlpha(
+                        (0.2 * 255).round(),
+                      ), // Fix withOpacity deprecation
                       borderRadius: BorderRadius.circular(50),
                     ),
                     child: Icon(
@@ -323,7 +360,9 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
                   borderRadius: BorderRadius.circular(20),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.3),
+                      color: Colors.black.withAlpha(
+                        (0.3 * 255).round(),
+                      ), // Fix withOpacity deprecation
                       blurRadius: 15,
                       offset: const Offset(0, 8),
                     ),
@@ -395,7 +434,9 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
               style: TextStyle(
                 fontSize: 14, // Smaller subtitle
                 fontWeight: FontWeight.w400,
-                color: colorScheme.onSurface.withOpacity(0.7),
+                color: colorScheme.onSurface.withAlpha(
+                  (0.7 * 255).round(),
+                ), // Fix withOpacity deprecation
                 letterSpacing: 0.2,
               ),
               textAlign: TextAlign.center,
@@ -451,7 +492,9 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
                                 isPlaying
                                     ? colorScheme.primary
                                     : colorScheme.surfaceContainerHighest
-                                        .withOpacity(0.6),
+                                        .withAlpha(
+                                          (0.6 * 255).round(),
+                                        ), // Fix withOpacity deprecation
                             shape: BoxShape.circle,
                           ),
                           child: Center(
@@ -487,7 +530,9 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
                         ),
                         selected: isPlaying,
                         selectedTileColor: colorScheme.primaryContainer
-                            .withOpacity(0.3),
+                            .withAlpha(
+                              (0.3 * 255).round(),
+                            ), // Fix withOpacity deprecation
                         onTap: () {
                           _audioService.skipToChapter(index);
                           // Save position immediately to update progress in library
@@ -521,14 +566,18 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
                   data: SliderThemeData(
                     trackHeight: 4,
                     activeTrackColor: colorScheme.primary,
-                    inactiveTrackColor: colorScheme.onSurface.withOpacity(0.2),
+                    inactiveTrackColor: colorScheme.onSurface.withAlpha(
+                      (0.2 * 255).round(),
+                    ), // Fix withOpacity deprecation
                     thumbColor: colorScheme.primary,
                     thumbShape: RoundSliderThumbShape(
                       enabledThumbRadius: 8,
                       elevation: 4,
                       pressedElevation: 8,
                     ),
-                    overlayColor: colorScheme.primary.withOpacity(0.2),
+                    overlayColor: colorScheme.primary.withAlpha(
+                      (0.2 * 255).round(),
+                    ), // Fix withOpacity deprecation
                     overlayShape: const RoundSliderOverlayShape(
                       overlayRadius: 16,
                     ),
@@ -563,14 +612,18 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
                         formatDuration(position),
                         style: TextStyle(
                           fontSize: 12,
-                          color: colorScheme.onSurface.withOpacity(0.7),
+                          color: colorScheme.onSurface.withAlpha(
+                            (0.7 * 255).round(),
+                          ), // Fix withOpacity deprecation
                         ),
                       ),
                       Text(
                         formatDuration(duration),
                         style: TextStyle(
                           fontSize: 12,
-                          color: colorScheme.onSurface.withOpacity(0.7),
+                          color: colorScheme.onSurface.withAlpha(
+                            (0.7 * 255).round(),
+                          ), // Fix withOpacity deprecation
                         ),
                       ),
                     ],
@@ -609,7 +662,9 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
                   borderRadius: BorderRadius.circular(20),
                   boxShadow: [
                     BoxShadow(
-                      color: colorScheme.primary.withOpacity(0.3),
+                      color: colorScheme.primary.withAlpha(
+                        (0.3 * 255).round(),
+                      ), // Fix withOpacity deprecation
                       blurRadius: 8,
                       offset: const Offset(0, 2),
                     ),
@@ -652,14 +707,18 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
                           "0.5×",
                           style: TextStyle(
                             fontSize: 12,
-                            color: colorScheme.onSurface.withOpacity(0.7),
+                            color: colorScheme.onSurface.withAlpha(
+                              (0.7 * 255).round(),
+                            ), // Fix withOpacity deprecation
                           ),
                         ),
                         Text(
                           "2.0×",
                           style: TextStyle(
                             fontSize: 12,
-                            color: colorScheme.onSurface.withOpacity(0.7),
+                            color: colorScheme.onSurface.withAlpha(
+                              (0.7 * 255).round(),
+                            ), // Fix withOpacity deprecation
                           ),
                         ),
                       ],
@@ -668,14 +727,16 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
                       data: SliderThemeData(
                         trackHeight: 4,
                         activeTrackColor: colorScheme.primary,
-                        inactiveTrackColor: colorScheme.onSurface.withOpacity(
-                          0.2,
-                        ),
+                        inactiveTrackColor: colorScheme.onSurface.withAlpha(
+                          (0.2 * 255).round(),
+                        ), // Fix withOpacity deprecation
                         thumbColor: colorScheme.primary,
                         thumbShape: const RoundSliderThumbShape(
                           enabledThumbRadius: 8,
                         ),
-                        overlayColor: colorScheme.primary.withOpacity(0.2),
+                        overlayColor: colorScheme.primary.withAlpha(
+                          (0.2 * 255).round(),
+                        ), // Fix withOpacity deprecation
                         overlayShape: const RoundSliderOverlayShape(
                           overlayRadius: 16,
                         ),
@@ -727,7 +788,9 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
             borderRadius: BorderRadius.circular(24),
           ),
           margin: const EdgeInsets.symmetric(horizontal: 16),
-          color: colorScheme.surfaceContainerHighest.withOpacity(0.7),
+          color: colorScheme.surfaceContainerHighest.withAlpha(
+            (0.7 * 255).round(),
+          ), // Fix withOpacity deprecation
           child: Padding(
             padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
             child: Row(
@@ -762,7 +825,9 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
                     shape: BoxShape.circle,
                     boxShadow: [
                       BoxShadow(
-                        color: colorScheme.primary.withOpacity(0.3),
+                        color: colorScheme.primary.withAlpha(
+                          (0.3 * 255).round(),
+                        ), // Fix withOpacity deprecation
                         blurRadius: 8,
                         offset: const Offset(0, 4),
                       ),

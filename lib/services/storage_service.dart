@@ -7,6 +7,10 @@ class StorageService {
   static const _lastPositionPrefix = 'last_pos_';
   static const _customTitlesKey = 'custom_titles';
   static const _progressCachePrefix = 'progress_cache_';
+  static const _lastPlayedTimestampPrefix =
+      'last_played_'; // New key for timestamps
+  static const _completedBooksKey =
+      'completed_books'; // New key for completed books
 
   /// Saves a list of audiobook folder paths to shared preferences
   Future<void> saveAudiobookFolders(List<String> paths) async {
@@ -48,6 +52,9 @@ class StorageService {
 
       // Clear any cached progress percentage to force recalculation
       await _clearProgressCache(audiobookId);
+
+      // Update last played timestamp whenever position is saved
+      await updateLastPlayedTimestamp(audiobookId);
 
       debugPrint(
         'Saved position for $audiobookId: $chapterId at ${position.inMilliseconds}ms',
@@ -97,6 +104,77 @@ class StorageService {
       debugPrint("Error loading last position for $audiobookId: $e");
     }
     return null; // Return null if not found, invalid, or error
+  }
+
+  /// Updates the last played timestamp to current time
+  Future<void> updateLastPlayedTimestamp(String audiobookId) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final key = '$_lastPlayedTimestampPrefix$audiobookId';
+      final now = DateTime.now().millisecondsSinceEpoch;
+      await prefs.setInt(key, now);
+      debugPrint('Updated last played timestamp for $audiobookId: $now');
+    } catch (e) {
+      debugPrint("Error saving last played timestamp for $audiobookId: $e");
+    }
+  }
+
+  /// Gets the last played timestamp for an audiobook
+  /// Returns 0 if the book has never been played
+  Future<int> getLastPlayedTimestamp(String audiobookId) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final key = '$_lastPlayedTimestampPrefix$audiobookId';
+      final timestamp = prefs.getInt(key) ?? 0;
+      return timestamp;
+    } catch (e) {
+      debugPrint("Error getting last played timestamp for $audiobookId: $e");
+      return 0; // Return 0 as default (never played)
+    }
+  }
+
+  /// Marks an audiobook as completed
+  Future<void> markAsCompleted(String audiobookId) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final completedBooks = prefs.getStringList(_completedBooksKey) ?? [];
+
+      if (!completedBooks.contains(audiobookId)) {
+        completedBooks.add(audiobookId);
+        await prefs.setStringList(_completedBooksKey, completedBooks);
+        debugPrint('Marked $audiobookId as completed');
+      }
+    } catch (e) {
+      debugPrint("Error marking audiobook as completed: $e");
+    }
+  }
+
+  /// Removes an audiobook from the completed list
+  Future<void> unmarkAsCompleted(String audiobookId) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final completedBooks = prefs.getStringList(_completedBooksKey) ?? [];
+
+      if (completedBooks.contains(audiobookId)) {
+        completedBooks.remove(audiobookId);
+        await prefs.setStringList(_completedBooksKey, completedBooks);
+        debugPrint('Unmarked $audiobookId as completed');
+      }
+    } catch (e) {
+      debugPrint("Error unmarking audiobook as completed: $e");
+    }
+  }
+
+  /// Checks if an audiobook is marked as completed
+  Future<bool> isCompleted(String audiobookId) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final completedBooks = prefs.getStringList(_completedBooksKey) ?? [];
+      return completedBooks.contains(audiobookId);
+    } catch (e) {
+      debugPrint("Error checking if audiobook is completed: $e");
+      return false;
+    }
   }
 
   /// Clears the saved playback position for a specific audiobook.
@@ -171,6 +249,14 @@ class StorageService {
       debugPrint(
         'Cached progress for $audiobookId: ${(progressPercentage * 100).toStringAsFixed(1)}%',
       );
+
+      // If progress is 100%, mark book as completed
+      if (progressPercentage >= 0.99) {
+        await markAsCompleted(audiobookId);
+      } else if (progressPercentage > 0) {
+        // If book has progress but not completed, ensure it's not in completed list
+        await unmarkAsCompleted(audiobookId);
+      }
     } catch (e) {
       debugPrint("Error saving progress cache for $audiobookId: $e");
     }
@@ -211,6 +297,7 @@ class StorageService {
     try {
       await clearLastPosition(audiobookId);
       await _clearProgressCache(audiobookId);
+      await unmarkAsCompleted(audiobookId);
       debugPrint('Reset all progress data for $audiobookId');
     } catch (e) {
       debugPrint("Error resetting progress for $audiobookId: $e");

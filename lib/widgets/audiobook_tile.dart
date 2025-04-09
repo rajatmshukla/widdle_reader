@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../models/audiobook.dart';
 import '../utils/helpers.dart';
 import '../services/storage_service.dart';
+import '../providers/audiobook_provider.dart';
 
 class AudiobookTile extends StatefulWidget {
   final Audiobook audiobook;
@@ -71,6 +73,10 @@ class _AudiobookTileState extends State<AudiobookTile>
   }
 
   // Load the listening progress from storage
+  // This is a partial update to the AudiobookTile
+  // Only showing the modified parts for the completion badge logic
+
+  // Load the listening progress from storage
   Future<void> _loadListeningProgress() async {
     if (!mounted) return;
 
@@ -124,6 +130,21 @@ class _AudiobookTileState extends State<AudiobookTile>
               _progressPercentage = clampedProgress;
               _isLoadingProgress = false;
             });
+
+            // Store the progress in the cache to use for marking completed books
+            await _storageService.saveProgressCache(
+              widget.audiobook.id,
+              clampedProgress,
+            );
+
+            // If progress is ≥99%, update the book completion status in the provider
+            if (clampedProgress >= 0.99) {
+              final provider = Provider.of<AudiobookProvider>(
+                context,
+                listen: false,
+              );
+              await provider.updateCompletionStatus(widget.audiobook.id);
+            }
           }
         } else {
           if (mounted) {
@@ -158,6 +179,11 @@ class _AudiobookTileState extends State<AudiobookTile>
     final colorScheme = Theme.of(context).colorScheme;
     // Use custom title if provided, otherwise use the original title
     final displayTitle = widget.customTitle ?? widget.audiobook.title;
+
+    // Get the AudiobookProvider to check for new/completed status
+    final audiobookProvider = Provider.of<AudiobookProvider>(context);
+    final isNew = audiobookProvider.isNewBook(widget.audiobook.id);
+    final isCompleted = audiobookProvider.isCompletedBook(widget.audiobook.id);
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -378,36 +404,91 @@ class _AudiobookTileState extends State<AudiobookTile>
               ),
             ),
 
-            // If there's progress, show a small indicator in the top-right corner
-            if (_progressPercentage > 0.01 && !_isLoadingProgress)
-              Positioned(
-                top: 0,
-                right: 0,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 6,
-                    vertical: 3,
-                  ),
-                  decoration: BoxDecoration(
-                    color: colorScheme.primary,
-                    borderRadius: const BorderRadius.only(
-                      bottomLeft: Radius.circular(8),
-                    ),
-                  ),
-                  child: Text(
-                    'IN PROGRESS',
-                    style: TextStyle(
-                      color: colorScheme.onPrimary,
-                      fontSize: 8,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 0.5,
-                    ),
-                  ),
-                ),
+            // Top-right corner status indicator (NEW, IN PROGRESS, or COMPLETED)
+            Positioned(
+              top: 0,
+              right: 0,
+              child: _buildStatusBadge(
+                colorScheme,
+                isNew: isNew,
+                isCompleted: isCompleted,
+                hasProgress: _progressPercentage > 0.01 && !_isLoadingProgress,
               ),
+            ),
           ],
         ),
       ),
     );
+  }
+
+  // Build the status badge based on book state
+  Widget _buildStatusBadge(
+    ColorScheme colorScheme, {
+    required bool isNew,
+    required bool isCompleted,
+    required bool hasProgress,
+  }) {
+    // If the book is completed (based on provider state or local progress), show COMPLETED badge
+    if (isCompleted || _progressPercentage >= 0.99) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+        decoration: BoxDecoration(
+          color: Colors.green[700],
+          borderRadius: const BorderRadius.only(bottomLeft: Radius.circular(8)),
+        ),
+        child: const Text(
+          'COMPLETED',
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 8,
+            fontWeight: FontWeight.bold,
+            letterSpacing: 0.5,
+          ),
+        ),
+      );
+    }
+
+    // If the book is new, show a NEW badge
+    if (isNew) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+        decoration: BoxDecoration(
+          color: Colors.yellow[800],
+          borderRadius: const BorderRadius.only(bottomLeft: Radius.circular(8)),
+        ),
+        child: const Text(
+          'NEW',
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 8,
+            fontWeight: FontWeight.bold,
+            letterSpacing: 0.5,
+          ),
+        ),
+      );
+    }
+
+    // If the book has progress but is not completed, show an IN PROGRESS badge
+    if (hasProgress) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+        decoration: BoxDecoration(
+          color: colorScheme.primary,
+          borderRadius: const BorderRadius.only(bottomLeft: Radius.circular(8)),
+        ),
+        child: const Text(
+          'IN PROGRESS',
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 8,
+            fontWeight: FontWeight.bold,
+            letterSpacing: 0.5,
+          ),
+        ),
+      );
+    }
+
+    // If no special status, return an empty container
+    return const SizedBox.shrink();
   }
 }

@@ -63,6 +63,12 @@ class _LibraryScreenState extends State<LibraryScreen>
     // Check mounted state AFTER async gap
     if (!context.mounted) return;
 
+    // Get the provider to record that this book was played
+    final provider = Provider.of<AudiobookProvider>(context, listen: false);
+
+    // Record that this book is being played (will update timestamps and sort order)
+    await provider.recordBookPlayed(audiobook.id);
+
     // Prepare arguments for the player screen
     Map<String, dynamic> arguments = {'audiobook': audiobook};
     if (lastPositionData != null) {
