@@ -75,6 +75,9 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   final _storageService = StorageService();
   String? _currentAudiobookId;
 
+  // Add this flag to track if pause was user-initiated
+  bool _userPaused = false;
+
   // --- Stream Controllers & Overrides ---
   // Override the field directly to match BaseAudioHandler
   @override
@@ -124,15 +127,34 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
     }
   }
 
+  // Method to safely stop current playback
+  Future<void> stopCurrentPlayback() async {
+    // Only handle cleanup if we're actually playing something
+    if (_currentAudiobookId != null && _playlist.length > 0) {
+      // Save position
+      await _saveCurrentPosition(isFinishing: true);
+
+      // Pause playback first (don't stop completely)
+      await _player.pause();
+
+      // Set user paused to true to prevent auto-resume
+      _userPaused = true;
+    }
+  }
+
   // --- Playlist Management ---
   Future<void> loadPlaylist(
     Audiobook audiobook, {
     String? startChapterId,
     Duration? startPosition,
+    bool autoPlay = false, // Add autoPlay parameter, default to false
   }) async {
     debugPrint(
       "loadPlaylist: Loading audiobook '${audiobook.title}' with ${audiobook.chapters.length} chapters",
     );
+
+    // Stop any current playback before loading new content
+    await stopCurrentPlayback();
 
     _currentAudiobookId = audiobook.id;
     final mediaItems = audiobook.chapters.map((c) => c.toMediaItem()).toList();
@@ -201,6 +223,14 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
             debugPrint("Updated duration for current item: $d");
           }
         });
+      }
+
+      // Only auto-play if explicitly requested
+      if (autoPlay) {
+        await play();
+      } else {
+        // Make sure we're paused if not auto-playing
+        _userPaused = true;
       }
     } catch (e, stackTrace) {
       debugPrint("ERROR in loadPlaylist: $e");
@@ -349,10 +379,16 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
 
   // --- Playback Control Overrides ---
   @override
-  Future<void> play() => _player.play();
+  Future<void> play() async {
+    _userPaused = false; // User explicitly requested play
+    return _player.play();
+  }
 
   @override
-  Future<void> pause() => _player.pause();
+  Future<void> pause() async {
+    _userPaused = true; // User explicitly requested pause
+    return _player.pause();
+  }
 
   @override
   Future<void> seek(Duration position) => _player.seek(position);
@@ -436,6 +472,7 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
           final audiobook = extras['audiobook'] as Audiobook?;
           final startChapterId = extras['startChapterId'] as String?;
           final startPosition = extras['startPosition'] as Duration?;
+          final autoPlay = extras['autoPlay'] as bool? ?? false;
 
           if (audiobook != null) {
             debugPrint("Loading playlist for audiobook: ${audiobook.title}");
@@ -443,6 +480,7 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
               audiobook,
               startChapterId: startChapterId,
               startPosition: startPosition,
+              autoPlay: autoPlay,
             );
             return true;
           } else {
@@ -521,16 +559,22 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   @override
   Future<void> onAudioFocusGained(dynamic interruption) async {
     debugPrint("Audio focus gained");
-    // Resume playback if it was playing before
-    if (playbackState.value.playing) {
+    // DO NOT automatically resume playback when focus is gained
+    // Only resume if it was system-paused (not user-paused)
+    if (playbackState.value.playing || !_userPaused) {
       await play();
+      debugPrint("Resuming playback after system interruption");
+    } else {
+      debugPrint("Not resuming playback - user had explicitly paused");
     }
   }
 
   @override
   Future<void> onAudioFocusLost(dynamic interruption) async {
     debugPrint("Audio focus lost");
-    // Pause when focus is lost
+    // Remember if we were playing before losing focus
+    _userPaused = !playbackState.value.playing;
+    // Always pause when focus is lost
     await pause();
   }
 

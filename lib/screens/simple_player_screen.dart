@@ -70,11 +70,12 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
         if (startChapterIndex == -1) startChapterIndex = 0;
       }
 
-      // Load the audiobook
+      // Load the audiobook but DO NOT auto-play
       await _audioService.loadAudiobook(
         _audiobook!,
         startChapter: startChapterIndex,
         startPosition: startPosition,
+        autoPlay: false, // Explicitly set to false
       );
 
       // Enable notifications for this playback session

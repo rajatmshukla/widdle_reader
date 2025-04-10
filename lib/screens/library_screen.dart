@@ -70,7 +70,11 @@ class _LibraryScreenState extends State<LibraryScreen>
     await provider.recordBookPlayed(audiobook.id);
 
     // Prepare arguments for the player screen
-    Map<String, dynamic> arguments = {'audiobook': audiobook};
+    Map<String, dynamic> arguments = {
+      'audiobook': audiobook,
+      'autoPlay': false, // Explicitly set autoPlay to false
+    };
+
     if (lastPositionData != null) {
       arguments['startChapterId'] = lastPositionData['chapterId'];
       arguments['startPosition'] = lastPositionData['position'];

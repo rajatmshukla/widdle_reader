@@ -35,6 +35,9 @@ class SimpleAudioService {
   Timer? _autoSaveTimer;
   final StorageService _storageService = StorageService();
 
+  // Add this flag to track user intent
+  bool _userPaused = false;
+
   // Stream getters
   Stream<Duration> get positionStream => _positionSubject.stream;
   Stream<Duration> get durationStream => _durationSubject.stream;
@@ -101,17 +104,24 @@ class SimpleAudioService {
             // Lower volume temporarily
             _player.setVolume(0.5);
           } else {
+            // Store current state before pausing
+            bool wasPlaying = _player.playing;
             // Pause playback
             pause();
+            // Remember if we were playing before the interruption
+            _userPaused = !wasPlaying;
           }
         } else {
           // Interruption ended
           if (event.type == AudioInterruptionType.duck) {
             // Restore volume
             _player.setVolume(1.0);
-          } else if (_notificationsEnabled) {
-            // Resume playback if notifications are enabled
-            play();
+          } else if (!_userPaused) {
+            // Only auto-resume if pause wasn't user-initiated
+            // and notifications are enabled (system is expecting us to handle media)
+            if (_notificationsEnabled && !_userPaused) {
+              play();
+            }
           }
         }
       });
@@ -166,11 +176,22 @@ class SimpleAudioService {
     }
   }
 
+  // Add method to safely stop current playback
+  Future<void> stopCurrentPlayback() async {
+    // If something is already playing, save state and pause
+    if (_currentAudiobook != null && _player.playing) {
+      await saveCurrentPosition();
+      await _player.pause();
+      _userPaused = true; // Mark as explicitly paused
+    }
+  }
+
   // Load an audiobook
   Future<void> loadAudiobook(
     Audiobook audiobook, {
     int startChapter = 0,
     Duration? startPosition,
+    bool autoPlay = false, // Default to false
   }) async {
     try {
       // If we're already playing this audiobook, don't interrupt
@@ -178,6 +199,9 @@ class SimpleAudioService {
         debugPrint("Already playing this audiobook, continuing playback");
         return;
       }
+
+      // Stop any current playback
+      await stopCurrentPlayback();
 
       _currentAudiobook = audiobook;
       _currentChapterIndex = startChapter.clamp(
@@ -187,6 +211,11 @@ class SimpleAudioService {
 
       await loadChapter(_currentChapterIndex, startPosition: startPosition);
       debugPrint("Loaded audiobook: ${audiobook.title}");
+
+      // Only auto-play if explicitly requested
+      if (autoPlay) {
+        await play();
+      }
     } catch (e) {
       debugPrint("Error loading audiobook: $e");
       rethrow;
@@ -297,13 +326,15 @@ class SimpleAudioService {
     debugPrint("Playback speed set to: $normalizedSpeed");
   }
 
-  // Playback controls
+  // Playback controls with user intent tracking
   Future<void> play() async {
+    _userPaused = false; // User explicitly requested play
     await _player.play();
     _startAutoSave();
   }
 
   Future<void> pause() async {
+    _userPaused = true; // User explicitly requested pause
     await _player.pause();
     _stopAutoSave();
     await _saveCurrentPosition(); // Save immediately on pause
