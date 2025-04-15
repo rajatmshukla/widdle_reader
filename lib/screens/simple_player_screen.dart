@@ -551,6 +551,8 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
     );
   }
 
+  // Updated progress bar widget for simple_player_screen.dart
+
   Widget _buildProgressBar(ColorScheme colorScheme) {
     return StreamBuilder<Duration>(
       stream: _audioService.positionStream,
@@ -561,24 +563,67 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
             final position = positionSnapshot.data ?? Duration.zero;
             final duration = durationSnapshot.data ?? Duration.zero;
 
+            // Calculate overall audiobook progress if available
+            final totalDuration = _audiobook?.totalDuration ?? Duration.zero;
+
+            // Find cumulative position (add up previous chapters + current position)
+            Duration cumulativePosition = Duration.zero;
+            if (_audiobook != null) {
+              final currentIndex = _audioService.currentChapterIndex;
+              for (int i = 0; i < currentIndex; i++) {
+                if (i < _audiobook!.chapters.length &&
+                    _audiobook!.chapters[i].duration != null) {
+                  cumulativePosition += _audiobook!.chapters[i].duration!;
+                }
+              }
+              cumulativePosition += position;
+            }
+
             return Column(
               children: [
+                // Overall audiobook progress indicator
+                if (totalDuration.inMilliseconds > 0)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: colorScheme.surfaceContainerHighest.withOpacity(
+                          0.7,
+                        ),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Text(
+                        formatProgressFraction(
+                          cumulativePosition,
+                          totalDuration,
+                        ),
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                          color: colorScheme.primary,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  ),
+
+                // Progress bar
                 SliderTheme(
                   data: SliderThemeData(
                     trackHeight: 4,
                     activeTrackColor: colorScheme.primary,
-                    inactiveTrackColor: colorScheme.onSurface.withAlpha(
-                      (0.2 * 255).round(),
-                    ), // Fix withOpacity deprecation
+                    inactiveTrackColor: colorScheme.onSurface.withOpacity(0.2),
                     thumbColor: colorScheme.primary,
                     thumbShape: RoundSliderThumbShape(
                       enabledThumbRadius: 8,
                       elevation: 4,
                       pressedElevation: 8,
                     ),
-                    overlayColor: colorScheme.primary.withAlpha(
-                      (0.2 * 255).round(),
-                    ), // Fix withOpacity deprecation
+                    overlayColor: colorScheme.primary.withOpacity(0.2),
                     overlayShape: const RoundSliderOverlayShape(
                       overlayRadius: 16,
                     ),
@@ -604,27 +649,26 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
                     },
                   ),
                 ),
+
+                // Time labels
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Text(
-                        formatDuration(position),
+                        formatDetailedDuration(position),
                         style: TextStyle(
                           fontSize: 12,
-                          color: colorScheme.onSurface.withAlpha(
-                            (0.7 * 255).round(),
-                          ), // Fix withOpacity deprecation
+                          color: colorScheme.primary.withOpacity(0.8),
+                          fontWeight: FontWeight.w500,
                         ),
                       ),
                       Text(
-                        formatDuration(duration),
+                        formatDetailedDuration(duration),
                         style: TextStyle(
                           fontSize: 12,
-                          color: colorScheme.onSurface.withAlpha(
-                            (0.7 * 255).round(),
-                          ), // Fix withOpacity deprecation
+                          color: colorScheme.onSurface.withOpacity(0.7),
                         ),
                       ),
                     ],

@@ -1,19 +1,60 @@
+// lib/utils/helpers.dart - Updated with improved time formatting
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/audiobook.dart';
 import '../providers/theme_provider.dart';
 
-// Updated format duration to show hours and minutes only
+// Updated format duration with more detailed time display
 String formatDuration(Duration? d) {
   if (d == null || d.inMilliseconds < 0) return '--:--';
 
   final int hours = d.inHours;
   final int minutes = (d.inMinutes % 60);
+  final int seconds = (d.inSeconds % 60);
+
+  // New formatting logic
+  if (hours > 0) {
+    return '$hours hr ${minutes.toString().padLeft(2, '0')} min';
+  } else if (minutes > 0) {
+    return '$minutes min ${seconds.toString().padLeft(2, '0')} sec';
+  } else {
+    return '${seconds.toString().padLeft(2, '0')} sec';
+  }
+}
+
+// Alternative detailed format for player screen
+String formatDetailedDuration(Duration? d) {
+  if (d == null || d.inMilliseconds < 0) return '--:--';
+
+  final int hours = d.inHours;
+  final int minutes = (d.inMinutes % 60);
+  final int seconds = (d.inSeconds % 60);
 
   if (hours > 0) {
-    return '$hours hrs $minutes min';
+    return '$hours:${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
   } else {
-    return '$minutes min';
+    return '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
+  }
+}
+
+// New function to format audiobook progress
+String formatProgressFraction(Duration position, Duration totalDuration) {
+  if (totalDuration.inMilliseconds == 0) return "0% Complete";
+
+  final double percentage =
+      position.inMilliseconds / totalDuration.inMilliseconds;
+  final int percentComplete = (percentage * 100).round();
+
+  // Format remaining time
+  final remaining = totalDuration - position;
+  final int remainingHours = remaining.inHours;
+  final int remainingMinutes = (remaining.inMinutes % 60);
+
+  if (remainingHours > 0) {
+    return "$percentComplete% Complete • $remainingHours hr $remainingMinutes min remaining";
+  } else {
+    return "$percentComplete% Complete • $remainingMinutes min remaining";
   }
 }
 
