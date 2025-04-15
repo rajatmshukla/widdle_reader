@@ -1,6 +1,6 @@
 import 'package:audio_service/audio_service.dart';
 import 'package:flutter/material.dart';
-import '../services/audio_handler.dart'; // <-- Added import for MyAudioHandler
+import '../services/audio_handler.dart';
 
 class PlayerControls extends StatelessWidget {
   // Make audioHandler required and use the specific type
@@ -24,13 +24,21 @@ class PlayerControls extends StatelessWidget {
         state.processingState == AudioProcessingState.loading ||
         state.processingState == AudioProcessingState.buffering;
 
+    // Use MediaQuery to adjust layout based on orientation
+    final isLandscape =
+        MediaQuery.of(context).orientation == Orientation.landscape;
+    final iconSize =
+        isLandscape ? 36.0 : 42.0; // Slightly smaller icons in landscape
+    final playPauseSize =
+        isLandscape ? 56.0 : 64.0; // Smaller play/pause button in landscape
+
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
       children: [
         // Rewind Button
         IconButton(
           icon: const Icon(Icons.replay), // Changed to 15 seconds icon
-          iconSize: 42.0,
+          iconSize: iconSize,
           tooltip: "Rewind 30 seconds",
           // Disable if no item or loading
           onPressed: hasItem && !isLoading ? audioHandler.rewind : null,
@@ -40,7 +48,7 @@ class PlayerControls extends StatelessWidget {
         // Previous Button
         IconButton(
           icon: const Icon(Icons.skip_previous),
-          iconSize: 42.0,
+          iconSize: iconSize,
           tooltip: "Previous Chapter",
           // Disable if no item or loading
           onPressed: hasItem && !isLoading ? audioHandler.skipToPrevious : null,
@@ -48,12 +56,12 @@ class PlayerControls extends StatelessWidget {
         ),
 
         // Play/Pause/Loading Button
-        _buildPlayPauseButton(isPlaying, isLoading, hasItem),
+        _buildPlayPauseButton(isPlaying, isLoading, hasItem, playPauseSize),
 
         // Next Button
         IconButton(
           icon: const Icon(Icons.skip_next),
-          iconSize: 42.0,
+          iconSize: iconSize,
           tooltip: "Next Chapter",
           // Disable if no item or loading
           onPressed: hasItem && !isLoading ? audioHandler.skipToNext : null,
@@ -63,7 +71,7 @@ class PlayerControls extends StatelessWidget {
         // Forward Button
         IconButton(
           icon: const Icon(Icons.forward), // Changed to 15 seconds icon
-          iconSize: 42.0,
+          iconSize: iconSize,
           tooltip: "Forward 30 seconds",
           // Disable if no item or loading
           onPressed: hasItem && !isLoading ? audioHandler.fastForward : null,
@@ -74,12 +82,17 @@ class PlayerControls extends StatelessWidget {
   }
 
   // Helper to build the central button with loading state
-  Widget _buildPlayPauseButton(bool isPlaying, bool isLoading, bool hasItem) {
+  Widget _buildPlayPauseButton(
+    bool isPlaying,
+    bool isLoading,
+    bool hasItem,
+    double size,
+  ) {
     if (isLoading) {
       return Container(
         margin: const EdgeInsets.all(8.0), // Match IconButton padding roughly
-        width: 64.0,
-        height: 64.0,
+        width: size,
+        height: size,
         child: const Center(child: CircularProgressIndicator(strokeWidth: 3.0)),
       );
     } else {
@@ -87,7 +100,7 @@ class PlayerControls extends StatelessWidget {
         icon: Icon(
           isPlaying ? Icons.pause_circle_filled : Icons.play_circle_filled,
         ),
-        iconSize: 64.0, // Larger central button
+        iconSize: size, // Use responsive size
         tooltip: isPlaying ? "Pause" : "Play",
         // Disable only if no item
         onPressed:

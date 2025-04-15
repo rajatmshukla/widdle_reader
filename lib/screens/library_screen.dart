@@ -7,6 +7,7 @@ import '../widgets/audiobook_tile.dart';
 import '../models/audiobook.dart';
 import '../services/storage_service.dart';
 import '../theme.dart';
+import '../utils/responsive_utils.dart';
 
 class LibraryScreen extends StatefulWidget {
   const LibraryScreen({super.key});
@@ -246,79 +247,89 @@ class _LibraryScreenState extends State<LibraryScreen>
   ) {
     final title = provider.getTitleForAudiobook(audiobook);
     final colorScheme = Theme.of(context).colorScheme;
+    final isLandscape = context.isLandscape;
+
+    // Adjust menu size and position based on orientation
+    final double maxWidth =
+        isLandscape
+            ? MediaQuery.of(context).size.width * 0.6
+            : MediaQuery.of(context).size.width * 0.9;
 
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       builder:
-          (context) => Container(
-            padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
-            decoration: BoxDecoration(
-              color: colorScheme.surface,
-              borderRadius: const BorderRadius.vertical(
-                top: Radius.circular(24),
+          (context) => Center(
+            child: Container(
+              width: maxWidth,
+              padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
+              decoration: BoxDecoration(
+                color: colorScheme.surface,
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(24),
+                ),
               ),
-            ),
-            child: SafeArea(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    title,
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
+              child: SafeArea(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      title,
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                      textAlign: TextAlign.center,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
                     ),
-                    textAlign: TextAlign.center,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: 24),
-                  ListTile(
-                    leading: Icon(
-                      Icons.edit_rounded,
-                      color: colorScheme.primary,
+                    const SizedBox(height: 24),
+                    ListTile(
+                      leading: Icon(
+                        Icons.edit_rounded,
+                        color: colorScheme.primary,
+                      ),
+                      title: const Text('Edit Title'),
+                      onTap: () {
+                        Navigator.pop(context);
+                        _showEditTitleDialog(context, audiobook, provider);
+                      },
                     ),
-                    title: const Text('Edit Title'),
-                    onTap: () {
-                      Navigator.pop(context);
-                      _showEditTitleDialog(context, audiobook, provider);
-                    },
-                  ),
-                  ListTile(
-                    leading: Icon(
-                      Icons.restart_alt_rounded,
-                      color: colorScheme.secondary,
+                    ListTile(
+                      leading: Icon(
+                        Icons.restart_alt_rounded,
+                        color: colorScheme.secondary,
+                      ),
+                      title: const Text('Reset Progress'),
+                      subtitle: const Text(
+                        'Mark as unread and remove current position',
+                      ),
+                      onTap: () {
+                        Navigator.pop(context);
+                        _showResetProgressDialog(context, audiobook);
+                      },
                     ),
-                    title: const Text('Reset Progress'),
-                    subtitle: const Text(
-                      'Mark as unread and remove current position',
+                    const Divider(),
+                    ListTile(
+                      leading: Icon(
+                        Icons.delete_outline_rounded,
+                        color: colorScheme.error,
+                      ),
+                      title: const Text('Remove from Library'),
+                      subtitle: const Text(
+                        'Files will not be deleted from your device',
+                      ),
+                      onTap: () {
+                        Navigator.pop(context);
+                        _showDeleteConfirmationDialog(
+                          context,
+                          audiobook,
+                          provider,
+                        );
+                      },
                     ),
-                    onTap: () {
-                      Navigator.pop(context);
-                      _showResetProgressDialog(context, audiobook);
-                    },
-                  ),
-                  const Divider(),
-                  ListTile(
-                    leading: Icon(
-                      Icons.delete_outline_rounded,
-                      color: colorScheme.error,
-                    ),
-                    title: const Text('Remove from Library'),
-                    subtitle: const Text(
-                      'Files will not be deleted from your device',
-                    ),
-                    onTap: () {
-                      Navigator.pop(context);
-                      _showDeleteConfirmationDialog(
-                        context,
-                        audiobook,
-                        provider,
-                      );
-                    },
-                  ),
-                  const SizedBox(height: 8),
-                ],
+                    const SizedBox(height: 8),
+                  ],
+                ),
               ),
             ),
           ),
@@ -383,6 +394,9 @@ class _LibraryScreenState extends State<LibraryScreen>
     final themeProvider = context.watch<ThemeProvider>();
     final colorScheme = Theme.of(context).colorScheme;
 
+    // Check for landscape orientation
+    final isLandscape = ResponsiveUtils.isLandscape(context);
+
     return Scaffold(
       extendBodyBehindAppBar: true,
       appBar: AppBar(
@@ -440,7 +454,7 @@ class _LibraryScreenState extends State<LibraryScreen>
           // Use Stack to overlay messages/indicators
           children: [
             // Main Content (List or Empty Message)
-            _buildBody(context, provider),
+            _buildBody(context, provider, isLandscape),
 
             // Loading Indicator (Only show during initial load or add folder)
             if (provider.isLoading)
@@ -496,7 +510,11 @@ class _LibraryScreenState extends State<LibraryScreen>
     );
   }
 
-  Widget _buildBody(BuildContext context, AudiobookProvider provider) {
+  Widget _buildBody(
+    BuildContext context,
+    AudiobookProvider provider,
+    bool isLandscape,
+  ) {
     final colorScheme = Theme.of(context).colorScheme;
 
     if (provider.audiobooks.isEmpty && !provider.isLoading) {
@@ -569,43 +587,92 @@ class _LibraryScreenState extends State<LibraryScreen>
         return const SizedBox.shrink(); // Return empty space, error handled elsewhere
       }
     } else if (provider.audiobooks.isNotEmpty) {
-      // Display the list with physics for bounce effect
-      return ListView.builder(
-        padding: const EdgeInsets.only(
-          bottom: 100,
-          top: 100,
-        ), // Padding for app bar and FAB
-        physics: const BouncingScrollPhysics(), // Add bounce effect
-        itemCount: provider.audiobooks.length,
-        itemBuilder: (context, index) {
-          final audiobook = provider.audiobooks[index];
-          return GestureDetector(
-            onTap: () => _loadLastPositionAndNavigate(context, audiobook),
-            onLongPress: () => _showLongPressMenu(context, audiobook, provider),
-            child: AudiobookTile(
-              key: ValueKey(
-                '${audiobook.id}-${DateTime.now().millisecondsSinceEpoch}',
-              ), // Force rebuild on navigation
-              audiobook: audiobook,
-              customTitle: provider.getTitleForAudiobook(audiobook),
-            ),
-          );
-        },
-      );
+      // For landscape mode, we'll use a grid view instead of a list
+      if (isLandscape) {
+        return _buildGridView(context, provider);
+      } else {
+        // Portrait mode - use list view
+        return _buildListView(context, provider);
+      }
     } else {
       // Return empty container while loading or if there's an error handled by overlay
       return const SizedBox.shrink();
     }
   }
 
+  // Grid view for landscape orientation
+  Widget _buildGridView(BuildContext context, AudiobookProvider provider) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    // Calculate how many items to show per row based on screen width
+    final crossAxisCount = screenWidth > 1000 ? 3 : 2;
+
+    return GridView.builder(
+      padding: const EdgeInsets.only(
+        bottom: 100,
+        top: 100, // Padding for app bar
+        left: 8,
+        right: 8,
+      ),
+      physics: const BouncingScrollPhysics(),
+      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: crossAxisCount,
+        childAspectRatio: 2.2, // Width to height ratio of each item
+        crossAxisSpacing: 8,
+        mainAxisSpacing: 8,
+      ),
+      itemCount: provider.audiobooks.length,
+      itemBuilder: (context, index) {
+        final audiobook = provider.audiobooks[index];
+        return GestureDetector(
+          onTap: () => _loadLastPositionAndNavigate(context, audiobook),
+          onLongPress: () => _showLongPressMenu(context, audiobook, provider),
+          child: AudiobookTile(
+            key: ValueKey(
+              '${audiobook.id}-${DateTime.now().millisecondsSinceEpoch}',
+            ),
+            audiobook: audiobook,
+            customTitle: provider.getTitleForAudiobook(audiobook),
+          ),
+        );
+      },
+    );
+  }
+
+  // List view for portrait orientation
+  Widget _buildListView(BuildContext context, AudiobookProvider provider) {
+    return ListView.builder(
+      padding: const EdgeInsets.only(
+        bottom: 100,
+        top: 100, // Padding for app bar
+      ),
+      physics: const BouncingScrollPhysics(),
+      itemCount: provider.audiobooks.length,
+      itemBuilder: (context, index) {
+        final audiobook = provider.audiobooks[index];
+        return GestureDetector(
+          onTap: () => _loadLastPositionAndNavigate(context, audiobook),
+          onLongPress: () => _showLongPressMenu(context, audiobook, provider),
+          child: AudiobookTile(
+            key: ValueKey(
+              '${audiobook.id}-${DateTime.now().millisecondsSinceEpoch}',
+            ),
+            audiobook: audiobook,
+            customTitle: provider.getTitleForAudiobook(audiobook),
+          ),
+        );
+      },
+    );
+  }
+
   // Extracted error message widget
   Widget _buildErrorMessage(BuildContext context, AudiobookProvider provider) {
     final colorScheme = Theme.of(context).colorScheme;
+    final isLandscape = ResponsiveUtils.isLandscape(context);
 
     return Positioned(
       bottom: 100, // Position above FAB
-      left: 20,
-      right: 20,
+      left: isLandscape ? 100 : 20, // Wider margins in landscape
+      right: isLandscape ? 100 : 20,
       child: Material(
         // Wrap with Material for elevation and shape
         elevation: 6,

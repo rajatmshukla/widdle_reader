@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/theme_provider.dart';
 import '../widgets/app_logo.dart';
-// Assuming this path is correct
+import '../utils/responsive_utils.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -67,6 +67,11 @@ class _SplashScreenState extends State<SplashScreen>
   Widget build(BuildContext context) {
     final themeProvider = Provider.of<ThemeProvider>(context);
     final colorScheme = Theme.of(context).colorScheme;
+    final isLandscape = ResponsiveUtils.isLandscape(context);
+
+    // Calculate logo size based on orientation
+    final double logoSize =
+        isLandscape ? MediaQuery.of(context).size.height * 0.4 : 150;
 
     return Scaffold(
       body: Container(
@@ -79,13 +84,60 @@ class _SplashScreenState extends State<SplashScreen>
           ),
         ),
         child: Center(
-          child: FadeTransition(
-            opacity: _fadeAnimation,
-            child: ScaleTransition(
-              scale: _scaleAnimation,
-              child: AppLogo(size: 150, showTitle: true, animate: true),
+          child:
+              isLandscape
+                  ? _buildLandscapeSplash(logoSize, colorScheme)
+                  : _buildPortraitSplash(logoSize, colorScheme),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPortraitSplash(double logoSize, ColorScheme colorScheme) {
+    return FadeTransition(
+      opacity: _fadeAnimation,
+      child: ScaleTransition(
+        scale: _scaleAnimation,
+        child: AppLogo(size: logoSize, showTitle: true, animate: true),
+      ),
+    );
+  }
+
+  Widget _buildLandscapeSplash(double logoSize, ColorScheme colorScheme) {
+    return FadeTransition(
+      opacity: _fadeAnimation,
+      child: ScaleTransition(
+        scale: _scaleAnimation,
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            // Logo on the left
+            AppLogo(size: logoSize, showTitle: false, animate: true),
+            const SizedBox(width: 32),
+            // Text on the right
+            Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Widdle Reader',
+                  style: TextStyle(
+                    fontSize: logoSize * 0.25,
+                    fontWeight: FontWeight.bold,
+                    color: colorScheme.onSurface,
+                  ),
+                ),
+                SizedBox(height: logoSize * 0.05),
+                Text(
+                  'Your cute audiobook companion',
+                  style: TextStyle(
+                    fontSize: logoSize * 0.1,
+                    color: colorScheme.onSurface.withOpacity(0.7),
+                  ),
+                ),
+              ],
             ),
-          ),
+          ],
         ),
       ),
     );

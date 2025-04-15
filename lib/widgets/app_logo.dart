@@ -48,7 +48,7 @@ class AppLogo extends StatelessWidget {
             painter: SmileyBookHeadphonesPainter(
               primaryColor: primaryColor,
               secondaryColor: secondaryColor,
-              accentColor: colorScheme.background,
+              accentColor: colorScheme.surface,
               faceColor: colorScheme.onSurface,
             ),
           ),

@@ -51,6 +51,7 @@ dependencies:
   flutter_colorpicker: ^1.0.3  # Add this line for color picker
   flutter_launcher_icons: ^0.13.1
   url_launcher: ^6.2.1
+  scrollable_positioned_list: ^0.3.8
 
 # Add this section at the root level of your pubspec.yaml
 flutter_launcher_icons:

@@ -19,13 +19,13 @@ class AudiobookProvider extends ChangeNotifier {
   bool _permissionPermanentlyDenied = false;
 
   // Map to store the last played timestamps for each audiobook
-  Map<String, int> _lastPlayedTimestamps = {};
+  final Map<String, int> _lastPlayedTimestamps = {};
 
   // Map to store which books are completed
-  Map<String, bool> _completedBooks = {};
+  final Map<String, bool> _completedBooks = {};
 
   // Map to store which books are new (never played)
-  Map<String, bool> _newBooks = {};
+  final Map<String, bool> _newBooks = {};
 
   // New property for custom titles
   final Map<String, String> _customTitles = {};

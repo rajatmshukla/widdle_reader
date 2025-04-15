@@ -24,6 +24,14 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   debugPrint("WidgetsFlutterBinding initialized.");
 
+  // Enable all orientations
+  await SystemChrome.setPreferredOrientations([
+    DeviceOrientation.portraitUp,
+    DeviceOrientation.portraitDown,
+    DeviceOrientation.landscapeLeft,
+    DeviceOrientation.landscapeRight,
+  ]);
+
   // Try to initialize audio service, but don't block app launch if it fails
   try {
     await initializeAudioService();
