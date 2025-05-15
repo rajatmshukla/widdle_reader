@@ -10,15 +10,16 @@ Widdle Reader ("we," "our," or "app") is committed to protecting your privacy. T
 
 ### Information Collected Automatically
 - **Device Information**: We collect your device ID solely for license verification purposes through Google Play's licensing service.
-- **App Usage Data**: We store your audiobook progress and settings locally on your device. This data never leaves your device.
+- **App Usage Data**: We store your audiobook progress, bookmarks, and settings locally on your device. This data never leaves your device.
 
 ### Information You Provide
 - **Media Files**: Our app accesses audiobook files that you explicitly grant permission to access. These files remain on your device and are not uploaded to any server.
+- **Bookmarks**: Any bookmarks you create for your audiobooks, including names and timestamps, are stored locally on your device and are not shared with any external servers.
 
 ## How We Use Your Information
 
 - **License Verification**: Device IDs are used solely to verify your purchase of the app through Google Play.
-- **App Functionality**: Local storage of your progress and settings is essential for the app's core functionality.
+- **App Functionality**: Local storage of your progress, bookmarks, and settings is essential for the app's core functionality.
 
 ## Data Storage and Security
 

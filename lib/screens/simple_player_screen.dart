@@ -8,6 +8,9 @@ import '../services/simple_audio_service.dart';
 import '../utils/helpers.dart';
 import '../utils/responsive_utils.dart';
 import '../theme.dart';
+import '../widgets/add_bookmark_dialog.dart';
+import '../screens/bookmarks_screen.dart';
+import '../models/chapter.dart';
 
 class SimplePlayerScreen extends StatefulWidget {
   const SimplePlayerScreen({super.key});
@@ -202,6 +205,51 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
     }
   }
 
+  // Method to handle showing the bookmarks screen
+  Future<void> _showBookmarksScreen() async {
+    if (_audiobook == null) return;
+    
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => BookmarksScreen(
+          audiobook: _audiobook!,
+          onBookmarkSelected: (chapterId, position) {
+            // Find the chapter index
+            final chapterIndex = _audiobook!.chapters.indexWhere(
+              (chapter) => chapter.id == chapterId
+            );
+            
+            if (chapterIndex >= 0) {
+              // Jump to the bookmarked position
+              _audioService.loadChapter(chapterIndex, startPosition: position);
+              _audioService.play();
+            }
+          },
+        ),
+      ),
+    );
+  }
+
+  // Method to show add bookmark dialog
+  Future<void> _showAddBookmarkDialog() async {
+    if (_audiobook == null) return;
+    
+    // Get current chapter ID and position
+    final currentChapterId = _audiobook!.chapters[_audioService.currentChapterIndex].id;
+    final currentPosition = await _audioService.position;
+    
+    // Show dialog
+    await showDialog(
+      context: context,
+      builder: (context) => AddBookmarkDialog(
+        audiobook: _audiobook!,
+        currentChapterId: currentChapterId,
+        currentPosition: currentPosition,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
@@ -234,6 +282,39 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
           },
         ),
         actions: [
+          // Bookmarks button
+          IconButton(
+            icon: Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: colorScheme.surfaceContainerHighest.withAlpha(
+                  (0.7 * 255).round(),
+                ),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Icon(Icons.bookmarks),
+            ),
+            tooltip: 'Bookmarks',
+            onPressed: _audiobook != null ? _showBookmarksScreen : null,
+          ),
+          
+          // Add bookmark button
+          IconButton(
+            icon: Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: colorScheme.surfaceContainerHighest.withAlpha(
+                  (0.7 * 255).round(),
+                ),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Icon(Icons.bookmark_add),
+            ),
+            tooltip: 'Add Bookmark',
+            onPressed: _audiobook != null ? _showAddBookmarkDialog : null,
+          ),
+          
+          // Stop button
           IconButton(
             icon: Container(
               padding: const EdgeInsets.all(6),

@@ -10,6 +10,8 @@ import 'screens/splash_screen.dart';
 import 'screens/library_screen.dart';
 import 'screens/simple_player_screen.dart';
 import 'screens/settings_screen.dart';
+import 'screens/license_check_screen.dart';
+import 'screens/bookmarks_screen.dart';
 
 import 'services/audio_handler.dart';
 import 'theme.dart';
@@ -79,12 +81,15 @@ class MyApp extends StatelessWidget {
             theme: AppTheme.lightTheme(themeProvider.seedColor),
             darkTheme: AppTheme.darkTheme(themeProvider.seedColor),
             themeMode: themeProvider.themeMode,
-            initialRoute: '/splash',
+            initialRoute: '/license',
             routes: {
+              '/license': (context) => const LicenseCheckScreen(),
               '/splash': (context) => const SplashScreen(),
               '/library': (context) => const LibraryScreen(),
               '/player': (context) => const SimplePlayerScreen(),
               '/settings': (context) => const SettingsScreen(),
+              // BookmarksScreen is not registered here since it requires parameters
+              // and is opened using Navigator.push with MaterialPageRoute
             },
           );
         },
