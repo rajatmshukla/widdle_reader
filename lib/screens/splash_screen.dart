@@ -22,7 +22,7 @@ class _SplashScreenState extends State<SplashScreen>
   void initState() {
     super.initState();
     _controller = AnimationController(
-      duration: const Duration(milliseconds: 2000), // Longer animation
+      duration: const Duration(milliseconds: 2000), // Animation duration
       vsync: this,
     );
 
@@ -106,39 +106,39 @@ class _SplashScreenState extends State<SplashScreen>
   Widget _buildLandscapeSplash(double logoSize, ColorScheme colorScheme) {
     return FadeTransition(
       opacity: _fadeAnimation,
-      child: ScaleTransition(
-        scale: _scaleAnimation,
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            // Logo on the left
-            AppLogo(size: logoSize, showTitle: false, animate: true),
-            const SizedBox(width: 32),
-            // Text on the right
-            Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Widdle Reader',
-                  style: TextStyle(
-                    fontSize: logoSize * 0.25,
-                    fontWeight: FontWeight.bold,
-                    color: colorScheme.onSurface,
-                  ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          // Logo on the left
+          ScaleTransition(
+            scale: _scaleAnimation,
+            child: AppLogo(size: logoSize, showTitle: false, animate: true),
+          ),
+          const SizedBox(width: 32),
+          // Text on the right
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Widdle Reader',
+                style: TextStyle(
+                  fontSize: logoSize * 0.25,
+                  fontWeight: FontWeight.bold,
+                  color: colorScheme.onSurface,
                 ),
-                SizedBox(height: logoSize * 0.05),
-                Text(
-                  'Your cute audiobook companion',
-                  style: TextStyle(
-                    fontSize: logoSize * 0.1,
-                    color: colorScheme.onSurface.withOpacity(0.7),
-                  ),
+              ),
+              SizedBox(height: logoSize * 0.05),
+              Text(
+                'Your cute audiobook companion',
+                style: TextStyle(
+                  fontSize: logoSize * 0.1,
+                  color: colorScheme.onSurface.withOpacity(0.7),
                 ),
-              ],
-            ),
-          ],
-        ),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }

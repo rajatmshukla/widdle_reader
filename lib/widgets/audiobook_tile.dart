@@ -5,6 +5,7 @@ import '../utils/helpers.dart';
 import '../services/storage_service.dart';
 import '../providers/audiobook_provider.dart';
 import '../utils/responsive_utils.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class AudiobookTile extends StatefulWidget {
   final Audiobook audiobook;
@@ -27,13 +28,17 @@ class _AudiobookTileState extends State<AudiobookTile>
   double _progressPercentage = 0.0;
   bool _isLoadingProgress = true;
   final StorageService _storageService = StorageService();
+  // Track the last time we loaded progress to avoid reloading too frequently
+  DateTime _lastProgressLoad = DateTime.now().subtract(const Duration(minutes: 5));
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback(
-      (_) => _loadListeningProgress(),
+      (_) {
+        _loadListeningProgress(forceReload: true);
+      },
     );
   }
 
@@ -47,24 +52,40 @@ class _AudiobookTileState extends State<AudiobookTile>
   void didUpdateWidget(AudiobookTile oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.audiobook.id != widget.audiobook.id) {
-      _loadListeningProgress();
+      _loadListeningProgress(forceReload: true);
     }
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      _loadListeningProgress();
+      _loadListeningProgress(forceReload: true);
     }
   }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    _loadListeningProgress();
+    // Check if we need to reload data - avoid reloading on every rebuild
+    final now = DateTime.now();
+    if (now.difference(_lastProgressLoad).inSeconds > 2) {
+      _loadListeningProgress();
+      _lastProgressLoad = now;
+    }
   }
 
-  Future<void> _loadListeningProgress() async {
+  /// Force a progress data reload - call this after any operation that changes progress
+  void invalidateProgressData() {
+    setState(() {
+      _progressPercentage = 0.0;
+      _isLoadingProgress = true;
+    });
+    _loadListeningProgress(forceReload: true);
+  }
+
+  /// Loads the listening progress from storage
+  /// Set forceReload to true to bypass any caching in the StorageService
+  Future<void> _loadListeningProgress({bool forceReload = false}) async {
     if (!mounted) return;
 
     // Prevent flickering during refresh
@@ -73,6 +94,46 @@ class _AudiobookTileState extends State<AudiobookTile>
     }
 
     try {
+      // Check if book is marked as completed first - fastest way to determine status
+      final isCompleted = await _storageService.isCompleted(widget.audiobook.id);
+      
+      if (isCompleted && forceReload) {
+        // If book is marked as completed, set progress to 100%
+        if (mounted) {
+          setState(() {
+            _progressPercentage = 1.0;
+            _isLoadingProgress = false;
+          });
+        }
+        return;
+      }
+      
+      // Try to load from progress cache first (fastest)
+      final cachedProgress = await _storageService.loadProgressCache(widget.audiobook.id);
+      if (cachedProgress != null) {
+        if (mounted) {
+          // Set the progress immediately to show changes
+          setState(() {
+            _progressPercentage = cachedProgress;
+            _isLoadingProgress = false;
+          });
+          
+          // If progress is zero or very low, make sure the UI reflects it clearly
+          if (cachedProgress < 0.01 && _progressPercentage > 0.01) {
+            // Force a second update to ensure the UI shows zero progress
+            Future.microtask(() {
+              if (mounted) {
+                setState(() {
+                  _progressPercentage = 0.0;
+                });
+              }
+            });
+          }
+          return;
+        }
+      }
+      
+      // If no cached progress or force reload requested, calculate from position
       final lastPositionData = await _storageService.loadLastPosition(
         widget.audiobook.id,
       );
@@ -130,7 +191,7 @@ class _AudiobookTileState extends State<AudiobookTile>
           }
         }
       } else {
-        // No position data found
+        // No position data found - ensure progress is explicitly set to zero
         if (mounted) {
           setState(() {
             _progressPercentage = 0.0;
@@ -415,6 +476,9 @@ class _AudiobookTileState extends State<AudiobookTile>
 
   // Metadata row for portrait mode
   Widget _buildMetadataRow(BuildContext context, ColorScheme colorScheme) {
+    final chapterCount = widget.audiobook.chapters.length;
+    final chapterText = chapterCount == 1 ? '1 Chapter' : '$chapterCount Chapters';
+    
     return Row(
       children: [
         Icon(
@@ -438,7 +502,7 @@ class _AudiobookTileState extends State<AudiobookTile>
         ),
         const SizedBox(width: 4),
         Text(
-          '${widget.audiobook.chapters.length} Chapters',
+          chapterText,
           style: Theme.of(context).textTheme.bodySmall?.copyWith(
             color: colorScheme.onSurfaceVariant.withOpacity(0.7),
           ),
@@ -452,6 +516,9 @@ class _AudiobookTileState extends State<AudiobookTile>
     BuildContext context,
     ColorScheme colorScheme,
   ) {
+    final chapterCount = widget.audiobook.chapters.length;
+    final chapterText = chapterCount == 1 ? '1' : '$chapterCount';
+    
     return Row(
       children: [
         Icon(
@@ -476,7 +543,7 @@ class _AudiobookTileState extends State<AudiobookTile>
         ),
         const SizedBox(width: 2),
         Text(
-          '${widget.audiobook.chapters.length}',
+          chapterText,
           style: TextStyle(
             fontSize: 10,
             color: colorScheme.onSurfaceVariant.withOpacity(0.7),
