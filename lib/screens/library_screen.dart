@@ -404,15 +404,15 @@ class _LibraryScreenState extends State<LibraryScreen>
         headerSliverBuilder: (context, innerBoxIsScrolled) {
           return [
             SliverAppBar(
-              floating: true, 
-              snap: false, 
-              pinned: false,
-              backgroundColor: seedColor,
+              floating: false, 
+              snap: false,
+              pinned: true, // Keep the app bar visible and pinned at the top
+              backgroundColor: Theme.of(context).scaffoldBackgroundColor, // Match the scaffold background
               expandedHeight: 60,
               shape: const RoundedRectangleBorder(
-                borderRadius: BorderRadius.zero,
+                borderRadius: BorderRadius.zero, // Remove any curves from the app bar
               ),
-              elevation: 0,
+              elevation: 0, // Remove shadow
               title: Row(
                 children: [
                   SizedBox(
@@ -426,7 +426,7 @@ class _LibraryScreenState extends State<LibraryScreen>
                     style: TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.bold,
-                      color: colorScheme.onPrimary,
+                      color: colorScheme.onSurface,
                     ),
                   ),
                 ],
