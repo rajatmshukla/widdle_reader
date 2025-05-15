@@ -30,7 +30,7 @@ class _AddBookmarkDialogState extends State<AddBookmarkDialog> {
   @override
   void initState() {
     super.initState();
-    // Default name suggestion based on chapter and timestamp
+    // Find the current chapter for display purposes only
     final chapter = widget.audiobook.chapters.firstWhere(
       (c) => c.id == widget.currentChapterId,
       orElse: () => Chapter(
@@ -40,8 +40,9 @@ class _AddBookmarkDialogState extends State<AddBookmarkDialog> {
       ),
     );
     
-    final timestamp = formatDetailedDuration(widget.currentPosition);
-    _nameController.text = '${chapter.title} at $timestamp';
+    // Leave the text field empty to prompt user input
+    // The timestamp info will be displayed separately
+    _nameController.text = '';
   }
 
   @override
@@ -75,6 +76,16 @@ class _AddBookmarkDialogState extends State<AddBookmarkDialog> {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     
+    // Find chapter title for display purposes
+    final chapter = widget.audiobook.chapters.firstWhere(
+      (c) => c.id == widget.currentChapterId,
+      orElse: () => Chapter(
+        id: widget.currentChapterId,
+        title: 'Unknown Chapter',
+        audiobookId: widget.audiobook.id,
+      ),
+    );
+    
     return AlertDialog(
       title: Text('Add Bookmark'),
       content: Form(
@@ -84,7 +95,14 @@ class _AddBookmarkDialogState extends State<AddBookmarkDialog> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Current Position: ${formatDetailedDuration(widget.currentPosition)}',
+              'Chapter: ${chapter.title}',
+              style: TextStyle(
+                fontSize: 14,
+                color: colorScheme.onSurfaceVariant,
+              ),
+            ),
+            Text(
+              'Position: ${formatDetailedDuration(widget.currentPosition)}',
               style: TextStyle(
                 fontSize: 14,
                 color: colorScheme.onSurfaceVariant,
@@ -94,15 +112,15 @@ class _AddBookmarkDialogState extends State<AddBookmarkDialog> {
             TextFormField(
               controller: _nameController,
               decoration: InputDecoration(
-                labelText: 'Bookmark Name',
-                hintText: 'Enter a name for this bookmark',
+                labelText: 'Bookmark Note',
+                hintText: 'Add a note to help you remember this spot',
                 border: OutlineInputBorder(),
               ),
               autofocus: true,
               textInputAction: TextInputAction.done,
               validator: (value) {
                 if (value == null || value.trim().isEmpty) {
-                  return 'Please enter a name for the bookmark';
+                  return 'Please add a note for this bookmark';
                 }
                 return null;
               },
