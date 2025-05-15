@@ -110,7 +110,7 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
               SliverAppBar(
                 floating: true,
                 pinned: true,
-                title: const Text('Settings'),
+        title: const Text('Settings'),
                 leading: Hero(
                   tag: 'back_button',
                   child: Material(
@@ -140,8 +140,8 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
                       return SlideTransition(
                         position: _slideAnimation,
                         child: context.isLandscape
-                            ? _buildLandscapeLayout(themeProvider, colorScheme, textTheme)
-                            : _buildPortraitLayout(themeProvider, colorScheme, textTheme),
+                ? _buildLandscapeLayout(themeProvider, colorScheme, textTheme)
+                : _buildPortraitLayout(themeProvider, colorScheme, textTheme),
                       );
                     },
                   ),
@@ -164,22 +164,22 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Appearance section
+      children: [
+        // Appearance section
           _buildSectionWithDelay(
-            'Appearance',
-            Icons.palette_outlined,
-            textTheme, 
-            colorScheme, 
+          'Appearance',
+          Icons.palette_outlined,
+          textTheme,
+          colorScheme,
             delay: 50,
-          ),
+        ),
           const SizedBox(height: 12),
           _buildAnimatedCard(
-            _buildThemeModeCard(themeProvider, colorScheme, textTheme),
+        _buildThemeModeCard(themeProvider, colorScheme, textTheme),
             delay: 100,
           ),
           _buildAnimatedCard(
-            _buildSeedColorCard(themeProvider, colorScheme, textTheme),
+        _buildSeedColorCard(themeProvider, colorScheme, textTheme),
             delay: 150,
           ),
           if (!_showColorPicker) 
@@ -190,15 +190,15 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
 
           // About section with delay
           _buildSectionWithDelay(
-            'About',
-            Icons.info_outline_rounded,
-            textTheme,
-            colorScheme,
+          'About',
+          Icons.info_outline_rounded,
+          textTheme,
+          colorScheme,
             delay: 250,
-          ),
+        ),
           const SizedBox(height: 12),
           _buildAnimatedCard(
-            _buildAboutCard(colorScheme, textTheme),
+        _buildAboutCard(colorScheme, textTheme),
             delay: 300,
           ),
 
@@ -225,28 +225,28 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
     return Padding(
       padding: const EdgeInsets.all(16),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
           // Left column with staggered animation
-          Expanded(
+        Expanded(
             child: _buildAnimatedContainer(
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
+            children: [
                   _buildSectionWithDelay(
-                    'Appearance',
-                    Icons.palette_outlined,
-                    textTheme,
-                    colorScheme,
+                'Appearance',
+                Icons.palette_outlined,
+                textTheme,
+                colorScheme,
                     delay: 50,
-                  ),
+              ),
                   const SizedBox(height: 12),
                   _buildAnimatedCard(
-                    _buildThemeModeCard(themeProvider, colorScheme, textTheme),
+              _buildThemeModeCard(themeProvider, colorScheme, textTheme),
                     delay: 100,
                   ),
                   _buildAnimatedCard(
-                    _buildSeedColorCard(themeProvider, colorScheme, textTheme),
+              _buildSeedColorCard(themeProvider, colorScheme, textTheme),
                     delay: 150,
                   ),
                   if (!_showColorPicker) 
@@ -264,29 +264,29 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
           const SizedBox(width: 32),
 
           // Right column with staggered animation
-          Expanded(
+        Expanded(
             child: _buildAnimatedContainer(
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
+            children: [
                   _buildSectionWithDelay(
-                    'About',
-                    Icons.info_outline_rounded,
-                    textTheme,
-                    colorScheme,
+                'About',
+                Icons.info_outline_rounded,
+                textTheme,
+                colorScheme,
                     delay: 75,
-                  ),
+              ),
                   const SizedBox(height: 12),
                   _buildAnimatedCard(
-                    _buildAboutCard(colorScheme, textTheme),
+              _buildAboutCard(colorScheme, textTheme),
                     delay: 125,
                   ),
                 ],
               ),
               delay: 100,
-            ),
           ),
-        ],
+        ),
+      ],
       ),
     );
   }
@@ -473,7 +473,7 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
               'Choose a color to personalize your app theme',
               style: textTheme.bodySmall?.copyWith(
                 color: colorScheme.onSurfaceVariant,
-              ),
+            ),
             ),
             const SizedBox(height: 20),
 
@@ -524,27 +524,27 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
               duration: const Duration(milliseconds: 400),
               curve: Curves.easeInOutCubic,
               child: _showColorPicker
-                  ? Container(
+                      ? Container(
                       margin: const EdgeInsets.only(top: 20),
                       height: isLandscape ? 300 : 420,
-                      child: Column(
-                        children: [
-                          Expanded(
-                            child: ColorPicker(
-                              pickerColor: _currentColor,
-                              onColorChanged: (color) {
-                                setState(() {
-                                  _currentColor = color;
-                                });
-                              },
+                        child: Column(
+                          children: [
+                            Expanded(
+                              child: ColorPicker(
+                                pickerColor: _currentColor,
+                                onColorChanged: (color) {
+                                  setState(() {
+                                    _currentColor = color;
+                                  });
+                                },
                               pickerAreaHeightPercent: 0.7,
-                              enableAlpha: false,
-                              displayThumbColor: true,
+                                enableAlpha: false,
+                                displayThumbColor: true,
                               portraitOnly: false,
                               paletteType: PaletteType.hsvWithHue,
-                              pickerAreaBorderRadius: BorderRadius.circular(
-                                16,
-                              ),
+                                pickerAreaBorderRadius: BorderRadius.circular(
+                                  16,
+                                ),
                               hexInputBar: true,
                               labelTypes: const [ColorLabelType.hex, ColorLabelType.rgb],
                             ),
@@ -556,7 +556,7 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
                             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                             children: [
                               OutlinedButton.icon(
-                                onPressed: () {
+                              onPressed: () {
                                   setState(() {
                                     _showColorPicker = false;
                                   });
@@ -568,28 +568,28 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
                                 onPressed: () {
                                   // Add a micro-animation for feedback
                                   final oldColor = themeProvider.seedColor;
-                                  themeProvider.setSeedColor(_currentColor);
-                                  setState(() {
-                                    _showColorPicker = false;
-                                  });
+                                themeProvider.setSeedColor(_currentColor);
+                                setState(() {
+                                  _showColorPicker = false;
+                                });
                                   _showThemeUpdatedSnackBar(context, oldColor);
-                                },
-                                icon: const Icon(Icons.check),
-                                label: const Text('Apply Color'),
+                              },
+                              icon: const Icon(Icons.check),
+                              label: const Text('Apply Color'),
                                 style: FilledButton.styleFrom(
-                                  backgroundColor: _currentColor,
-                                  foregroundColor:
-                                      _currentColor.computeLuminance() > 0.5
-                                          ? Colors.black
-                                          : Colors.white,
+                                backgroundColor: _currentColor,
+                                foregroundColor:
+                                    _currentColor.computeLuminance() > 0.5
+                                        ? Colors.black
+                                        : Colors.white,
                                 ),
                               ),
                             ],
-                          ),
-                        ],
-                      ),
-                    )
-                  : const SizedBox.shrink(),
+                            ),
+                          ],
+                        ),
+                      )
+                      : const SizedBox.shrink(),
             ),
           ],
         ),
@@ -629,7 +629,7 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
 
             // Version
             Text(
-              'Version 1.0.0',
+              'Version 1.0.1',
               style: textTheme.bodyMedium?.copyWith(
                 color: colorScheme.onSurfaceVariant,
               ),
@@ -752,7 +752,7 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
                 return _buildAnimatedColorSwatch(
                   color: color,
                   isSelected: isSelected,
-                  onTap: () {
+              onTap: () {
                     // Add tactile feedback
                     HapticFeedback.selectionClick();
                     themeProvider.setSeedColor(color);
@@ -875,11 +875,11 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
         duration: const Duration(milliseconds: 300),
         curve: Curves.easeOutCubic,
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        decoration: BoxDecoration(
+            decoration: BoxDecoration(
           color: isSelected 
-              ? colorScheme.primaryContainer 
+                      ? colorScheme.primaryContainer
               : colorScheme.surfaceContainerHigh,
-          borderRadius: BorderRadius.circular(16),
+              borderRadius: BorderRadius.circular(16),
           boxShadow: isSelected
               ? [
                   BoxShadow(
@@ -888,11 +888,11 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
                     offset: const Offset(0, 2),
                   )
                 ]
-              : null,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
+                      : null,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
             // Add scale animation for the icon when selected
             TweenAnimationBuilder<double>(
               tween: Tween<double>(
@@ -905,28 +905,28 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
                 return Transform.scale(
                   scale: value,
                   child: Icon(
-                    icon,
+                  icon,
                     color: isSelected 
                         ? colorScheme.onPrimaryContainer 
-                        : colorScheme.onSurfaceVariant,
+                          : colorScheme.onSurfaceVariant,
                     size: 24,
-                  ),
+                ),
                 );
               },
             ),
             const SizedBox(height: 8),
-            Text(
-              label,
-              style: TextStyle(
+                Text(
+                  label,
+                  style: TextStyle(
                 fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
                 color: isSelected 
                     ? colorScheme.onPrimaryContainer 
-                    : colorScheme.onSurfaceVariant,
-              ),
+                            : colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
             ),
-          ],
-        ),
-      ),
+          ),
     );
   }
 
@@ -987,7 +987,7 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
     TextTheme textTheme,
   ) {
     final isLandscape = ResponsiveUtils.isLandscape(context);
-    
+
     return Card(
       margin: const EdgeInsets.only(bottom: 16),
       elevation: 0,
@@ -1182,12 +1182,12 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
                 CircularProgressIndicator(),
                 SizedBox(height: 16),
                 Text('Importing your data...'),
-              ],
-            ),
-          ),
-        );
-      }
-      
+          ],
+        ),
+      ),
+    );
+  }
+
       final storageService = StorageService();
       final success = await storageService.importUserData(File(filePath));
       
@@ -1209,9 +1209,9 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
                 FilledButton(
                   onPressed: () => Navigator.of(context).pop(),
                   child: const Text('OK'),
-                ),
-              ],
             ),
+          ],
+        ),
           );
         } else {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -1230,10 +1230,10 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
       
       // Show error
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
             content: Text('Error: $e'),
-            behavior: SnackBarBehavior.floating,
+        behavior: SnackBarBehavior.floating,
           ),
         );
       }
