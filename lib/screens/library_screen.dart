@@ -311,6 +311,9 @@ class _LibraryScreenState extends State<LibraryScreen>
 
   // Show dialog to add single or multiple audiobooks
   void _showAddBooksDialog(BuildContext context, AudiobookProvider provider) {
+    // Clear any previous error messages when opening the dialog
+    provider.clearErrorMessage();
+    
     final colorScheme = Theme.of(context).colorScheme;
     
     showDialog(
@@ -349,7 +352,11 @@ class _LibraryScreenState extends State<LibraryScreen>
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () {
+              // Clear error state when canceling
+              provider.clearErrorMessage();
+              Navigator.pop(context);
+            },
             child: const Text('Cancel'),
           ),
         ],

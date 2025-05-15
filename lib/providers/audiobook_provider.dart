@@ -96,6 +96,12 @@ class AudiobookProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Clears any error messages
+  void clearErrorMessage() {
+    _errorMessage = null;
+    notifyListeners();
+  }
+
   /// Loads the last played timestamps for all audiobooks
   Future<void> _loadLastPlayedTimestamps() async {
     _lastPlayedTimestamps.clear();
@@ -343,6 +349,9 @@ class AudiobookProvider extends ChangeNotifier {
             lockParentWindow: true,
           );
 
+      // Clear error message when user interacts with the picker
+      _errorMessage = null;
+      
       // *** FIX: Check if the path is non-null before proceeding ***
       if (selectedDirectoryPath != null && selectedDirectoryPath.isNotEmpty) {
         debugPrint("Folder selected: $selectedDirectoryPath");
@@ -369,10 +378,12 @@ class AudiobookProvider extends ChangeNotifier {
 
           if (newBook.chapters.isEmpty) {
             _errorMessage =
-                "Selected folder contains no compatible audio files or couldn't be read.";
+                "The selected folder contains no compatible audio files. Please try a different folder.";
             debugPrint(
               "No compatible chapters found in: $selectedDirectoryPath",
             );
+            _isLoading = false; // Make sure to set loading to false
+            notifyListeners(); // Ensure UI updates
           } else {
             // Mark the new book as "new" (never played)
             _newBooks[newBook.id] = true;
@@ -483,6 +494,9 @@ class AudiobookProvider extends ChangeNotifier {
         lockParentWindow: true,
       );
 
+      // Clear error message when user interacts with the picker
+      _errorMessage = null;
+      
       if (rootDirectoryPath != null && rootDirectoryPath.isNotEmpty) {
         debugPrint("Root folder selected: $rootDirectoryPath");
 
@@ -498,8 +512,10 @@ class AudiobookProvider extends ChangeNotifier {
               .toList();
 
           if (subfolders.isEmpty) {
-            _errorMessage = "No subfolders found. Each audiobook should be in its own folder.";
+            _errorMessage = "No subfolders found in the selected folder. Each audiobook should be in its own folder.";
             debugPrint("No subfolders found in: $rootDirectoryPath");
+            _isLoading = false; // Set loading to false
+            notifyListeners(); // Update UI immediately
             return;
           }
 
@@ -554,7 +570,7 @@ class AudiobookProvider extends ChangeNotifier {
             _errorMessage = null; // Clear error on success
             debugPrint("Successfully added $successCount audiobooks. Skipped $skipCount folders.");
           } else {
-            _errorMessage = "No valid audiobooks found in the selected folder.";
+            _errorMessage = "No valid audiobooks found in the selected folders. Please check that your audiobooks have compatible audio files.";
             debugPrint("No valid audiobooks found in root folder: $rootDirectoryPath");
           }
         } catch (e, stackTrace) {
