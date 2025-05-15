@@ -309,6 +309,57 @@ class _LibraryScreenState extends State<LibraryScreen>
     );
   }
 
+  // Show dialog to add single or multiple audiobooks
+  void _showAddBooksDialog(BuildContext context, AudiobookProvider provider) {
+    final colorScheme = Theme.of(context).colorScheme;
+    
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(
+          'Add Audiobooks',
+          style: TextStyle(
+            color: colorScheme.primary,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: Icon(Icons.book, color: colorScheme.primary),
+              title: const Text('Add Single Book'),
+              subtitle: const Text('Select a folder containing one audiobook'),
+              onTap: () {
+                Navigator.pop(context);
+                provider.addAudiobookFolder();
+              },
+            ),
+            const Divider(),
+            ListTile(
+              leading: Icon(Icons.library_add, color: colorScheme.primary),
+              title: const Text('Add Multiple Books'),
+              subtitle: const Text('Select a root folder with multiple audiobook subfolders'),
+              onTap: () {
+                Navigator.pop(context);
+                provider.addMultipleAudiobooks();
+              },
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+        ],
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     // Use watch for automatic rebuilds when provider notifies listeners
@@ -464,50 +515,7 @@ class _LibraryScreenState extends State<LibraryScreen>
         child: FloatingActionButton.extended(
           onPressed: provider.isLoading
               ? null
-              : () {
-                  final RenderBox button = context.findRenderObject() as RenderBox;
-                  final RenderBox overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
-                  final RelativeRect position = RelativeRect.fromRect(
-                    Rect.fromPoints(
-                      button.localToGlobal(Offset.zero, ancestor: overlay),
-                      button.localToGlobal(button.size.bottomRight(Offset.zero), ancestor: overlay),
-                    ),
-                    Offset.zero & overlay.size,
-                  );
-
-                  showMenu<String>(
-                    context: context,
-                    position: position,
-                    items: [
-                      PopupMenuItem<String>(
-                        value: 'single',
-                        child: Row(
-                          children: [
-                            Icon(Icons.library_add),
-                            SizedBox(width: 8),
-                            Text('Add Single Book'),
-                          ],
-                        ),
-                      ),
-                      PopupMenuItem<String>(
-                        value: 'multiple',
-                        child: Row(
-                          children: [
-                            Icon(Icons.library_add_check),
-                            SizedBox(width: 8),
-                            Text('Add Multiple Books'),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ).then((value) {
-                    if (value == 'single') {
-                      provider.addAudiobookFolder();
-                    } else if (value == 'multiple') {
-                      provider.addMultipleAudiobooks();
-                    }
-                  });
-                },
+              : () => _showAddBooksDialog(context, provider),
           elevation: 3,
           label: const Text('Add Books'),
           icon: const Icon(Icons.add_rounded),
@@ -565,27 +573,13 @@ class _LibraryScreenState extends State<LibraryScreen>
               ),
             ),
             const SizedBox(height: 32),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                FilledButton.icon(
-                  onPressed: () => provider.addAudiobookFolder(),
-                  icon: const Icon(Icons.book),
-                  label: const Text('Add Single Book'),
-                  style: FilledButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                FilledButton.icon(
-                  onPressed: () => provider.addMultipleAudiobooks(),
-                  icon: const Icon(Icons.library_add),
-                  label: const Text('Add Multiple Books'),
-                  style: FilledButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                  ),
-                ),
-              ],
+            FilledButton.icon(
+              onPressed: () => _showAddBooksDialog(context, provider),
+              icon: const Icon(Icons.add_rounded),
+              label: const Text('Add Books'),
+              style: FilledButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+              ),
             ),
           ],
         ),
