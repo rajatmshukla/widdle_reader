@@ -37,6 +37,7 @@ Future<MyAudioHandler> initAudioService() async {
 
   try {
     debugPrint("initAudioService: Initializing NEW Audio Handler instance...");
+    
     _audioHandlerInstance = await AudioService.init<MyAudioHandler>(
       builder: () => MyAudioHandler._internal(),
       config: const AudioServiceConfig(
@@ -143,11 +144,11 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   }
 
   // --- Playlist Management ---
-  Future<void> loadPlaylist(
-    Audiobook audiobook, {
+  Future<void> loadPlaylist({
+    required Audiobook audiobook,
     String? startChapterId,
     Duration? startPosition,
-    bool autoPlay = false, // Add autoPlay parameter, default to false
+    bool autoPlay = false,
   }) async {
     debugPrint(
       "loadPlaylist: Loading audiobook '${audiobook.title}' with ${audiobook.chapters.length} chapters",
@@ -157,7 +158,21 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
     await stopCurrentPlayback();
 
     _currentAudiobookId = audiobook.id;
-    final mediaItems = audiobook.chapters.map((c) => c.toMediaItem()).toList();
+    
+    // Create MediaItems with full audiobook information
+    final mediaItems = audiobook.chapters.map((chapter) {
+      // Create art URI from cover art if available
+      Uri? artUri;
+      if (audiobook.coverArt != null) {
+        artUri = Uri.dataFromBytes(audiobook.coverArt!);
+      }
+      
+      return chapter.toMediaItem(
+        audiobookTitle: audiobook.title,
+        audiobookAuthor: audiobook.author,
+        artUri: artUri,
+      );
+    }).toList();
 
     // Add items to queue subject
     queue.add(mediaItems);
@@ -477,7 +492,7 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
           if (audiobook != null) {
             debugPrint("Loading playlist for audiobook: ${audiobook.title}");
             await loadPlaylist(
-              audiobook,
+              audiobook: audiobook,
               startChapterId: startChapterId,
               startPosition: startPosition,
               autoPlay: autoPlay,

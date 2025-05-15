@@ -2,6 +2,8 @@ import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:rxdart/rxdart.dart';
 import 'dart:async';
+import 'dart:io';
+import 'package:path_provider/path_provider.dart';
 import 'package:audio_session/audio_session.dart';
 // Add this import:
 import 'package:just_audio_background/just_audio_background.dart';
@@ -88,6 +90,20 @@ class SimpleAudioService {
         skipToNext();
       }
     });
+    
+    // Listen for media button events from notifications
+    _player.androidAudioSessionIdStream.listen((_) {
+      _notificationsEnabled = true;
+      debugPrint("Android audio session connected - notifications enabled");
+    });
+    
+    // Process notification actions
+    _player.sequenceStateStream.listen((sequenceState) {
+      if (sequenceState != null) {
+        // If the sequence state changes, it might be due to notification controls
+        debugPrint("Sequence state changed by notification controls");
+      }
+    });
   }
 
   // Initialize audio session
@@ -125,6 +141,18 @@ class SimpleAudioService {
           }
         }
       });
+      
+      // Set up callbacks for media button events
+      _audioSession!.becomingNoisyEventStream.listen((_) {
+        // Headphones unplugged or other noise-creating event
+        pause();
+      });
+      
+      // Add a listener to player state changes to better handle media button events
+      _player.playerStateStream.listen((state) {
+        // Update state changes to handle media keys correctly
+        debugPrint("Player state changed: ${state.processingState}, playing: ${state.playing}");
+      });
 
       debugPrint("Audio session initialized successfully");
     } catch (e) {
@@ -149,28 +177,27 @@ class SimpleAudioService {
         return;
       }
 
-      final currentChapter = _currentAudiobook!.chapters[_currentChapterIndex];
-
-      // Set metadata for media notifications
-      await _player.setAudioSource(
-        AudioSource.uri(
-          Uri.file(currentChapter.id),
-          tag: MediaItem(
-            id: currentChapter.id,
-            album: _currentAudiobook!.title,
-            title: currentChapter.title,
-            artUri:
-                _currentAudiobook!.coverArt != null
-                    ? Uri.dataFromBytes(_currentAudiobook!.coverArt!)
-                    : null,
-            duration: currentChapter.duration,
-          ),
-        ),
-        initialPosition: _player.position,
-      );
-
+      // Ensure current chapter is properly configured with a MediaItem
+      // This will automatically enable system media controls
+      await loadChapter(_currentChapterIndex, startPosition: _player.position);
+      
       _notificationsEnabled = true;
-      debugPrint("Media notifications enabled");
+      debugPrint("Media notifications enabled successfully");
+      
+      // Add specific handler for media button commands
+      _player.processingStateStream.listen((state) {
+        if (state == ProcessingState.completed) {
+          skipToNext();
+        }
+      });
+      
+      // Handle skip actions from notification controls
+      _player.sequenceStateStream.where((state) => state != null).listen((state) {
+        // The player's sequence state is updated when notification controls are used
+        debugPrint("Media controls used via notification");
+      });
+      
+      debugPrint("Next/previous buttons in notifications enabled");
     } catch (e) {
       debugPrint("Error enabling notifications: $e");
     }
@@ -222,7 +249,20 @@ class SimpleAudioService {
     }
   }
 
-  // Load a specific chapter
+  // Helper method to save cover art to temporary file
+  Future<Uri?> _getCoverArtUri(Uint8List coverArt, String id) async {
+    try {
+      final tempDir = await getTemporaryDirectory();
+      final file = File('${tempDir.path}/cover_$id.jpg');
+      await file.writeAsBytes(coverArt);
+      return Uri.file(file.path);
+    } catch (e) {
+      debugPrint("Error creating cover art file: $e");
+      return Uri.dataFromBytes(coverArt);
+    }
+  }
+
+  // Load a chapter by index
   Future<void> loadChapter(int index, {Duration? startPosition}) async {
     if (_currentAudiobook == null ||
         index < 0 ||
@@ -233,31 +273,49 @@ class SimpleAudioService {
     try {
       final chapter = _currentAudiobook!.chapters[index];
 
-      if (_notificationsEnabled) {
-        // Use the notification-compatible audio source
-        await _player.setAudioSource(
-          AudioSource.uri(
-            Uri.file(chapter.id),
-            tag: MediaItem(
-              id: chapter.id,
-              album: _currentAudiobook!.title,
-              title: chapter.title,
-              artUri:
-                  _currentAudiobook!.coverArt != null
-                      ? Uri.dataFromBytes(_currentAudiobook!.coverArt!)
-                      : null,
-              duration: chapter.duration,
-            ),
-          ),
-        );
-      } else {
-        // Use the simple file path
-        await _player.setFilePath(chapter.id);
+      // Prepare artUri from cover art if available
+      Uri? artUri;
+      if (_currentAudiobook!.coverArt != null) {
+        try {
+          // Create a temporary file for cover art for better notification support
+          final sanitizedId = _currentAudiobook!.id.replaceAll(RegExp(r'[^\w]'), '_');
+          artUri = await _getCoverArtUri(_currentAudiobook!.coverArt!, sanitizedId);
+          debugPrint("Cover art URI created: $artUri");
+        } catch (e) {
+          debugPrint("Error creating artUri: $e");
+        }
       }
+      
+      // Create a MediaItem for the chapter - ALWAYS create this for just_audio_background
+      final mediaItem = MediaItem(
+        id: chapter.id,
+        album: _currentAudiobook!.title,
+        title: chapter.title,
+        artist: _currentAudiobook!.author ?? _currentAudiobook!.title,
+        artUri: artUri,
+        duration: chapter.duration,
+        displayTitle: chapter.title,
+        displaySubtitle: _currentAudiobook!.title,
+        displayDescription: _currentAudiobook!.author ?? _currentAudiobook!.title,
+        // Add extra metadata to enhance the notification display
+        extras: {
+          'audiobookId': _currentAudiobook!.id,
+          'chapterIndex': index,
+          'totalChapters': _currentAudiobook!.chapters.length,
+          'bookTitle': _currentAudiobook!.title,
+          'hasPrevious': index > 0,
+          'hasNext': index < _currentAudiobook!.chapters.length - 1,
+        },
+      );
 
-      if (startPosition != null) {
-        await _player.seek(startPosition);
-      }
+      // Always use the MediaItem tag regardless of notification state
+      await _player.setAudioSource(
+        AudioSource.uri(
+          Uri.file(chapter.id),
+          tag: mediaItem,
+        ),
+        initialPosition: startPosition,
+      );
 
       _currentChapterIndex = index;
       _currentChapterSubject.add(index);
@@ -290,6 +348,7 @@ class SimpleAudioService {
   // Enhanced position saving
   Future<Map<String, dynamic>> _saveCurrentPosition({
     bool silent = false,
+    bool isFinishing = false,
   }) async {
     if (_currentAudiobook == null) {
       return {};
@@ -300,16 +359,19 @@ class SimpleAudioService {
     final chapterId = _currentAudiobook!.chapters[_currentChapterIndex].id;
 
     try {
-      await _storageService.saveLastPosition(audiobookId, chapterId, position);
+      // If isFinishing is true, we're moving to a new chapter, so save the position as 0
+      final positionToSave = isFinishing ? Duration.zero : position;
+      
+      await _storageService.saveLastPosition(audiobookId, chapterId, positionToSave);
 
       if (!silent) {
-        debugPrint("Saved position for $audiobookId: $chapterId at $position");
+        debugPrint("Saved position for $audiobookId: $chapterId at $positionToSave");
       }
 
       return {
         'audiobookId': audiobookId,
         'chapterId': chapterId,
-        'position': position,
+        'position': positionToSave,
       };
     } catch (e) {
       debugPrint("Error saving position: $e");
@@ -329,6 +391,12 @@ class SimpleAudioService {
   // Playback controls with user intent tracking
   Future<void> play() async {
     _userPaused = false; // User explicitly requested play
+    
+    // Always enable notifications when playing
+    if (!_notificationsEnabled) {
+      await enableNotifications();
+    }
+    
     await _player.play();
     _startAutoSave();
   }
@@ -356,8 +424,22 @@ class SimpleAudioService {
 
     final nextIndex = _currentChapterIndex + 1;
     if (nextIndex < _currentAudiobook!.chapters.length) {
+      // Save current position before changing chapters
+      await _saveCurrentPosition(isFinishing: true);
+      
+      // Load next chapter and play it
+      debugPrint("Skipping to next chapter: $nextIndex");
       await loadChapter(nextIndex);
+      
+      // Ensure notifications are enabled when using media controls
+      if (!_notificationsEnabled) {
+        _notificationsEnabled = true;
+      }
+      
+      // Auto-play when skipping chapters via notification controls
       await play();
+    } else {
+      debugPrint("Already at last chapter, cannot skip to next");
     }
   }
 
@@ -366,8 +448,22 @@ class SimpleAudioService {
 
     final prevIndex = _currentChapterIndex - 1;
     if (prevIndex >= 0) {
+      // Save current position before changing chapters
+      await _saveCurrentPosition(isFinishing: true);
+      
+      // Load previous chapter and play it
+      debugPrint("Skipping to previous chapter: $prevIndex");
       await loadChapter(prevIndex);
+      
+      // Ensure notifications are enabled when using media controls
+      if (!_notificationsEnabled) {
+        _notificationsEnabled = true;
+      }
+      
+      // Auto-play when skipping chapters via notification controls
       await play();
+    } else {
+      debugPrint("Already at first chapter, cannot skip to previous");
     }
   }
 

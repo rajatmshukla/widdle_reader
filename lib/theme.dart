@@ -11,8 +11,8 @@ class AppTheme {
       brightness: Brightness.light,
     );
 
-    // Create Comfortaa text theme
-    final textTheme = GoogleFonts.comfortaaTextTheme(
+    // Create Roboto text theme
+    final textTheme = GoogleFonts.robotoTextTheme(
       ThemeData.light().textTheme,
     );
 
@@ -27,8 +27,8 @@ class AppTheme {
       brightness: Brightness.dark,
     );
 
-    // Create Comfortaa text theme
-    final textTheme = GoogleFonts.comfortaaTextTheme(
+    // Create Roboto text theme
+    final textTheme = GoogleFonts.robotoTextTheme(
       ThemeData.dark().textTheme,
     );
 

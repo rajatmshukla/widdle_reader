@@ -27,11 +27,12 @@ class AppLogo extends StatelessWidget {
 
     return Column(
       mainAxisSize: MainAxisSize.min,
+      mainAxisAlignment: MainAxisAlignment.center,
       children: [
         Container(
           width: size,
           height: size,
-          padding: EdgeInsets.all(size * 0.12),
+          padding: EdgeInsets.all(size * 0.06),
           decoration: BoxDecoration(
             color: secondaryColor.withOpacity(0.15),
             borderRadius: BorderRadius.circular(size * 0.3),
@@ -44,7 +45,7 @@ class AppLogo extends StatelessWidget {
             ],
           ),
           child: CustomPaint(
-            size: Size(size * 0.75, size * 0.75),
+            size: Size(size * 0.88, size * 0.88),
             painter: SmileyBookHeadphonesPainter(
               primaryColor: primaryColor,
               secondaryColor: secondaryColor,

@@ -13,14 +13,21 @@ class Chapter {
     this.duration,
   });
 
-  MediaItem toMediaItem() {
+  MediaItem toMediaItem({String? audiobookTitle, String? audiobookAuthor, Uri? artUri}) {
     return MediaItem(
       id: id,
-      album: audiobookId, // Store audiobookId here
+      album: audiobookTitle ?? audiobookId, // Store audiobookId here
       title: title,
+      artist: audiobookAuthor,
       duration: duration,
-      artUri: null, // We'll handle art at the Audiobook level for now
-      extras: {'audiobookId': audiobookId}, // Store original id if needed
+      artUri: artUri, // Pass in the cover art URI
+      displayTitle: title,
+      displaySubtitle: audiobookTitle ?? audiobookId,
+      extras: {
+        'audiobookId': audiobookId,
+        'audiobookTitle': audiobookTitle,
+        'audiobookAuthor': audiobookAuthor,
+      },
     );
   }
 

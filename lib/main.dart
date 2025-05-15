@@ -2,6 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter/services.dart';
+import 'package:just_audio_background/just_audio_background.dart';
 
 import 'providers/audiobook_provider.dart';
 import 'providers/theme_provider.dart';
@@ -32,54 +33,32 @@ Future<void> main() async {
     DeviceOrientation.landscapeRight,
   ]);
 
-  // Try to initialize audio service, but don't block app launch if it fails
   try {
-    await initializeAudioService();
+    // First initialize just_audio_background which handles media notifications
+    await JustAudioBackground.init(
+      androidNotificationChannelId: 'com.example.widdle_reader.channel.audio',
+      androidNotificationChannelName: 'Audiobook Playback',
+      androidNotificationOngoing: true,
+      androidStopForegroundOnPause: true,
+      androidShowNotificationBadge: true,
+      fastForwardInterval: const Duration(seconds: 30),
+      rewindInterval: const Duration(seconds: 30),
+      androidNotificationIcon: 'mipmap/ic_launcher',
+      androidNotificationClickStartsActivity: true,
+      notificationColor: const Color(0xFF2196f3),
+    );
+    
+    debugPrint("JustAudioBackground initialized successfully.");
+    
+    // We'll initialize the audio handler when it's actually needed
+    // instead of at app startup to avoid initialization issues
   } catch (e, stackTrace) {
-    debugPrint("Error initializing audio service in main: $e");
+    debugPrint("Error initializing audio services: $e");
     debugPrint("$stackTrace");
   }
 
   runApp(const MyApp());
   debugPrint("===== main() finished (runApp called) =====");
-}
-
-// Safe initialization function with checks to prevent multiple initializations
-Future<bool> initializeAudioService() async {
-  // If already initialized, return true
-  if (_audioServiceInitialized) {
-    debugPrint("Audio service already initialized.");
-    return true;
-  }
-
-  // If currently initializing, wait and return the result
-  if (_isInitializing) {
-    debugPrint("Audio service initialization already in progress. Waiting...");
-    // Wait for up to 5 seconds for initialization to complete
-    for (int i = 0; i < 50; i++) {
-      await Future.delayed(const Duration(milliseconds: 100));
-      if (_audioServiceInitialized) {
-        return true;
-      }
-    }
-    throw Exception("Timeout waiting for audio service initialization");
-  }
-
-  // Start initialization
-  _isInitializing = true;
-  try {
-    debugPrint("Starting audio service initialization...");
-    await initAudioService();
-    _audioServiceInitialized = true;
-    debugPrint("Audio service initialized successfully!");
-    return true;
-  } catch (e) {
-    debugPrint("Failed to initialize audio service: $e");
-    _isInitializing = false;
-    rethrow;
-  } finally {
-    _isInitializing = false;
-  }
 }
 
 class MyApp extends StatelessWidget {

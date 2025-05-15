@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../providers/audiobook_provider.dart';
 import '../providers/theme_provider.dart';
 import '../widgets/audiobook_tile.dart';
+import '../widgets/app_logo.dart';
 import '../models/audiobook.dart';
 import '../services/storage_service.dart';
 import '../theme.dart';
@@ -400,31 +401,28 @@ class _LibraryScreenState extends State<LibraryScreen>
     return Scaffold(
       extendBodyBehindAppBar: true,
       appBar: AppBar(
-        title: const Text(
-          'Widdle Reader',
-          style: TextStyle(
-            fontWeight: FontWeight.w700,
-            letterSpacing: 0.5,
-            fontSize: 16,
-          ),
-        ),
-        backgroundColor: colorScheme.surface.withOpacity(0.7),
-        leading: IconButton(
-          icon: Container(
-            padding: const EdgeInsets.all(6),
-            decoration: BoxDecoration(
-              color: colorScheme.surfaceContainerHighest.withOpacity(0.7),
-              borderRadius: BorderRadius.circular(12),
+        elevation: 0,
+        backgroundColor: Colors.transparent,
+        title: Row(
+          children: [
+            SizedBox(
+              width: 40,
+              height: 40,
+              child: const AppLogo(size: 40, showTitle: false),
             ),
-            child: const Icon(Icons.settings),
-          ),
-          tooltip: "Settings",
-          onPressed: () async {
-            await Navigator.pushNamed(context, '/settings');
-            // Refresh when returning from settings
-            _refreshLibrary();
-          },
+            const SizedBox(width: 12),
+            Text(
+              "Widdle Reader",
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: colorScheme.onSurface,
+              ),
+            ),
+          ],
         ),
+        leadingWidth: 0,
+        leading: const SizedBox.shrink(),
         actions: [
           // Refresh button
           AnimatedSwitcher(
@@ -441,11 +439,36 @@ class _LibraryScreenState extends State<LibraryScreen>
                       ),
                     )
                     : IconButton(
-                      icon: const Icon(Icons.refresh_rounded),
+                      icon: Container(
+                        padding: const EdgeInsets.all(6),
+                        decoration: BoxDecoration(
+                          color: colorScheme.surfaceContainerHighest.withOpacity(0.5),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Icon(Icons.refresh_rounded),
+                      ),
                       tooltip: "Refresh Library",
                       onPressed: () => provider.loadAudiobooks(),
                     ),
           ),
+          // Settings button
+          IconButton(
+            icon: Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: colorScheme.surfaceContainerHighest.withOpacity(0.5),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Icon(Icons.settings),
+            ),
+            tooltip: "Settings",
+            onPressed: () async {
+              await Navigator.pushNamed(context, '/settings');
+              // Refresh when returning from settings
+              _refreshLibrary();
+            },
+          ),
+          const SizedBox(width: 8), // Add some padding at the end
         ],
       ),
       body: Container(
@@ -609,7 +632,7 @@ class _LibraryScreenState extends State<LibraryScreen>
     return GridView.builder(
       padding: const EdgeInsets.only(
         bottom: 100,
-        top: 100, // Padding for app bar
+        top: 80, // Padding for transparent app bar
         left: 8,
         right: 8,
       ),
@@ -643,7 +666,7 @@ class _LibraryScreenState extends State<LibraryScreen>
     return ListView.builder(
       padding: const EdgeInsets.only(
         bottom: 100,
-        top: 100, // Padding for app bar
+        top: 80, // Padding for transparent app bar
       ),
       physics: const BouncingScrollPhysics(),
       itemCount: provider.audiobooks.length,

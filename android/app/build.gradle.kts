@@ -112,5 +112,6 @@ flutter {
 dependencies {
     implementation(kotlin("stdlib-jdk8")) // Use Kotlin standard library
     implementation("androidx.multidex:multidex:2.0.1") // Add MultiDex support library
+    implementation("androidx.media:media:1.6.0") // Add Media support for audio service
     // Add other app-specific dependencies here if needed
 }
