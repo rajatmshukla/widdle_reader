@@ -462,12 +462,56 @@ class _LibraryScreenState extends State<LibraryScreen>
         scale: provider.isLoading ? 0.0 : 1.0,
         duration: const Duration(milliseconds: 300),
         child: FloatingActionButton.extended(
-          onPressed:
-              provider.isLoading ? null : () => provider.addAudiobookFolder(),
+          onPressed: provider.isLoading
+              ? null
+              : () {
+                  final RenderBox button = context.findRenderObject() as RenderBox;
+                  final RenderBox overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
+                  final RelativeRect position = RelativeRect.fromRect(
+                    Rect.fromPoints(
+                      button.localToGlobal(Offset.zero, ancestor: overlay),
+                      button.localToGlobal(button.size.bottomRight(Offset.zero), ancestor: overlay),
+                    ),
+                    Offset.zero & overlay.size,
+                  );
+
+                  showMenu<String>(
+                    context: context,
+                    position: position,
+                    items: [
+                      PopupMenuItem<String>(
+                        value: 'single',
+                        child: Row(
+                          children: [
+                            Icon(Icons.library_add),
+                            SizedBox(width: 8),
+                            Text('Add Single Book'),
+                          ],
+                        ),
+                      ),
+                      PopupMenuItem<String>(
+                        value: 'multiple',
+                        child: Row(
+                          children: [
+                            Icon(Icons.library_add_check),
+                            SizedBox(width: 8),
+                            Text('Add Multiple Books'),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ).then((value) {
+                    if (value == 'single') {
+                      provider.addAudiobookFolder();
+                    } else if (value == 'multiple') {
+                      provider.addMultipleAudiobooks();
+                    }
+                  });
+                },
           elevation: 3,
-          label: const Text('Add Book'),
+          label: const Text('Add Books'),
           icon: const Icon(Icons.add_rounded),
-          tooltip: 'Add Audiobook Folder',
+          tooltip: 'Add Audiobooks',
         ),
       ),
     );
@@ -521,13 +565,27 @@ class _LibraryScreenState extends State<LibraryScreen>
               ),
             ),
             const SizedBox(height: 32),
-            FilledButton.icon(
-              onPressed: () => provider.addAudiobookFolder(),
-              icon: const Icon(Icons.add),
-              label: const Text('Add Your First Book'),
-              style: FilledButton.styleFrom(
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-              ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                FilledButton.icon(
+                  onPressed: () => provider.addAudiobookFolder(),
+                  icon: const Icon(Icons.book),
+                  label: const Text('Add Single Book'),
+                  style: FilledButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                FilledButton.icon(
+                  onPressed: () => provider.addMultipleAudiobooks(),
+                  icon: const Icon(Icons.library_add),
+                  label: const Text('Add Multiple Books'),
+                  style: FilledButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  ),
+                ),
+              ],
             ),
           ],
         ),
