@@ -3,11 +3,13 @@ import 'package:flutter/foundation.dart'; // For debugPrint and ChangeNotifier
 import 'package:permission_handler/permission_handler.dart'; // For permissions
 import 'package:file_picker/file_picker.dart'; // For picking folders
 import 'package:device_info_plus/device_info_plus.dart'; // For Android version check
+import 'package:shared_preferences/shared_preferences.dart'; // For SharedPreferences
 
 // Import local models and services
 import '../models/audiobook.dart';
 import '../services/metadata_service.dart';
 import '../services/storage_service.dart';
+
 
 class AudiobookProvider extends ChangeNotifier {
   final MetadataService _metadataService = MetadataService();
@@ -444,8 +446,8 @@ class AudiobookProvider extends ChangeNotifier {
         _audiobooks.map((b) => b.id).toList(),
       );
 
-      // Also clear any saved progress for this audiobook
-      await _storageService.resetAudiobookProgress(audiobookId);
+      // Also clear any saved position for this audiobook
+      await _storageService.clearLastPosition(audiobookId);
 
       debugPrint("Successfully removed audiobook: $audiobookId");
       notifyListeners();

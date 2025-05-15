@@ -6,6 +6,11 @@ import '../providers/theme_provider.dart';
 import '../widgets/app_logo.dart';
 import '../utils/responsive_utils.dart';
 import '../theme.dart';
+import 'dart:io';
+import 'package:file_picker/file_picker.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
+import '../services/storage_service.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -196,6 +201,16 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
             _buildAboutCard(colorScheme, textTheme),
             delay: 300,
           ),
+
+          // Data Management
+          _buildSectionWithDelay(
+            'Data Management',
+            Icons.storage_rounded,
+            textTheme,
+            colorScheme,
+            delay: 700,
+          ),
+          _buildDataBackupSection(colorScheme, textTheme),
         ],
       ),
     );
@@ -964,6 +979,418 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
         ),
       ),
     );
+  }
+
+  /// Build the data backup and restore section
+  Widget _buildDataBackupSection(
+    ColorScheme colorScheme,
+    TextTheme textTheme,
+  ) {
+    final isLandscape = ResponsiveUtils.isLandscape(context);
+    
+    return Card(
+      margin: const EdgeInsets.only(bottom: 16),
+      elevation: 0,
+      color: colorScheme.surfaceContainerLow,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Padding(
+        padding: EdgeInsets.all(isLandscape ? 16 : 20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Data Management',
+              style: textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            SizedBox(height: isLandscape ? 16 : 20),
+            
+            // Data backup option
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(Icons.backup_rounded, color: colorScheme.primary),
+              title: Text('Backup User Data', style: textTheme.bodyMedium),
+              subtitle: Text(
+                'Export your bookmarks, progress and preferences',
+                style: TextStyle(color: colorScheme.onSurfaceVariant),
+              ),
+              onTap: () => _backupUserData(context),
+            ),
+            
+            // Data restore option
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(Icons.restore_rounded, color: colorScheme.primary),
+              title: Text('Restore from Backup', style: textTheme.bodyMedium),
+              subtitle: Text(
+                'Import your data from a backup file',
+                style: TextStyle(color: colorScheme.onSurfaceVariant),
+              ),
+              onTap: () => _restoreUserData(context),
+            ),
+            
+            // Check data health option
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(Icons.verified_rounded, color: colorScheme.primary),
+              title: Text('Check Data Health', style: textTheme.bodyMedium),
+              subtitle: Text(
+                'Verify and repair data integrity if needed',
+                style: TextStyle(color: colorScheme.onSurfaceVariant),
+              ),
+              onTap: () => _checkDataHealth(context),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+  
+  // Backup user data
+  Future<void> _backupUserData(BuildContext context) async {
+    final storageService = StorageService();
+    
+    try {
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const AlertDialog(
+          title: Text('Creating Backup'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(height: 16),
+              Text('Exporting your data...'),
+            ],
+          ),
+        ),
+      );
+      
+      final backupFile = await storageService.exportUserData();
+      
+      // Close the progress dialog
+      if (context.mounted) Navigator.of(context).pop();
+      
+      if (backupFile != null) {
+        // Show success and share options
+        if (context.mounted) {
+          showDialog(
+            context: context,
+            builder: (context) => AlertDialog(
+              title: const Text('Backup Created'),
+              content: Text('Backup saved to: ${backupFile.path}\n\nWould you like to share this file?'),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('CLOSE'),
+                ),
+                FilledButton(
+                  onPressed: () {
+                    Navigator.of(context).pop();
+                    Share.shareXFiles(
+                      [XFile(backupFile.path)],
+                      subject: 'Widdle Reader Backup',
+                    );
+                  },
+                  child: const Text('SHARE'),
+                ),
+              ],
+            ),
+          );
+        }
+      } else {
+        // Show error
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Failed to create backup'),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      // Close progress dialog if open
+      if (context.mounted && Navigator.of(context).canPop()) {
+        Navigator.of(context).pop();
+      }
+      
+      // Show error
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: $e'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
+  }
+  
+  // Restore user data
+  Future<void> _restoreUserData(BuildContext context) async {
+    try {
+      // Show warning dialog first
+      final confirmRestore = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Restore Data'),
+          content: const Text(
+            'Restoring from a backup will overwrite your current data. '
+            'We recommend creating a backup of your current data first.\n\n'
+            'Do you want to continue?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('CANCEL'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('CONTINUE'),
+            ),
+          ],
+        ),
+      );
+      
+      if (confirmRestore != true) return;
+      
+      // Pick a backup file
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['json'],
+        allowMultiple: false,
+      );
+      
+      if (result == null || result.files.isEmpty) return;
+      
+      final filePath = result.files.first.path;
+      if (filePath == null) return;
+      
+      // Show progress dialog
+      if (context.mounted) {
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) => const AlertDialog(
+            title: Text('Restoring Data'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircularProgressIndicator(),
+                SizedBox(height: 16),
+                Text('Importing your data...'),
+              ],
+            ),
+          ),
+        );
+      }
+      
+      final storageService = StorageService();
+      final success = await storageService.importUserData(File(filePath));
+      
+      // Close the progress dialog
+      if (context.mounted) Navigator.of(context).pop();
+      
+      // Show result
+      if (context.mounted) {
+        if (success) {
+          showDialog(
+            context: context,
+            builder: (context) => AlertDialog(
+              title: const Text('Restore Successful'),
+              content: const Text(
+                'Your data has been restored successfully. '
+                'You may need to restart the app to see all changes.',
+              ),
+              actions: [
+                FilledButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('OK'),
+                ),
+              ],
+            ),
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Failed to restore data. The backup file may be invalid or corrupted.'),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      // Close progress dialog if open
+      if (context.mounted && Navigator.of(context).canPop()) {
+        Navigator.of(context).pop();
+      }
+      
+      // Show error
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: $e'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
+  }
+  
+  // Check data health
+  Future<void> _checkDataHealth(BuildContext context) async {
+    try {
+      final storageService = StorageService();
+      
+      // Show progress dialog
+      if (context.mounted) {
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) => const AlertDialog(
+            title: Text('Checking Data'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircularProgressIndicator(),
+                SizedBox(height: 16),
+                Text('Verifying data integrity...'),
+              ],
+            ),
+          ),
+        );
+      }
+      
+      // Check data health
+      final healthCheck = await storageService.checkDataHealth();
+      
+      // Create a backup as a safety measure
+      await storageService.createDataBackup();
+      
+      // Close the progress dialog
+      if (context.mounted) Navigator.of(context).pop();
+      
+      // Show results
+      if (context.mounted) {
+        showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Data Health Check'),
+            content: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text('Data Version: ${healthCheck['dataVersion']}/${healthCheck['currentVersion']}'),
+                  const SizedBox(height: 8),
+                  Text('Last Cache Sync: ${healthCheck['lastCacheSync']}'),
+                  const SizedBox(height: 16),
+                  const Text('Data Counts:', style: TextStyle(fontWeight: FontWeight.bold)),
+                  Text('• Audiobooks: ${healthCheck['counts']['folders']}'),
+                  Text('• Progress Records: ${healthCheck['counts']['progress']}'),
+                  Text('• Position Records: ${healthCheck['counts']['positions']}'),
+                  Text('• Bookmarks: ${healthCheck['counts']['bookmarks']}'),
+                  Text('• Completed Books: ${healthCheck['counts']['completedBooks']}'),
+                  Text('• Custom Titles: ${healthCheck['counts']['customTitles']}'),
+                  const SizedBox(height: 16),
+                  const Text('A backup of your data was created as a safety measure.'),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('CLOSE'),
+              ),
+              FilledButton(
+                onPressed: () {
+                  Navigator.of(context).pop();
+                  _attemptDataRecovery(context);
+                },
+                child: const Text('ATTEMPT RECOVERY'),
+              ),
+            ],
+          ),
+        );
+      }
+    } catch (e) {
+      // Close progress dialog if open
+      if (context.mounted && Navigator.of(context).canPop()) {
+        Navigator.of(context).pop();
+      }
+      
+      // Show error
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: $e'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
+  }
+  
+  // Attempt data recovery
+  Future<void> _attemptDataRecovery(BuildContext context) async {
+    try {
+      final storageService = StorageService();
+      
+      // Show progress dialog
+      if (context.mounted) {
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) => const AlertDialog(
+            title: Text('Recovering Data'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircularProgressIndicator(),
+                SizedBox(height: 16),
+                Text('Attempting to recover data...'),
+              ],
+            ),
+          ),
+        );
+      }
+      
+      // Attempt recovery
+      final recovered = await storageService.restoreFromBackup();
+      
+      // Close the progress dialog
+      if (context.mounted) Navigator.of(context).pop();
+      
+      // Show result
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(recovered 
+              ? 'Data recovery successful' 
+              : 'No recovery needed or no backup found'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } catch (e) {
+      // Close progress dialog if open
+      if (context.mounted && Navigator.of(context).canPop()) {
+        Navigator.of(context).pop();
+      }
+      
+      // Show error
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: $e'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
   }
 }
 

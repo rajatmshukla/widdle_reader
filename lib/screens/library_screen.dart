@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter/services.dart';
 
 import '../providers/audiobook_provider.dart';
 import '../providers/theme_provider.dart';
@@ -12,22 +14,39 @@ import '../utils/responsive_utils.dart';
 
 class LibraryScreen extends StatefulWidget {
   const LibraryScreen({super.key});
-
+  
   @override
   State<LibraryScreen> createState() => _LibraryScreenState();
 }
 
 class _LibraryScreenState extends State<LibraryScreen>
-    with WidgetsBindingObserver {
-  @override
-  void initState() {
-    super.initState();
-    // Register to detect when app becomes active
+    with WidgetsBindingObserver, SingleTickerProviderStateMixin {
+  late AnimationController _animationController;
+  late Animation<double> _fadeAnimation;
+  
+  @override  
+  void initState() {    
+    super.initState();    
+    // Register to detect when app becomes active    
     WidgetsBinding.instance.addObserver(this);
+    
+    // Initialize animation controller
+    _animationController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 400),
+    );
+    
+    _fadeAnimation = CurvedAnimation(
+      parent: _animationController,
+      curve: Curves.easeInOut,
+    );
+    
+    _animationController.forward();
   }
 
   @override
   void dispose() {
+    _animationController.dispose();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -37,6 +56,8 @@ class _LibraryScreenState extends State<LibraryScreen>
     // When app comes to foreground, refresh the library
     if (state == AppLifecycleState.resumed) {
       _refreshLibrary();
+      _animationController.reset();
+      _animationController.forward();
     }
   }
 
@@ -89,7 +110,7 @@ class _LibraryScreenState extends State<LibraryScreen>
       );
     }
 
-    // Use pushNamed and then refresh the UI when returning
+    // Use Hero animation for smoother transitions
     final result = await Navigator.pushNamed(
       context,
       '/player',
@@ -137,7 +158,7 @@ class _LibraryScreenState extends State<LibraryScreen>
                 onPressed: () => Navigator.pop(context),
                 child: const Text('Cancel'),
               ),
-              ElevatedButton(
+              FilledButton(
                 onPressed: () => Navigator.pop(context, controller.text),
                 child: const Text('Save'),
               ),
@@ -172,11 +193,11 @@ class _LibraryScreenState extends State<LibraryScreen>
                 onPressed: () => Navigator.pop(context, false),
                 child: const Text('Cancel'),
               ),
-              ElevatedButton(
+              FilledButton.tonal(
                 onPressed: () => Navigator.pop(context, true),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Theme.of(context).colorScheme.error,
-                  foregroundColor: Theme.of(context).colorScheme.onError,
+                style: FilledButton.styleFrom(
+                  backgroundColor: Theme.of(context).colorScheme.errorContainer,
+                  foregroundColor: Theme.of(context).colorScheme.onErrorContainer,
                 ),
                 child: const Text('Remove'),
               ),
@@ -194,49 +215,15 @@ class _LibraryScreenState extends State<LibraryScreen>
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(16),
             ),
+            action: SnackBarAction(
+              label: 'Dismiss',
+              onPressed: () {
+                // Do nothing, just dismiss
+              },
+            ),
           ),
         );
       }
-    }
-  }
-
-  // Show the reset progress confirmation dialog
-  Future<void> _showResetProgressDialog(
-    BuildContext context,
-    Audiobook audiobook,
-  ) async {
-    final title = Provider.of<AudiobookProvider>(
-      context,
-      listen: false,
-    ).getTitleForAudiobook(audiobook);
-
-    final result = await showDialog<bool>(
-      context: context,
-      builder:
-          (context) => AlertDialog(
-            title: const Text('Reset Progress'),
-            content: Text(
-              'Are you sure you want to reset your listening progress for "$title"?\n\n'
-              'This will mark the book as unread and remove your last position.',
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context, false),
-                child: const Text('Cancel'),
-              ),
-              ElevatedButton(
-                onPressed: () => Navigator.pop(context, true),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Theme.of(context).colorScheme.primary,
-                ),
-                child: const Text('Reset'),
-              ),
-            ],
-          ),
-    );
-
-    if (result == true && context.mounted) {
-      await _resetAudiobookProgress(context, audiobook);
     }
   }
 
@@ -260,21 +247,22 @@ class _LibraryScreenState extends State<LibraryScreen>
       context: context,
       isScrollControlled: true,
       builder:
-          (context) => Center(
-            child: Container(
-              width: maxWidth,
-              padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
-              decoration: BoxDecoration(
-                color: colorScheme.surface,
-                borderRadius: const BorderRadius.vertical(
-                  top: Radius.circular(24),
-                ),
+          (context) => Container(
+            width: maxWidth,
+            padding: const EdgeInsets.only(bottom: 16),
+            decoration: BoxDecoration(
+              color: colorScheme.surfaceContainerHigh,
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(28),
               ),
-              child: SafeArea(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
+            ),
+            child: SafeArea(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                    child: Text(
                       title,
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
                         fontWeight: FontWeight.bold,
@@ -283,109 +271,42 @@ class _LibraryScreenState extends State<LibraryScreen>
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
-                    const SizedBox(height: 24),
-                    ListTile(
-                      leading: Icon(
-                        Icons.edit_rounded,
-                        color: colorScheme.primary,
-                      ),
-                      title: const Text('Edit Title'),
-                      onTap: () {
-                        Navigator.pop(context);
-                        _showEditTitleDialog(context, audiobook, provider);
-                      },
+                  ),
+                  ListTile(
+                    leading: Icon(
+                      Icons.edit_rounded,
+                      color: colorScheme.primary,
                     ),
-                    ListTile(
-                      leading: Icon(
-                        Icons.restart_alt_rounded,
-                        color: colorScheme.secondary,
-                      ),
-                      title: const Text('Reset Progress'),
-                      subtitle: const Text(
-                        'Mark as unread and remove current position',
-                      ),
-                      onTap: () {
-                        Navigator.pop(context);
-                        _showResetProgressDialog(context, audiobook);
-                      },
+                    title: const Text('Edit Title'),
+                    onTap: () {
+                      Navigator.pop(context);
+                      _showEditTitleDialog(context, audiobook, provider);
+                    },
+                  ),
+                  const Divider(),
+                  ListTile(
+                    leading: Icon(
+                      Icons.delete_outline_rounded,
+                      color: colorScheme.error,
                     ),
-                    const Divider(),
-                    ListTile(
-                      leading: Icon(
-                        Icons.delete_outline_rounded,
-                        color: colorScheme.error,
-                      ),
-                      title: const Text('Remove from Library'),
-                      subtitle: const Text(
-                        'Files will not be deleted from your device',
-                      ),
-                      onTap: () {
-                        Navigator.pop(context);
-                        _showDeleteConfirmationDialog(
-                          context,
-                          audiobook,
-                          provider,
-                        );
-                      },
+                    title: const Text('Remove from Library'),
+                    subtitle: const Text(
+                      'Files will not be deleted from your device',
                     ),
-                    const SizedBox(height: 8),
-                  ],
-                ),
+                    onTap: () {
+                      Navigator.pop(context);
+                      _showDeleteConfirmationDialog(
+                        context,
+                        audiobook,
+                        provider,
+                      );
+                    },
+                  ),
+                ],
               ),
             ),
           ),
     );
-  }
-
-  // Reset audiobook progress
-  Future<void> _resetAudiobookProgress(
-    BuildContext context,
-    Audiobook audiobook,
-  ) async {
-    try {
-      final storageService = StorageService();
-
-      // Use the enhanced reset method that clears both position and cached progress
-      await storageService.resetAudiobookProgress(audiobook.id);
-
-      // Force refresh the library to update all tiles
-      if (context.mounted) {
-        final provider = Provider.of<AudiobookProvider>(context, listen: false);
-        provider.refreshUI(); // Trigger UI refresh
-
-        // Force update widgets
-        setState(() {});
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text('Progress reset successfully'),
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-            ),
-            action: SnackBarAction(
-              label: 'REFRESH',
-              onPressed: () {
-                provider.loadAudiobooks(); // Full reload if needed
-              },
-            ),
-          ),
-        );
-      }
-    } catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error resetting progress: $e'),
-            behavior: SnackBarBehavior.floating,
-            backgroundColor: Theme.of(context).colorScheme.error,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-            ),
-          ),
-        );
-      }
-    }
   }
 
   @override
@@ -404,29 +325,31 @@ class _LibraryScreenState extends State<LibraryScreen>
         headerSliverBuilder: (context, innerBoxIsScrolled) {
           return [
             SliverAppBar(
-              floating: false, 
-              snap: false,
+              floating: true, 
+              snap: true,
               pinned: true, // Keep the app bar visible and pinned at the top
-              backgroundColor: Theme.of(context).scaffoldBackgroundColor, // Match the scaffold background
-              expandedHeight: 60,
-              shape: const RoundedRectangleBorder(
-                borderRadius: BorderRadius.zero, // Remove any curves from the app bar
+              backgroundColor: colorScheme.surfaceContainerLow.withOpacity(0.95),
+              expandedHeight: 80,
+              systemOverlayStyle: SystemUiOverlayStyle(
+                statusBarColor: Colors.transparent,
+                statusBarIconBrightness: colorScheme.brightness == Brightness.dark
+                    ? Brightness.light
+                    : Brightness.dark,
               ),
-              elevation: 0, // Remove shadow
               title: Row(
                 children: [
                   SizedBox(
-                    width: 40,
-                    height: 40,
-                    child: const AppLogo(size: 40, showTitle: false),
+                    width: 38,
+                    height: 38,
+                    child: const AppLogo(size: 38, showTitle: false),
                   ),
                   const SizedBox(width: 12),
                   Text(
                     "Widdle Reader",
                     style: TextStyle(
-                      fontSize: 18,
+                      fontSize: 20,
                       fontWeight: FontWeight.bold,
-                      color: colorScheme.onSurface,
+                      color: seedColor,
                     ),
                   ),
                 ],
@@ -443,13 +366,13 @@ class _LibraryScreenState extends State<LibraryScreen>
                             height: 40,
                             child: CircularProgressIndicator(
                               strokeWidth: 2,
-                              color: colorScheme.onPrimary,
+                              color: seedColor,
                             ),
                           )
                           : IconButton(
-                            icon: Icon(
+                            icon: const Icon(
                               Icons.refresh_rounded,
-                              color: colorScheme.onPrimary,
+                              size: 24,
                             ),
                             tooltip: "Refresh Library",
                             onPressed: () => provider.loadAudiobooks(),
@@ -457,9 +380,9 @@ class _LibraryScreenState extends State<LibraryScreen>
                 ),
                 // Settings button
                 IconButton(
-                  icon: Icon(
-                    Icons.settings,
-                    color: colorScheme.onPrimary,
+                  icon: const Icon(
+                    Icons.settings_outlined,
+                    size: 24,
                   ),
                   tooltip: "Settings",
                   onPressed: () async {
@@ -477,12 +400,15 @@ class _LibraryScreenState extends State<LibraryScreen>
           decoration: AppTheme.gradientBackground(context),
           child: Stack(
             children: [
-              // Main content
-              provider.audiobooks.isEmpty && !provider.isLoading
-                  ? _buildEmptyLibraryView(context, provider, colorScheme)
-                  : isLandscape
-                      ? _buildGridView(context, provider)
-                      : _buildListView(context, provider),
+              // Main content with fade-in animation
+              FadeTransition(
+                opacity: _fadeAnimation,
+                child: provider.audiobooks.isEmpty && !provider.isLoading
+                    ? _buildEmptyLibraryView(context, provider, colorScheme)
+                    : isLandscape
+                        ? _buildGridView(context, provider)
+                        : _buildListView(context, provider),
+              ),
               
               // Error/Info Message
               if (provider.errorMessage != null && !provider.isLoading)
@@ -491,26 +417,34 @@ class _LibraryScreenState extends State<LibraryScreen>
               // Loading overlay
               if (provider.isLoading)
                 Container(
-                  color: Colors.black.withOpacity(0.5),
+                  color: Colors.black.withOpacity(0.3),
                   child: Center(
                     child: Card(
-                      elevation: 8,
+                      elevation: 6,
+                      shadowColor: colorScheme.shadow.withOpacity(0.2),
                       shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(20),
+                        borderRadius: BorderRadius.circular(24),
                       ),
                       child: Padding(
-                        padding: const EdgeInsets.all(20),
+                        padding: const EdgeInsets.all(24),
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            CircularProgressIndicator(color: colorScheme.primary),
-                            const SizedBox(height: 16),
+                            SizedBox(
+                              width: 48,
+                              height: 48,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 3,
+                                color: colorScheme.primary,
+                              ),
+                            ),
+                            const SizedBox(height: 24),
                             Text(
                               "Loading Library...",
                               style: TextStyle(
                                 fontSize: 16,
-                                color: colorScheme.onSurface,
                                 fontWeight: FontWeight.w500,
+                                color: colorScheme.onSurface,
                               ),
                             ),
                           ],
@@ -523,14 +457,14 @@ class _LibraryScreenState extends State<LibraryScreen>
           ),
         ),
       ),
-      // Fancy floating action button
+      // Floating action button
       floatingActionButton: AnimatedScale(
         scale: provider.isLoading ? 0.0 : 1.0,
         duration: const Duration(milliseconds: 300),
         child: FloatingActionButton.extended(
           onPressed:
               provider.isLoading ? null : () => provider.addAudiobookFolder(),
-          elevation: 4,
+          elevation: 3,
           label: const Text('Add Book'),
           icon: const Icon(Icons.add_rounded),
           tooltip: 'Add Audiobook Folder',
@@ -545,6 +479,9 @@ class _LibraryScreenState extends State<LibraryScreen>
       return const SizedBox.shrink(); // Error handled by overlay
     }
     
+    final themeProvider = Provider.of<ThemeProvider>(context, listen: false);
+    final seedColor = themeProvider.seedColor;
+    
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(30.0),
@@ -552,54 +489,44 @@ class _LibraryScreenState extends State<LibraryScreen>
           mainAxisSize: MainAxisSize.min,
           children: [
             // Empty library illustration
-            Icon(
-              Icons.menu_book_outlined,
-              size: 80,
-              color: colorScheme.onSurface.withOpacity(0.3),
+            Container(
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                color: colorScheme.primaryContainer.withOpacity(0.3),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                Icons.menu_book_outlined,
+                size: 64,
+                color: seedColor,
+              ),
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 32),
             Text(
               'Your library is empty',
               textAlign: TextAlign.center,
               style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.w500,
+                fontSize: 22,
+                fontWeight: FontWeight.w600,
                 color: colorScheme.onSurface,
               ),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 12),
             Text(
               'Tap the + button to add an audiobook folder.',
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: 16,
-                color: colorScheme.onSurface.withOpacity(0.7),
+                color: colorScheme.onSurfaceVariant,
               ),
             ),
-            const SizedBox(height: 40),
-            // Help arrow pointing to FAB
-            Align(
-              alignment: Alignment.bottomRight,
-              child: Padding(
-                padding: const EdgeInsets.only(right: 30),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      'Tap here',
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: colorScheme.primary,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Icon(
-                      Icons.arrow_downward_rounded,
-                      color: colorScheme.primary,
-                    ),
-                  ],
-                ),
+            const SizedBox(height: 32),
+            FilledButton.icon(
+              onPressed: () => provider.addAudiobookFolder(),
+              icon: const Icon(Icons.add),
+              label: const Text('Add Your First Book'),
+              style: FilledButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
               ),
             ),
           ],
@@ -612,33 +539,40 @@ class _LibraryScreenState extends State<LibraryScreen>
   Widget _buildGridView(BuildContext context, AudiobookProvider provider) {
     final screenWidth = MediaQuery.of(context).size.width;
     // Calculate how many items to show per row based on screen width
-    final crossAxisCount = screenWidth > 1000 ? 3 : 2;
+    final crossAxisCount = screenWidth > 1200 ? 4 : (screenWidth > 800 ? 3 : 2);
 
     return GridView.builder(
-      padding: EdgeInsets.zero, // No padding at top to allow cards to disappear under app bar
-      physics: const AlwaysScrollableScrollPhysics(), // Enable scrolling even with few items
+      padding: EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+      physics: const BouncingScrollPhysics(),
       gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: crossAxisCount,
-        childAspectRatio: 2.2, // Width to height ratio of each item
-        crossAxisSpacing: 8,
-        mainAxisSpacing: 8,
+        childAspectRatio: 1.8,
+        crossAxisSpacing: 12,
+        mainAxisSpacing: 12,
       ),
       itemCount: provider.audiobooks.length,
       itemBuilder: (context, index) {
         final audiobook = provider.audiobooks[index];
-        return Padding(
-          padding: index == 0 
-              ? const EdgeInsets.only(top: 8, left: 8, right: 8) // First item gets padding
-              : const EdgeInsets.symmetric(horizontal: 8),
-          child: GestureDetector(
-            onTap: () => _loadLastPositionAndNavigate(context, audiobook),
-            onLongPress: () => _showLongPressMenu(context, audiobook, provider),
-            child: AudiobookTile(
-              key: ValueKey(
-                '${audiobook.id}-${DateTime.now().millisecondsSinceEpoch}',
+        
+        // Apply staggered animation for items
+        return AnimatedOpacity(
+          duration: Duration(milliseconds: 300),
+          opacity: 1.0,
+          curve: Curves.easeOut,
+          child: AnimatedScale(
+            duration: Duration(milliseconds: 200),
+            scale: 1.0,
+            child: GestureDetector(
+              onTap: () => _loadLastPositionAndNavigate(context, audiobook),
+              onLongPress: () => _showLongPressMenu(context, audiobook, provider),
+              child: AudiobookTile(
+                // Use a more comprehensive key that will force a rebuild when reset happens
+                key: ValueKey(
+                  '${audiobook.id}-${provider.isCompletedBook(audiobook.id)}-${DateTime.now().millisecondsSinceEpoch}',
+                ),
+                audiobook: audiobook,
+                customTitle: provider.getTitleForAudiobook(audiobook),
               ),
-              audiobook: audiobook,
-              customTitle: provider.getTitleForAudiobook(audiobook),
             ),
           ),
         );
@@ -649,21 +583,24 @@ class _LibraryScreenState extends State<LibraryScreen>
   // List view for portrait orientation
   Widget _buildListView(BuildContext context, AudiobookProvider provider) {
     return ListView.builder(
-      padding: EdgeInsets.zero, // No padding at top to allow cards to disappear under app bar
-      physics: const AlwaysScrollableScrollPhysics(), // Enable scrolling even with few items
+      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+      physics: const BouncingScrollPhysics(),
       itemCount: provider.audiobooks.length,
       itemBuilder: (context, index) {
         final audiobook = provider.audiobooks[index];
-        return Padding(
-          padding: index == 0 
-              ? const EdgeInsets.only(top: 8) // First item gets padding
-              : EdgeInsets.zero,
+        
+        // Apply staggered animation for items
+        return AnimatedOpacity(
+          duration: Duration(milliseconds: 300),
+          opacity: 1.0,
+          curve: Curves.easeOut,
           child: GestureDetector(
             onTap: () => _loadLastPositionAndNavigate(context, audiobook),
             onLongPress: () => _showLongPressMenu(context, audiobook, provider),
             child: AudiobookTile(
+              // Use a more comprehensive key that will force a rebuild when reset happens
               key: ValueKey(
-                '${audiobook.id}-${DateTime.now().millisecondsSinceEpoch}',
+                '${audiobook.id}-${provider.isCompletedBook(audiobook.id)}-${DateTime.now().millisecondsSinceEpoch}',
               ),
               audiobook: audiobook,
               customTitle: provider.getTitleForAudiobook(audiobook),
@@ -685,39 +622,45 @@ class _LibraryScreenState extends State<LibraryScreen>
       right: isLandscape ? 100 : 20,
       child: Material(
         // Wrap with Material for elevation and shape
-        elevation: 6,
+        elevation: 4,
         borderRadius: BorderRadius.circular(16),
         color:
             provider.permissionPermanentlyDenied
-                ? Colors.orange[800]
+                ? colorScheme.errorContainer
                 : colorScheme.errorContainer,
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Icon(
+              Icon(
                 Icons.warning_amber_rounded,
-                color: Colors.white,
+                color: colorScheme.onErrorContainer,
                 size: 24,
               ),
               const SizedBox(width: 12),
               Expanded(
                 child: Text(
                   provider.errorMessage!,
-                  style: const TextStyle(
-                    color: Colors.white,
+                  style: TextStyle(
+                    color: colorScheme.onErrorContainer,
                     fontWeight: FontWeight.w500,
                   ),
                 ),
               ),
               // Show settings button only if permission is permanently denied
               if (provider.permissionPermanentlyDenied)
-                TextButton.icon(
-                  icon: const Icon(Icons.settings, color: Colors.white),
-                  label: const Text(
-                    "Settings",
-                    style: TextStyle(color: Colors.white),
+                TextButton(
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.settings, color: colorScheme.primary, size: 18),
+                      const SizedBox(width: 4),
+                      Text(
+                        "Settings",
+                        style: TextStyle(color: colorScheme.primary),
+                      ),
+                    ],
                   ),
                   onPressed: () => provider.openSettings(),
                 ),

@@ -50,7 +50,7 @@ val minSdkVersionFromFlutter by extra {
 
 android {
     // Set namespace (ensure this matches your AndroidManifest.xml package)
-    namespace = "com.example.widdle_reader" // <-- Verify/Change this if needed
+    namespace = "com.widdlereader.app" // Changed from com.example.widdle_reader
     // Explicitly set compileSdk version
     compileSdk = 35
 
@@ -69,7 +69,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.example.widdle_reader" // <-- Verify/Change this if needed
+        applicationId = "com.widdlereader.app" // Changed from com.example.widdle_reader
         minSdk = minSdkVersionFromFlutter
         targetSdk = 35
         versionCode = flutterVersionCode.toInt()
@@ -82,9 +82,12 @@ android {
          // You WILL need to configure release signing later for production builds
          // debug {
          // }
-         // release {
-              // TODO: Add your release signing configuration
-         // }
+         create("release") {
+             storeFile = file("../../widdle_reader.keystore")
+             storePassword = "Rajat!8433"
+             keyAlias = "widdle"
+             keyPassword = "Rajat!8433"
+         }
     }
 
     buildTypes {
@@ -94,8 +97,7 @@ android {
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
 
             // TODO: Configure your release signing key
-             signingConfig = signingConfigs.getByName("debug") // Using debug for now
-            // signingConfig = signingConfigs.getByName("release")
+             signingConfig = signingConfigs.getByName("release")
         }
         debug {
              // signingConfig = signingConfigs.getByName("debug")
@@ -113,5 +115,6 @@ dependencies {
     implementation(kotlin("stdlib-jdk8")) // Use Kotlin standard library
     implementation("androidx.multidex:multidex:2.0.1") // Add MultiDex support library
     implementation("androidx.media:media:1.6.0") // Add Media support for audio service
+    implementation("com.google.android.gms:play-services-auth:20.7.0") // Google Play Services for licensing
     // Add other app-specific dependencies here if needed
 }

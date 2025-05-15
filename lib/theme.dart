@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
-/// Defines the app's cute theme styles
+/// Defines the app's aesthetically pleasing Material 3 theme styles
 class AppTheme {
   /// Creates a light theme with the given seed color
   static ThemeData lightTheme(Color seedColor) {
@@ -11,8 +11,8 @@ class AppTheme {
       brightness: Brightness.light,
     );
 
-    // Create Roboto text theme
-    final textTheme = GoogleFonts.robotoTextTheme(
+    // Create a modern text theme using Google Fonts
+    final textTheme = GoogleFonts.interTextTheme(
       ThemeData.light().textTheme,
     );
 
@@ -27,8 +27,8 @@ class AppTheme {
       brightness: Brightness.dark,
     );
 
-    // Create Roboto text theme
-    final textTheme = GoogleFonts.robotoTextTheme(
+    // Create a modern text theme using Google Fonts
+    final textTheme = GoogleFonts.interTextTheme(
       ThemeData.dark().textTheme,
     );
 
@@ -43,182 +43,311 @@ class AppTheme {
       colorScheme: colorScheme,
       textTheme: textTheme,
 
-      // Scaffold background (slightly different from basic surface)
+      // Enhanced typography
+      typography: Typography.material2021(platform: TargetPlatform.android),
+
+      // Scaffold background with subtle gradient tint
       scaffoldBackgroundColor: colorScheme.surface,
 
-      // Custom app bar theme with rounded edges
+      // Custom app bar theme with Modern Material 3 styling
       appBarTheme: AppBarTheme(
-        backgroundColor: colorScheme.surface.withOpacity(0.7),
-        centerTitle: true,
+        backgroundColor: colorScheme.surfaceContainerLow.withOpacity(0.95),
+        centerTitle: false,
         elevation: 0,
-        shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(bottom: Radius.circular(24)),
-        ),
+        scrolledUnderElevation: 3,
+        shadowColor: colorScheme.shadow.withOpacity(0.3),
         titleTextStyle: textTheme.titleLarge?.copyWith(
           fontWeight: FontWeight.w600,
-          letterSpacing: 0.5,
+          letterSpacing: 0.25,
         ),
+        titleSpacing: 16,
+        toolbarHeight: 64,
       ),
 
-      // Card theme with strong rounded corners
+      // Enhanced card theme with proper elevation tokens
       cardTheme: CardTheme(
-        color: colorScheme.surfaceContainerHighest.withOpacity(0.7),
-        elevation: 3,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        color: colorScheme.surfaceContainerLow,
+        elevation: 1,
+        shadowColor: colorScheme.shadow.withOpacity(0.2),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         clipBehavior: Clip.antiAlias,
       ),
 
-      // Dialog theme with cute rounded edges
+      // Dialog theme with Material 3 styling
       dialogTheme: DialogTheme(
-        backgroundColor: colorScheme.surface,
-        elevation: 8,
+        backgroundColor: colorScheme.surfaceContainerHigh,
+        elevation: 6,
+        shadowColor: colorScheme.shadow.withOpacity(0.3),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
-        titleTextStyle: textTheme.titleLarge?.copyWith(
+        titleTextStyle: textTheme.headlineSmall?.copyWith(
           fontWeight: FontWeight.w500,
+          color: colorScheme.onSurface,
         ),
+        contentTextStyle: textTheme.bodyMedium?.copyWith(
+          color: colorScheme.onSurfaceVariant,
+        ),
+        actionsPadding: const EdgeInsets.all(16),
       ),
 
-      // Bottom sheet theme with rounded top edges
+      // Bottom sheet theme with proper container surfacing
       bottomSheetTheme: BottomSheetThemeData(
-        backgroundColor: colorScheme.surface,
-        modalBackgroundColor: colorScheme.surface,
+        backgroundColor: colorScheme.surfaceContainerHigh,
+        modalBackgroundColor: colorScheme.surfaceContainerHighest,
         shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(30)),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
         ),
         clipBehavior: Clip.antiAlias,
         elevation: 8,
+        modalElevation: 10,
+        dragHandleColor: colorScheme.onSurfaceVariant.withOpacity(0.4),
+        dragHandleSize: const Size(32, 4),
+        showDragHandle: true,
       ),
 
-      // Text button theme with rounded shape
+      // Text button theme with state layers
       textButtonTheme: TextButtonThemeData(
         style: TextButton.styleFrom(
           foregroundColor: colorScheme.primary,
+          backgroundColor: Colors.transparent,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(20),
           ),
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           textStyle: textTheme.labelLarge?.copyWith(
             fontWeight: FontWeight.w500,
-            letterSpacing: 0.5,
+            letterSpacing: 0.1,
           ),
+          elevation: 0,
+          minimumSize: const Size(64, 40),
         ),
       ),
 
-      // Elevated button theme with shadow
+      // Elevated button theme with Material 3 styling
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
-          backgroundColor: colorScheme.primary,
-          foregroundColor: colorScheme.onPrimary,
-          elevation: 4,
-          shadowColor: colorScheme.shadow.withOpacity(0.3),
+          backgroundColor: colorScheme.primaryContainer,
+          foregroundColor: colorScheme.onPrimaryContainer,
+          elevation: 0,
+          shadowColor: Colors.transparent,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(20),
           ),
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
           textStyle: textTheme.labelLarge?.copyWith(
             fontWeight: FontWeight.w500,
-            letterSpacing: 0.5,
+            letterSpacing: 0.1,
           ),
+          minimumSize: const Size(64, 48),
         ),
       ),
 
-      // Floating action button theme with shadow
+      // Filled button theme for primary actions
+      filledButtonTheme: FilledButtonThemeData(
+        style: FilledButton.styleFrom(
+          backgroundColor: colorScheme.primary,
+          foregroundColor: colorScheme.onPrimary,
+          elevation: 0,
+          disabledBackgroundColor: colorScheme.onSurface.withOpacity(0.12),
+          disabledForegroundColor: colorScheme.onSurface.withOpacity(0.38),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+          textStyle: textTheme.labelLarge?.copyWith(
+            fontWeight: FontWeight.w500,
+            letterSpacing: 0.1,
+          ),
+          minimumSize: const Size(64, 48),
+        ),
+      ),
+
+      // Outlined button theme
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: OutlinedButton.styleFrom(
+          foregroundColor: colorScheme.primary,
+          side: BorderSide(color: colorScheme.outline),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+          textStyle: textTheme.labelLarge?.copyWith(
+            fontWeight: FontWeight.w500,
+            letterSpacing: 0.1,
+          ),
+          minimumSize: const Size(64, 48),
+        ),
+      ),
+
+      // Floating action button theme
       floatingActionButtonTheme: FloatingActionButtonThemeData(
-        backgroundColor: colorScheme.primary,
-        foregroundColor: colorScheme.onPrimary,
-        elevation: 6,
+        backgroundColor: colorScheme.primaryContainer,
+        foregroundColor: colorScheme.onPrimaryContainer,
+        elevation: 3,
+        highlightElevation: 6,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         extendedPadding: const EdgeInsets.symmetric(
           horizontal: 24,
           vertical: 12,
         ),
+        extendedIconLabelSpacing: 12,
+        extendedTextStyle: textTheme.labelLarge?.copyWith(
+          fontWeight: FontWeight.w500,
+          letterSpacing: 0.1,
+        ),
       ),
 
-      // List tile theme with rounded edges
+      // List tile theme with proper spacing and state layering
       listTileTheme: ListTileThemeData(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        tileColor: Colors.transparent,
+        minVerticalPadding: 16,
+        minLeadingWidth: 24,
         iconColor: colorScheme.primary,
+        textColor: colorScheme.onSurface,
+        dense: false,
       ),
 
       // Icon theme
       iconTheme: IconThemeData(color: colorScheme.onSurface, size: 24),
+      primaryIconTheme: IconThemeData(color: colorScheme.primary, size: 24),
 
       // Slider theme for audio player
       sliderTheme: SliderThemeData(
         activeTrackColor: colorScheme.primary,
-        inactiveTrackColor: colorScheme.onSurface.withOpacity(0.2),
+        inactiveTrackColor: colorScheme.surfaceContainerHighest,
         thumbColor: colorScheme.primary,
+        overlayColor: colorScheme.primary.withOpacity(0.12),
+        trackHeight: 4,
         thumbShape: const RoundSliderThumbShape(
           enabledThumbRadius: 8,
-          elevation: 4,
-          pressedElevation: 8,
+          elevation: 3,
+          pressedElevation: 6,
         ),
-        trackHeight: 4,
-        overlayColor: colorScheme.primary.withOpacity(0.2),
-        overlayShape: const RoundSliderOverlayShape(overlayRadius: 16),
+        overlayShape: const RoundSliderOverlayShape(overlayRadius: 20),
+        trackShape: const RoundedRectSliderTrackShape(),
       ),
 
-      // Input decoration theme
+      // Input decoration theme with Material 3 styling
       inputDecorationTheme: InputDecorationTheme(
+        filled: true,
+        fillColor: colorScheme.surfaceContainerLow,
+        prefixIconColor: colorScheme.onSurfaceVariant,
+        suffixIconColor: colorScheme.onSurfaceVariant,
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
-          borderSide: BorderSide(color: colorScheme.outline),
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: colorScheme.outline, width: 1),
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
-          borderSide: BorderSide(color: colorScheme.outline.withOpacity(0.7)),
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: colorScheme.outline.withOpacity(0.5), width: 1),
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(12),
           borderSide: BorderSide(color: colorScheme.primary, width: 2),
         ),
-        filled: true,
-        fillColor: colorScheme.surfaceContainerHighest.withOpacity(0.4),
+        errorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: colorScheme.error, width: 1),
+        ),
         contentPadding: const EdgeInsets.symmetric(
           horizontal: 16,
           vertical: 16,
+        ),
+        helperStyle: textTheme.bodySmall?.copyWith(
+          color: colorScheme.onSurfaceVariant,
+        ),
+        labelStyle: textTheme.bodyLarge?.copyWith(
+          color: colorScheme.onSurfaceVariant,
+        ),
+        hintStyle: textTheme.bodyLarge?.copyWith(
+          color: colorScheme.onSurfaceVariant.withOpacity(0.6),
         ),
       ),
 
       // Progress indicator theme
       progressIndicatorTheme: ProgressIndicatorThemeData(
         color: colorScheme.primary,
-        circularTrackColor: colorScheme.onSurface.withOpacity(0.1),
-        linearTrackColor: colorScheme.onSurface.withOpacity(0.1),
+        circularTrackColor: colorScheme.surfaceContainerHighest,
+        linearTrackColor: colorScheme.surfaceContainerHighest,
+        refreshBackgroundColor: colorScheme.surfaceContainerHigh,
       ),
 
-      // Switch theme
+      // Switch theme with Material 3 styling
       switchTheme: SwitchThemeData(
         thumbColor: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.selected)) {
+            return colorScheme.onPrimary;
+          }
+          return colorScheme.outline;
+        }),
+        trackColor: WidgetStateProperty.resolveWith((states) {
           if (states.contains(WidgetState.selected)) {
             return colorScheme.primary;
           }
           return colorScheme.surfaceContainerHighest;
         }),
-        trackColor: WidgetStateProperty.resolveWith((states) {
-          if (states.contains(WidgetState.selected)) {
-            return colorScheme.primary.withOpacity(0.5);
-          }
-          return colorScheme.onSurface.withOpacity(0.3);
-        }),
         trackOutlineColor: WidgetStateProperty.all(Colors.transparent),
+        materialTapTargetSize: MaterialTapTargetSize.padded,
       ),
 
       // Divider theme
       dividerTheme: DividerThemeData(
-        color: colorScheme.outline.withOpacity(0.3),
+        color: colorScheme.outlineVariant.withOpacity(0.5),
         thickness: 1,
         space: 24,
+        indent: 0,
+        endIndent: 0,
       ),
 
       // Popup menu theme
       popupMenuTheme: PopupMenuThemeData(
-        color: colorScheme.surface,
-        elevation: 8,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        color: colorScheme.surfaceContainerHigh,
+        elevation: 3,
+        shadowColor: colorScheme.shadow.withOpacity(0.2),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        textStyle: textTheme.bodyMedium,
+        enableFeedback: true,
+      ),
+      
+      // Checkbox theme with Material 3 styling
+      checkboxTheme: CheckboxThemeData(
+        fillColor: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.selected)) {
+            return colorScheme.primary;
+          }
+          return Colors.transparent;
+        }),
+        checkColor: WidgetStateProperty.all(colorScheme.onPrimary),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+        side: BorderSide(color: colorScheme.outline, width: 1.5),
+      ),
+      
+      // Radio theme with Material 3 styling
+      radioTheme: RadioThemeData(
+        fillColor: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.selected)) {
+            return colorScheme.primary;
+          }
+          return colorScheme.outline;
+        }),
+      ),
+      
+      // Chip theme with Material 3 styling
+      chipTheme: ChipThemeData(
+        backgroundColor: colorScheme.surfaceContainerLow,
+        selectedColor: colorScheme.secondaryContainer,
+        disabledColor: colorScheme.surfaceContainerLowest.withOpacity(0.6),
+        deleteIconColor: colorScheme.onSurfaceVariant,
+        labelStyle: textTheme.labelLarge?.copyWith(
+          color: colorScheme.onSurfaceVariant,
+        ),
+        secondaryLabelStyle: textTheme.labelLarge?.copyWith(
+          color: colorScheme.onSecondaryContainer,
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        side: BorderSide(color: colorScheme.outlineVariant, width: 0.5),
       ),
     );
   }
@@ -234,11 +363,11 @@ class AppTheme {
         end: Alignment.bottomCenter,
         colors: [
           isDark
-              ? colorScheme.primary.withOpacity(0.2)
-              : colorScheme.primary.withOpacity(0.1),
+              ? colorScheme.primaryContainer.withOpacity(0.2)
+              : colorScheme.primaryContainer.withOpacity(0.2),
           colorScheme.surface,
         ],
-        stops: const [0.3, 1.0],
+        stops: const [0.2, 0.9],
       ),
     );
   }

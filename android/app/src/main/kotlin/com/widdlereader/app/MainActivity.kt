@@ -1,4 +1,4 @@
-package com.example.widdle_reader
+package com.widdlereader.app
 
 import android.content.Context
 import android.content.SharedPreferences
@@ -13,7 +13,7 @@ import io.flutter.plugin.common.MethodChannel
 import java.security.MessageDigest
 
 class MainActivity: AudioServiceActivity() {
-    private val CHANNEL = "com.example.widdle_reader/licensing"
+    private val CHANNEL = "com.widdlereader.app/licensing"
     private lateinit var preferences: SharedPreferences
     
     companion object {
@@ -100,4 +100,4 @@ class MainActivity: AudioServiceActivity() {
         val digest = md.digest(bytes)
         return digest.fold("") { str, it -> str + "%02x".format(it) }
     }
-}
+} 
