@@ -645,6 +645,7 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
     TextTheme textTheme,
   ) {
     final colors = [
+      // Material colors
       Colors.red,
       Colors.pink,
       Colors.purple,
@@ -664,6 +665,37 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
       Colors.brown,
       Colors.grey,
       Colors.blueGrey,
+      
+      // Pastel colors
+      const Color(0xFFFFD1DC), // Pastel pink
+      const Color(0xFFB5EAD7), // Pastel mint
+      const Color(0xFFC7CEEA), // Pastel blue
+      const Color(0xFFFFECD1), // Pastel peach
+      const Color(0xFFFFC8DD), // Pastel rose
+      
+      // Vibrant modern colors
+      const Color(0xFF6200EA), // Deep purple
+      const Color(0xFF00B8D4), // Bright cyan
+      const Color(0xFF00C853), // Bright green
+      const Color(0xFFFFD600), // Bright yellow
+      const Color(0xFFFF6E40), // Bright orange
+      
+      // Trendy colors
+      const Color(0xFF80DEEA), // Seafoam
+      const Color(0xFFD1C4E9), // Lavender
+      const Color(0xFFF48FB1), // Coral
+      const Color(0xFFBCAAA4), // Taupe
+      const Color(0xFF536DFE), // Electric blue
+      const Color(0xFF2E7D32), // Forest green
+      const Color(0xFF5D4037), // Cocoa
+      const Color(0xFF212121), // Night
+      
+      // Special colors
+      const Color(0xFF01579B), // Navy blue
+      const Color(0xFF004D40), // Dark teal
+      const Color(0xFF263238), // Dark slate
+      const Color(0xFF880E4F), // Wine
+      const Color(0xFF311B92), // Deep indigo
     ];
 
     final isLandscape = context.isLandscape;
@@ -686,7 +718,7 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
             ),
             const SizedBox(height: 8),
             Text(
-              'Choose from our pre-selected colors',
+              'Choose from our expanded color palette',
               style: textTheme.bodySmall?.copyWith(
                 color: colorScheme.onSurfaceVariant,
               ),
@@ -714,7 +746,7 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
                     });
                     _showThemeUpdatedSnackBar(context, themeProvider.seedColor);
                   },
-                  delay: index * 20, // Stagger the animations
+                  delay: index * 15, // Reduce the delay with more colors
                 );
               }).toList(),
             ),
