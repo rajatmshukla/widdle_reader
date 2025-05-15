@@ -394,127 +394,133 @@ class _LibraryScreenState extends State<LibraryScreen>
     final provider = context.watch<AudiobookProvider>();
     final themeProvider = context.watch<ThemeProvider>();
     final colorScheme = Theme.of(context).colorScheme;
+    final seedColor = themeProvider.seedColor;
 
     // Check for landscape orientation
     final isLandscape = ResponsiveUtils.isLandscape(context);
 
     return Scaffold(
-      extendBodyBehindAppBar: true,
-      appBar: AppBar(
-        elevation: 0,
-        backgroundColor: Colors.transparent,
-        title: Row(
-          children: [
-            SizedBox(
-              width: 40,
-              height: 40,
-              child: const AppLogo(size: 40, showTitle: false),
-            ),
-            const SizedBox(width: 12),
-            Text(
-              "Widdle Reader",
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: colorScheme.onSurface,
+      body: NestedScrollView(
+        headerSliverBuilder: (context, innerBoxIsScrolled) {
+          return [
+            SliverAppBar(
+              floating: true, 
+              snap: false, 
+              pinned: false,
+              backgroundColor: seedColor,
+              expandedHeight: 60,
+              shape: const RoundedRectangleBorder(
+                borderRadius: BorderRadius.zero,
               ),
-            ),
-          ],
-        ),
-        leadingWidth: 0,
-        leading: const SizedBox.shrink(),
-        actions: [
-          // Refresh button
-          AnimatedSwitcher(
-            duration: const Duration(milliseconds: 300),
-            child:
-                provider.isLoading
-                    ? Container(
-                      margin: const EdgeInsets.all(8),
-                      width: 40,
-                      height: 40,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: colorScheme.onPrimaryContainer,
-                      ),
-                    )
-                    : IconButton(
-                      icon: Container(
-                        padding: const EdgeInsets.all(6),
-                        decoration: BoxDecoration(
-                          color: colorScheme.surfaceContainerHighest.withOpacity(0.5),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: const Icon(Icons.refresh_rounded),
-                      ),
-                      tooltip: "Refresh Library",
-                      onPressed: () => provider.loadAudiobooks(),
+              elevation: 0,
+              title: Row(
+                children: [
+                  SizedBox(
+                    width: 40,
+                    height: 40,
+                    child: const AppLogo(size: 40, showTitle: false),
+                  ),
+                  const SizedBox(width: 12),
+                  Text(
+                    "Widdle Reader",
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: colorScheme.onPrimary,
                     ),
-          ),
-          // Settings button
-          IconButton(
-            icon: Container(
-              padding: const EdgeInsets.all(6),
-              decoration: BoxDecoration(
-                color: colorScheme.surfaceContainerHighest.withOpacity(0.5),
-                borderRadius: BorderRadius.circular(12),
+                  ),
+                ],
               ),
-              child: const Icon(Icons.settings),
-            ),
-            tooltip: "Settings",
-            onPressed: () async {
-              await Navigator.pushNamed(context, '/settings');
-              // Refresh when returning from settings
-              _refreshLibrary();
-            },
-          ),
-          const SizedBox(width: 8), // Add some padding at the end
-        ],
-      ),
-      body: Container(
-        decoration: AppTheme.gradientBackground(context),
-        child: Stack(
-          // Use Stack to overlay messages/indicators
-          children: [
-            // Main Content (List or Empty Message)
-            _buildBody(context, provider, isLandscape),
-
-            // Loading Indicator (Only show during initial load or add folder)
-            if (provider.isLoading)
-              Container(
-                color: Colors.black.withOpacity(0.5),
-                child: Center(
-                  child: Card(
-                    elevation: 8,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Padding(
-                      padding: const EdgeInsets.all(20),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          CircularProgressIndicator(color: colorScheme.primary),
-                          const SizedBox(height: 16),
-                          Text(
-                            "Loading Library...",
-                            style: TextStyle(
-                              fontSize: 16,
-                              color: colorScheme.onSurface,
-                              fontWeight: FontWeight.w500,
+              actions: [
+                // Refresh button
+                AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 300),
+                  child:
+                      provider.isLoading
+                          ? Container(
+                            margin: const EdgeInsets.all(8),
+                            width: 40,
+                            height: 40,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: colorScheme.onPrimary,
                             ),
+                          )
+                          : IconButton(
+                            icon: Icon(
+                              Icons.refresh_rounded,
+                              color: colorScheme.onPrimary,
+                            ),
+                            tooltip: "Refresh Library",
+                            onPressed: () => provider.loadAudiobooks(),
                           ),
-                        ],
+                ),
+                // Settings button
+                IconButton(
+                  icon: Icon(
+                    Icons.settings,
+                    color: colorScheme.onPrimary,
+                  ),
+                  tooltip: "Settings",
+                  onPressed: () async {
+                    await Navigator.pushNamed(context, '/settings');
+                    // Refresh when returning from settings
+                    _refreshLibrary();
+                  },
+                ),
+                const SizedBox(width: 8),
+              ],
+            ),
+          ];
+        },
+        body: Container(
+          decoration: AppTheme.gradientBackground(context),
+          child: Stack(
+            children: [
+              // Main content
+              provider.audiobooks.isEmpty && !provider.isLoading
+                  ? _buildEmptyLibraryView(context, provider, colorScheme)
+                  : isLandscape
+                      ? _buildGridView(context, provider)
+                      : _buildListView(context, provider),
+              
+              // Error/Info Message
+              if (provider.errorMessage != null && !provider.isLoading)
+                _buildErrorMessage(context, provider),
+                
+              // Loading overlay
+              if (provider.isLoading)
+                Container(
+                  color: Colors.black.withOpacity(0.5),
+                  child: Center(
+                    child: Card(
+                      elevation: 8,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.all(20),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            CircularProgressIndicator(color: colorScheme.primary),
+                            const SizedBox(height: 16),
+                            Text(
+                              "Loading Library...",
+                              style: TextStyle(
+                                fontSize: 16,
+                                color: colorScheme.onSurface,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ),
                 ),
-              ),
-
-            // Error/Info Message
-            if (provider.errorMessage != null && !provider.isLoading)
-              _buildErrorMessage(context, provider),
-          ],
+            ],
+          ),
         ),
       ),
       // Fancy floating action button
@@ -533,94 +539,73 @@ class _LibraryScreenState extends State<LibraryScreen>
     );
   }
 
-  Widget _buildBody(
-    BuildContext context,
-    AudiobookProvider provider,
-    bool isLandscape,
-  ) {
-    final colorScheme = Theme.of(context).colorScheme;
-
-    if (provider.audiobooks.isEmpty && !provider.isLoading) {
-      // Show add folder message if empty and not loading/no error
-      if (provider.errorMessage == null &&
-          !provider.permissionPermanentlyDenied) {
-        return Center(
-          child: Padding(
-            padding: const EdgeInsets.all(30.0),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // Empty library illustration
-                Icon(
-                  Icons.menu_book_outlined,
-                  size: 80,
-                  color: colorScheme.onSurface.withOpacity(0.3),
-                ),
-                const SizedBox(height: 24),
-                Text(
-                  'Your library is empty',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.w500,
-                    color: colorScheme.onSurface,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Tap the + button to add an audiobook folder.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 16,
-                    color: colorScheme.onSurface.withOpacity(0.7),
-                  ),
-                ),
-                const SizedBox(height: 40),
-                // Help arrow pointing to FAB
-                Align(
-                  alignment: Alignment.bottomRight,
-                  child: Padding(
-                    padding: const EdgeInsets.only(right: 30),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          'Tap here',
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: colorScheme.primary,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Icon(
-                          Icons.arrow_downward_rounded,
-                          color: colorScheme.primary,
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      } else {
-        // If there's an error or permission issue, the error message overlay will show
-        return const SizedBox.shrink(); // Return empty space, error handled elsewhere
-      }
-    } else if (provider.audiobooks.isNotEmpty) {
-      // For landscape mode, we'll use a grid view instead of a list
-      if (isLandscape) {
-        return _buildGridView(context, provider);
-      } else {
-        // Portrait mode - use list view
-        return _buildListView(context, provider);
-      }
-    } else {
-      // Return empty container while loading or if there's an error handled by overlay
-      return const SizedBox.shrink();
+  // Empty library view
+  Widget _buildEmptyLibraryView(BuildContext context, AudiobookProvider provider, ColorScheme colorScheme) {
+    if (provider.errorMessage != null || provider.permissionPermanentlyDenied) {
+      return const SizedBox.shrink(); // Error handled by overlay
     }
+    
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(30.0),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Empty library illustration
+            Icon(
+              Icons.menu_book_outlined,
+              size: 80,
+              color: colorScheme.onSurface.withOpacity(0.3),
+            ),
+            const SizedBox(height: 24),
+            Text(
+              'Your library is empty',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.w500,
+                color: colorScheme.onSurface,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Tap the + button to add an audiobook folder.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 16,
+                color: colorScheme.onSurface.withOpacity(0.7),
+              ),
+            ),
+            const SizedBox(height: 40),
+            // Help arrow pointing to FAB
+            Align(
+              alignment: Alignment.bottomRight,
+              child: Padding(
+                padding: const EdgeInsets.only(right: 30),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'Tap here',
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: colorScheme.primary,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Icon(
+                      Icons.arrow_downward_rounded,
+                      color: colorScheme.primary,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   // Grid view for landscape orientation
@@ -630,13 +615,8 @@ class _LibraryScreenState extends State<LibraryScreen>
     final crossAxisCount = screenWidth > 1000 ? 3 : 2;
 
     return GridView.builder(
-      padding: const EdgeInsets.only(
-        bottom: 100,
-        top: 80, // Padding for transparent app bar
-        left: 8,
-        right: 8,
-      ),
-      physics: const BouncingScrollPhysics(),
+      padding: EdgeInsets.zero, // No padding at top to allow cards to disappear under app bar
+      physics: const AlwaysScrollableScrollPhysics(), // Enable scrolling even with few items
       gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: crossAxisCount,
         childAspectRatio: 2.2, // Width to height ratio of each item
@@ -646,15 +626,20 @@ class _LibraryScreenState extends State<LibraryScreen>
       itemCount: provider.audiobooks.length,
       itemBuilder: (context, index) {
         final audiobook = provider.audiobooks[index];
-        return GestureDetector(
-          onTap: () => _loadLastPositionAndNavigate(context, audiobook),
-          onLongPress: () => _showLongPressMenu(context, audiobook, provider),
-          child: AudiobookTile(
-            key: ValueKey(
-              '${audiobook.id}-${DateTime.now().millisecondsSinceEpoch}',
+        return Padding(
+          padding: index == 0 
+              ? const EdgeInsets.only(top: 8, left: 8, right: 8) // First item gets padding
+              : const EdgeInsets.symmetric(horizontal: 8),
+          child: GestureDetector(
+            onTap: () => _loadLastPositionAndNavigate(context, audiobook),
+            onLongPress: () => _showLongPressMenu(context, audiobook, provider),
+            child: AudiobookTile(
+              key: ValueKey(
+                '${audiobook.id}-${DateTime.now().millisecondsSinceEpoch}',
+              ),
+              audiobook: audiobook,
+              customTitle: provider.getTitleForAudiobook(audiobook),
             ),
-            audiobook: audiobook,
-            customTitle: provider.getTitleForAudiobook(audiobook),
           ),
         );
       },
@@ -664,23 +649,25 @@ class _LibraryScreenState extends State<LibraryScreen>
   // List view for portrait orientation
   Widget _buildListView(BuildContext context, AudiobookProvider provider) {
     return ListView.builder(
-      padding: const EdgeInsets.only(
-        bottom: 100,
-        top: 80, // Padding for transparent app bar
-      ),
-      physics: const BouncingScrollPhysics(),
+      padding: EdgeInsets.zero, // No padding at top to allow cards to disappear under app bar
+      physics: const AlwaysScrollableScrollPhysics(), // Enable scrolling even with few items
       itemCount: provider.audiobooks.length,
       itemBuilder: (context, index) {
         final audiobook = provider.audiobooks[index];
-        return GestureDetector(
-          onTap: () => _loadLastPositionAndNavigate(context, audiobook),
-          onLongPress: () => _showLongPressMenu(context, audiobook, provider),
-          child: AudiobookTile(
-            key: ValueKey(
-              '${audiobook.id}-${DateTime.now().millisecondsSinceEpoch}',
+        return Padding(
+          padding: index == 0 
+              ? const EdgeInsets.only(top: 8) // First item gets padding
+              : EdgeInsets.zero,
+          child: GestureDetector(
+            onTap: () => _loadLastPositionAndNavigate(context, audiobook),
+            onLongPress: () => _showLongPressMenu(context, audiobook, provider),
+            child: AudiobookTile(
+              key: ValueKey(
+                '${audiobook.id}-${DateTime.now().millisecondsSinceEpoch}',
+              ),
+              audiobook: audiobook,
+              customTitle: provider.getTitleForAudiobook(audiobook),
             ),
-            audiobook: audiobook,
-            customTitle: provider.getTitleForAudiobook(audiobook),
           ),
         );
       },
