@@ -3,12 +3,14 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart'; // Import the package
 import '../providers/audiobook_provider.dart';
+import '../providers/sleep_timer_provider.dart';
 import '../models/audiobook.dart';
 import '../services/simple_audio_service.dart';
 import '../utils/helpers.dart';
 import '../utils/responsive_utils.dart';
 import '../theme.dart';
 import '../widgets/add_bookmark_dialog.dart';
+import '../widgets/countdown_timer_widget.dart';
 import '../screens/bookmarks_screen.dart';
 import '../models/chapter.dart';
 
@@ -42,6 +44,11 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    
+    // Initialize the audio service with a single instance
+    _audioService.init();
+    
+    // Load audiobook after the first frame is rendered
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadAudiobook();
     });
@@ -54,9 +61,11 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
           // Check if controller is ready and widget is mounted
           _itemScrollController.scrollTo(
             index: index,
-            duration: const Duration(milliseconds: 400), // Adjust duration
-            curve: Curves.easeInOutCubic, // Adjust curve
-            alignment: 0.5, // 0.5 aligns the item to the center
+            duration: const Duration(milliseconds: 400),
+            curve: Curves.easeInOutCubic,
+            // Use alignment to position the item in view with one item before it
+            // 0.3 will position the current item about 1/3 from the top
+            alignment: 0.3,
           );
         }
       });
@@ -64,12 +73,12 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
   }
 
   Future<void> _loadAudiobook() async {
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+    
     try {
-      setState(() {
-        _isLoading = true;
-        _errorMessage = null;
-      });
-
       final args = ModalRoute.of(context)?.settings.arguments;
       if (args == null || args is! Map<String, dynamic>) {
         throw Exception("Invalid arguments");
@@ -83,11 +92,13 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
         throw Exception("Audiobook data missing");
       }
 
-      if (mounted) {
-        final provider = Provider.of<AudiobookProvider>(context, listen: false);
-        await provider.recordBookPlayed(_audiobook!.id);
-      }
+      if (!mounted) return;
 
+      // Record book played
+      final provider = Provider.of<AudiobookProvider>(context, listen: false);
+      await provider.recordBookPlayed(_audiobook!.id);
+
+      // Find start chapter index
       int startChapterIndex = 0;
       if (startChapterId != null) {
         startChapterIndex = _audiobook!.chapters.indexWhere(
@@ -96,6 +107,7 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
         if (startChapterIndex == -1) startChapterIndex = 0;
       }
 
+      // Load the audiobook
       await _audioService.loadAudiobook(
         _audiobook!,
         startChapter: startChapterIndex,
@@ -103,33 +115,23 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
         autoPlay: false,
       );
 
+      // Enable notifications
       await _audioService.enableNotifications();
 
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-
-        // Remove the old auto-scroll logic, it's handled by the stream listener now
-        /*
-        await Future.delayed(const Duration(milliseconds: 100));
-        final currentIndex = _audioService.currentChapterIndex;
-        if (_chapterListScrollController.hasClients) {
-          _chapterListScrollController.animateTo(
-            currentIndex * 72.0, // Approx. item height
-            duration: const Duration(milliseconds: 300),
-            curve: Curves.easeOut,
-          );
-        }
-        */
-      }
+      if (!mounted) return;
+      
+      // Update the UI
+      setState(() {
+        _isLoading = false;
+      });
+      
     } catch (e) {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-          _errorMessage = "Failed to load audiobook: $e";
-        });
-      }
+      if (!mounted) return;
+      
+      setState(() {
+        _isLoading = false;
+        _errorMessage = "Failed to load audiobook: $e";
+      });
     }
   }
 
@@ -250,10 +252,212 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
     );
   }
 
+  // Show sleep timer dialog
+  void _showSleepTimerDialog() {
+    final timerProvider = Provider.of<SleepTimerProvider>(context, listen: false);
+    final colorScheme = Theme.of(context).colorScheme;
+    
+    showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) {
+          return AlertDialog(
+            title: Text(
+              'Sleep Timer',
+              style: TextStyle(
+                color: colorScheme.onSurface,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (timerProvider.isActive)
+                  StreamBuilder<Duration>(
+                    stream: timerProvider.remainingTimeStream,
+                    initialData: timerProvider.remainingTime,
+                    builder: (context, snapshot) {
+                      final remainingTime = snapshot.data ?? Duration.zero;
+                      final minutes = remainingTime.inMinutes;
+                      final seconds = remainingTime.inSeconds % 60;
+                      final timeDisplay = '$minutes:${seconds.toString().padLeft(2, '0')}';
+                      
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 16),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            SizedBox(
+                              width: 50,
+                              height: 50,
+                              child: CircularProgressIndicator(
+                                value: remainingTime.inSeconds / (timerProvider.totalDuration?.inSeconds ?? 1),
+                                backgroundColor: colorScheme.surfaceVariant,
+                                strokeWidth: 5,
+                                color: colorScheme.primary,
+                              ),
+                            ),
+                            const SizedBox(width: 16),
+                            Text(
+                              timeDisplay,
+                              style: TextStyle(
+                                color: colorScheme.primary,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 24,
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                  
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  alignment: WrapAlignment.center,
+                  children: [
+                    _buildTimerOption(5),
+                    _buildTimerOption(15),
+                    _buildTimerOption(30),
+                    _buildTimerOption(45),
+                    _buildTimerOption(60),
+                    _buildCustomTimerOption(),
+                  ],
+                ),
+                
+                if (timerProvider.isActive)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 16),
+                    child: OutlinedButton.icon(
+                      onPressed: () {
+                        timerProvider.cancelTimer();
+                        Navigator.of(context).pop();
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Sleep timer canceled'),
+                            duration: Duration(seconds: 2),
+                            behavior: SnackBarBehavior.floating,
+                          ),
+                        );
+                      },
+                      icon: const Icon(Icons.timer_off),
+                      label: const Text('Cancel Timer'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: colorScheme.error,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Close'),
+              ),
+            ],
+          );
+        }
+      ),
+    );
+  }
+  
+  // Build timer option button
+  Widget _buildTimerOption(int minutes) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final timerProvider = Provider.of<SleepTimerProvider>(context, listen: false);
+    
+    return ElevatedButton(
+      onPressed: () {
+        timerProvider.startTimer(Duration(minutes: minutes));
+        Navigator.of(context).pop();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Sleep timer set for $minutes minutes'),
+            duration: const Duration(seconds: 3),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      },
+      style: ElevatedButton.styleFrom(
+        backgroundColor: colorScheme.primaryContainer,
+        foregroundColor: colorScheme.onPrimaryContainer,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      ),
+      child: Text('$minutes min'),
+    );
+  }
+  
+  // Build custom timer option
+  Widget _buildCustomTimerOption() {
+    final colorScheme = Theme.of(context).colorScheme;
+    final timerProvider = Provider.of<SleepTimerProvider>(context, listen: false);
+    
+    return ElevatedButton(
+      onPressed: () {
+        Navigator.of(context).pop();
+        _showCustomTimerDialog();
+      },
+      style: ElevatedButton.styleFrom(
+        backgroundColor: colorScheme.primaryContainer,
+        foregroundColor: colorScheme.onPrimaryContainer,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      ),
+      child: const Text('Custom'),
+    );
+  }
+  
+  // Show custom timer dialog with number input
+  void _showCustomTimerDialog() {
+    final TextEditingController _minutesController = TextEditingController();
+    final colorScheme = Theme.of(context).colorScheme;
+    final timerProvider = Provider.of<SleepTimerProvider>(context, listen: false);
+    
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Set Custom Timer'),
+        content: TextField(
+          controller: _minutesController,
+          keyboardType: TextInputType.number,
+          decoration: const InputDecoration(
+            labelText: 'Minutes',
+            hintText: 'Enter minutes',
+          ),
+          autofocus: true,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final minutes = int.tryParse(_minutesController.text);
+              if (minutes != null && minutes > 0) {
+                timerProvider.startTimer(Duration(minutes: minutes));
+                Navigator.of(context).pop();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Sleep timer set for $minutes minutes'),
+                    duration: const Duration(seconds: 3),
+                    behavior: SnackBarBehavior.floating,
+                  ),
+                );
+              }
+            },
+            child: const Text('Start Timer'),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final isLandscape = ResponsiveUtils.isLandscape(context);
+    final screenSize = MediaQuery.of(context).size;
 
     return Scaffold(
       extendBodyBehindAppBar: true, // Let content flow behind app bar
@@ -314,7 +518,7 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
             onPressed: _audiobook != null ? _showAddBookmarkDialog : null,
           ),
           
-          // Stop button
+          // Sleep timer button - using CountdownTimerWidget
           IconButton(
             icon: Container(
               padding: const EdgeInsets.all(6),
@@ -324,27 +528,25 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
                 ),
                 borderRadius: BorderRadius.circular(12),
               ),
-              child: const Icon(Icons.stop_circle_outlined),
+              child: CountdownTimerWidget(
+                size: 24.0,
+                showIcon: true,
+                onTap: null, // We're using IconButton's onPressed instead
+              ),
             ),
-            onPressed: () async {
-              // Save position and wait for it to complete before stopping
-              await _audioService.saveCurrentPosition();
-              await _audioService.stop();
-              if (mounted) {
-                Navigator.of(
-                  context,
-                ).pop(true); // Return with result to trigger refresh
-              }
-            },
+            tooltip: 'Sleep Timer',
+            onPressed: _showSleepTimerDialog,
           ),
+          
+          // Add padding at the end
+          const SizedBox(width: 8),
         ],
       ),
-      body:
-          _isLoading
-              ? _buildLoadingWidget(colorScheme)
-              : (_errorMessage != null
-                  ? _buildErrorWidget(colorScheme)
-                  : _buildPlayerContent(colorScheme)),
+      body: _isLoading
+          ? _buildLoadingWidget(colorScheme)
+          : (_errorMessage != null
+              ? _buildErrorWidget(colorScheme)
+              : _buildPlayerContent(colorScheme, screenSize, isLandscape)),
     );
   }
 
@@ -453,23 +655,18 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
     );
   }
 
-  Widget _buildPlayerContent(ColorScheme colorScheme) {
+  Widget _buildPlayerContent(ColorScheme colorScheme, Size screenSize, bool isLandscape) {
     if (_audiobook == null) {
-      return Center(child: Text("No audiobook data available"));
+      return const Center(child: Text("No audiobook data available"));
     }
-
-    // Use responsive utils to determine layout
-    final isLandscape = ResponsiveUtils.isLandscape(context);
-    final screenSize = MediaQuery.of(context).size;
 
     // Use different layouts for portrait and landscape orientations
     return Container(
       decoration: AppTheme.gradientBackground(context),
       child: SafeArea(
-        child:
-            isLandscape
-                ? _buildLandscapeLayout(colorScheme, screenSize)
-                : _buildPortraitLayout(colorScheme, screenSize),
+        child: isLandscape
+            ? _buildLandscapeLayout(colorScheme, screenSize)
+            : _buildPortraitLayout(colorScheme, screenSize),
       ),
     );
   }
@@ -477,88 +674,105 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
   Widget _buildPortraitLayout(ColorScheme colorScheme, Size screenSize) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        return Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16.0),
-          child: Column(
-            children: [
-              const SizedBox(height: 10),
+        // Calculate minimum height needed to display all content
+        final totalContentHeight = screenSize.width * 0.5 + // Cover art height
+                                   300 + // Approximate height for controls and titles
+                                   screenSize.height * 0.35; // Chapter list height
+                                   
+        // Check if scrolling is needed
+        final needsScrolling = totalContentHeight > constraints.maxHeight;
+        
+        return SingleChildScrollView(
+          // Only allow scrolling if the content doesn't fit
+          physics: needsScrolling ? const BouncingScrollPhysics() : const NeverScrollableScrollPhysics(),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              // If content is smaller than screen, fill screen height
+              minHeight: constraints.maxHeight,
+            ),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16.0),
+              child: Column(
+                children: [
+                  const SizedBox(height: 10),
 
-              // Cover art
-              Container(
-                width: screenSize.width * 0.5,
-                height: screenSize.width * 0.5,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(20),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withAlpha((0.3 * 255).round()),
-                      blurRadius: 15,
-                      offset: const Offset(0, 8),
-                    ),
-                  ],
-                ),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(20),
-                  child: buildCoverWidget(
-                    context,
-                    _audiobook!,
-                    size: screenSize.width * 0.5,
-                  ),
-                ),
-              ),
-
-              const SizedBox(height: 20),
-
-              _buildChapterTitle(colorScheme),
-              const SizedBox(height: 5),
-              _buildAudiobookTitle(colorScheme),
-              const SizedBox(height: 16),
-              _buildProgressBar(colorScheme),
-              const SizedBox(height: 16),
-              _buildSpeedControl(colorScheme),
-              const SizedBox(height: 24),
-              _buildControls(colorScheme),
-              const SizedBox(height: 24),
-
-              // Chapter header
-              Align(
-                alignment: Alignment.centerLeft,
-                child: Padding(
-                  padding: const EdgeInsets.only(left: 8.0, bottom: 8.0),
-                  child: Row(
-                    children: [
-                      Icon(
-                        Icons.library_books_outlined,
-                        size: 20,
-                        color: colorScheme.primary,
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        "Chapters",
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 18,
-                          color: colorScheme.onSurface,
+                  // Cover art
+                  Container(
+                    width: screenSize.width * 0.5,
+                    height: screenSize.width * 0.5,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(20),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withAlpha((0.3 * 255).round()),
+                          blurRadius: 15,
+                          offset: const Offset(0, 8),
                         ),
+                      ],
+                    ),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(20),
+                      child: buildCoverWidget(
+                        context,
+                        _audiobook!,
+                        size: screenSize.width * 0.5,
                       ),
-                    ],
+                    ),
                   ),
-                ),
-              ),
 
-              // Flexible scrollable chapter list (independent from the rest)
-              Expanded(
-                child: Container(
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(16),
-                    color: colorScheme.surfaceContainerLowest.withOpacity(0.3),
+                  const SizedBox(height: 20),
+
+                  _buildChapterTitle(colorScheme),
+                  const SizedBox(height: 5),
+                  _buildAudiobookTitle(colorScheme),
+                  const SizedBox(height: 16),
+                  _buildProgressBar(colorScheme),
+                  const SizedBox(height: 16),
+                  _buildSpeedControl(colorScheme),
+                  const SizedBox(height: 24),
+                  _buildControls(colorScheme),
+                  const SizedBox(height: 24),
+
+                  // Chapter header
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Padding(
+                      padding: const EdgeInsets.only(left: 8.0, bottom: 8.0),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.library_books_outlined,
+                            size: 20,
+                            color: colorScheme.primary,
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            "Chapters",
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 18,
+                              color: colorScheme.onSurface,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
-                  child: _buildChapterList(colorScheme),
-                ),
-              ),
 
-              const SizedBox(height: 20),
-            ],
+                  // Chapter list container - with fixed height
+                  Container(
+                    height: screenSize.height * 0.35, // Fixed height - 35% of screen height
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(16),
+                      color: colorScheme.surfaceContainerLowest.withOpacity(0.3),
+                    ),
+                    child: _buildChapterList(colorScheme),
+                  ),
+
+                  const SizedBox(height: 20),
+                ],
+              ),
+            ),
           ),
         );
       },
@@ -720,46 +934,42 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
         if (_audiobook == null || index >= _audiobook!.chapters.length) {
           return const SizedBox.shrink(); // Handle edge case
         }
+        
         final chapter = _audiobook!.chapters[index];
-
+        final isLandscape = context.isLandscape;
+        
         // Use a StreamBuilder just for the 'isPlaying' status to react immediately
         return StreamBuilder<int>(
           stream: _audioService.currentChapterStream,
-          // Use currentChapterIndex as initial data for smoother loading
           initialData: _audioService.currentChapterIndex,
           builder: (context, snapshot) {
-            final currentPlayingIndex =
-                snapshot.data ?? _audioService.currentChapterIndex;
+            final currentPlayingIndex = snapshot.data ?? _audioService.currentChapterIndex;
             final isPlaying = index == currentPlayingIndex;
 
-            // Your ListTile code remains largely the same:
             return ListTile(
-              dense: context.isLandscape,
+              dense: isLandscape,
               contentPadding: EdgeInsets.symmetric(
                 horizontal: 16,
-                vertical: context.isLandscape ? 0 : 2,
+                vertical: isLandscape ? 0 : 2,
               ),
               leading: Container(
                 width: 32,
                 height: 32,
                 decoration: BoxDecoration(
-                  color:
-                      isPlaying
-                          ? colorScheme.primary
-                          : colorScheme.surfaceContainerHighest.withAlpha(150),
+                  color: isPlaying
+                      ? colorScheme.primary
+                      : colorScheme.surfaceContainerHighest.withAlpha(150),
                   shape: BoxShape.circle,
                 ),
                 child: Center(
                   child: Icon(
                     isPlaying
-                        ? Icons
-                            .play_arrow_rounded // Use consistent icons
+                        ? Icons.play_arrow_rounded
                         : Icons.my_library_books_rounded,
                     size: 16,
-                    color:
-                        isPlaying
-                            ? colorScheme.onPrimary
-                            : colorScheme.onSurfaceVariant,
+                    color: isPlaying
+                        ? colorScheme.onPrimary
+                        : colorScheme.onSurfaceVariant,
                   ),
                 ),
               ),
@@ -769,8 +979,7 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
                   fontWeight: isPlaying ? FontWeight.bold : FontWeight.normal,
-                  color:
-                      isPlaying ? colorScheme.primary : colorScheme.onSurface,
+                  color: isPlaying ? colorScheme.primary : colorScheme.onSurface,
                 ),
               ),
               trailing: Text(
@@ -784,8 +993,6 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
               selectedTileColor: colorScheme.primaryContainer.withAlpha(80),
               onTap: () {
                 _audioService.skipToChapter(index);
-                // Scrolling is now handled by the stream listener in initState
-                // _audioService.saveCurrentPosition(); // Optionally save position on manual tap
               },
             );
           },
@@ -794,8 +1001,7 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
     );
   }
 
-  // --- Other helper methods remain the same ---
-
+  // Create a separate stateless widget for chapter list item
   Widget _buildChapterTitle(ColorScheme colorScheme) {
     return StreamBuilder<int>(
       stream: _audioService.currentChapterStream,
@@ -1130,11 +1336,11 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
                         },
                         onChangeEnd: (value) {
                           // Optional: auto-collapse
-                          // Future.delayed(const Duration(milliseconds: 500), () {
-                          //   if (mounted) {
-                          //     setState(() { _isSpeedControlExpanded = false; });
-                          //   }
-                          // });
+                          Future.delayed(const Duration(milliseconds: 500), () {
+                            if (mounted) {
+                              setState(() { _isSpeedControlExpanded = false; });
+                            }
+                          });
                         },
                       ),
                     ),

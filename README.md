@@ -11,6 +11,12 @@ Widdle Reader is a feature-rich, modern audiobook player built with Flutter. The
 - **Theme Customization**: Light/dark mode with customizable seed colors
 - **Responsive Design**: Optimized for both portrait and landscape orientations
 - **Chapter Navigation**: Easy navigation between audiobook chapters
+- **Sleep Timer**: Set a timer to automatically pause playback after a specified duration
+- **Bookmarks**: Add and manage bookmarks at specific points in your audiobooks
+- **Variable Playback Speed**: Adjust the playback speed from 0.5x to 2.0x
+- **In-Memory Caching**: Enhanced performance with efficient data caching
+- **Data Management**: Reset progress and export/import user data
+- **Real-time Progress Display**: Visual indicators showing completion percentage
 
 ## Tech Stack
 
@@ -44,6 +50,7 @@ lib/
 
 - **Audiobook**: Represents an audiobook with metadata and chapters
 - **Chapter**: Represents a chapter within an audiobook with playback info
+- **Bookmark**: Stores user-created bookmarks for specific points in audiobooks
 
 #### Services
 
@@ -56,6 +63,7 @@ lib/
 
 - **AudiobookProvider**: Manages the audiobook library and playback state
 - **ThemeProvider**: Handles theme preferences and customization
+- **SleepTimerProvider**: Manages the sleep timer functionality
 
 #### Screens
 
@@ -63,12 +71,14 @@ lib/
 - **LibraryScreen**: Main audiobook collection view
 - **SimplePlayerScreen**: Audiobook playback interface
 - **SettingsScreen**: App configuration options
+- **BookmarksScreen**: View and manage audiobook bookmarks
 
 #### Widgets
 
 - **AppLogo**: Custom app logo with theme-aware colors
 - **AudiobookTile**: Card display for audiobooks in library
-- **SeekBar**: Custom audio progress indicator
+- **CountdownTimerWidget**: Visual display for sleep timer countdown
+- **AddBookmarkDialog**: Interface for creating bookmarks
 
 ## Key Features Implementation
 
@@ -85,9 +95,27 @@ The app implements media notifications using the just_audio_background plugin, a
 
 The app automatically saves and restores listening progress:
 
-- Position is saved periodically during playback
+- Position is saved periodically during playback and when app is paused/closed
 - When reopening an audiobook, playback resumes from the last position
 - Progress indicators show completion percentage in the library view
+- In-memory caching for improved performance
+
+### Sleep Timer
+
+The sleep timer feature allows users to:
+
+- Set a timer for 5, 15, 30, 45, or 60 minutes
+- Create custom timer durations
+- View real-time countdown display in both player and library screens
+- Access the sleep timer from any screen while playback is active
+
+### Bookmarks
+
+The bookmarking system enables users to:
+
+- Create named bookmarks at specific points in an audiobook
+- View and manage all bookmarks for an audiobook
+- Jump directly to bookmarked positions during playback
 
 ### Responsive UI
 
@@ -96,6 +124,7 @@ The app dynamically adjusts its layout based on screen orientation:
 - Portrait mode: List view of audiobooks
 - Landscape mode: Grid view for better space utilization
 - Responsive player screen with optimized controls
+- Scrollable interfaces that adapt to different device screen sizes
 
 ### Theme Customization
 
@@ -104,6 +133,15 @@ Users can customize the app appearance:
 - Light/dark mode with automatic system theme detection
 - Customizable accent colors that propagate throughout the UI
 - Persistent theme settings between app sessions
+
+### Data Management
+
+Users can manage their app data:
+
+- Reset progress for individual audiobooks
+- Export user data for backup
+- Import previously exported data
+- Manage caching settings
 
 ## Getting Started
 
@@ -121,9 +159,10 @@ Users can customize the app appearance:
 
 ## Future Roadmap
 
-- Playlist support
-- Sleep timer functionality
 - Cloud synchronization
 - Enhanced metadata editing
 - Audio effects and equalization
 - Audiobook categorization and tagging
+- Playlist support
+- Statistics dashboard for listening habits
+- Text-to-speech support for eBooks

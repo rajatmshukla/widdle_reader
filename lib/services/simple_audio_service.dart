@@ -61,6 +61,17 @@ class SimpleAudioService {
     _initAudioSession();
   }
 
+  // Public initialization method for explicit init when needed
+  void init() {
+    // Only initialize if needed
+    if (_audioSession == null) {
+      _initAudioSession();
+    }
+    
+    // Start auto-save timer for playback position
+    _startAutoSaveTimer();
+  }
+
   void _initStreams() {
     // Position updates
     _player.positionStream.listen((position) {
@@ -326,23 +337,18 @@ class SimpleAudioService {
     }
   }
 
-  // Start the auto-save timer
-  void _startAutoSave() {
-    // Cancel any existing timer
-    _stopAutoSave();
-
-    // Create a new timer that saves position every 30 seconds
-    _autoSaveTimer = Timer.periodic(const Duration(seconds: 30), (timer) async {
-      await _saveCurrentPosition(silent: true);
-    });
-
-    debugPrint("Started auto-save timer for playback position");
-  }
-
-  // Stop the auto-save timer
-  void _stopAutoSave() {
+  // Method to start a timer that auto-saves position periodically
+  void _startAutoSaveTimer() {
+    // Cancel existing timer if any
     _autoSaveTimer?.cancel();
-    _autoSaveTimer = null;
+    
+    // Create a new timer that saves position every 30 seconds
+    _autoSaveTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      if (_currentAudiobook != null && isPlaying) {
+        debugPrint("Auto-saving playback position");
+        saveCurrentPosition();
+      }
+    });
   }
 
   // Enhanced position saving
@@ -398,18 +404,18 @@ class SimpleAudioService {
     }
     
     await _player.play();
-    _startAutoSave();
+    _startAutoSaveTimer();
   }
 
   Future<void> pause() async {
     _userPaused = true; // User explicitly requested pause
     await _player.pause();
-    _stopAutoSave();
+    _autoSaveTimer?.cancel();
     await _saveCurrentPosition(); // Save immediately on pause
   }
 
   Future<void> stop() async {
-    _stopAutoSave();
+    _autoSaveTimer?.cancel();
     await _saveCurrentPosition();
     await _player.stop();
   }
@@ -493,13 +499,13 @@ class SimpleAudioService {
 
   // Save the current position for later resuming
   Future<Map<String, dynamic>> saveCurrentPosition() async {
-    _stopAutoSave(); // Stop the timer if running
+    _autoSaveTimer?.cancel();
     return await _saveCurrentPosition();
   }
 
   // Cleanup
   Future<void> dispose() async {
-    _stopAutoSave();
+    _autoSaveTimer?.cancel();
     await _saveCurrentPosition(); // Save position one last time
     await _player.dispose();
     await _positionSubject.close();

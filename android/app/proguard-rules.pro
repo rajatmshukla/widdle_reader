@@ -12,7 +12,7 @@
 -keep public class com.ryanheise.** { *; }
 
 # just_audio_background package
--keep class com.ryanheise.** { *; }
+-keep class com.ryanheise.** { *; } 
 
 # Add project specific ProGuard rules here.
 

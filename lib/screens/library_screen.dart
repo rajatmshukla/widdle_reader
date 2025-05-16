@@ -5,8 +5,10 @@ import 'package:flutter/services.dart';
 
 import '../providers/audiobook_provider.dart';
 import '../providers/theme_provider.dart';
+import '../providers/sleep_timer_provider.dart';
 import '../widgets/audiobook_tile.dart';
 import '../widgets/app_logo.dart';
+import '../widgets/countdown_timer_widget.dart';
 import '../models/audiobook.dart';
 import '../services/storage_service.dart';
 import '../theme.dart';
@@ -413,6 +415,17 @@ class _LibraryScreenState extends State<LibraryScreen>
                 ],
               ),
               actions: [
+                // Sleep Timer button
+                IconButton(
+                  icon: CountdownTimerWidget(
+                    size: 24.0,
+                    showIcon: true,
+                    onTap: null,
+                  ),
+                  tooltip: 'Sleep Timer',
+                  onPressed: _showSleepTimerDialog,
+                ),
+                
                 // Refresh button
                 AnimatedSwitcher(
                   duration: const Duration(milliseconds: 300),
@@ -726,6 +739,206 @@ class _LibraryScreenState extends State<LibraryScreen>
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  // Show sleep timer dialog
+  void _showSleepTimerDialog() {
+    final timerProvider = Provider.of<SleepTimerProvider>(context, listen: false);
+    final colorScheme = Theme.of(context).colorScheme;
+    
+    showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) {
+          return AlertDialog(
+            title: Text(
+              'Sleep Timer',
+              style: TextStyle(
+                color: colorScheme.onSurface,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (timerProvider.isActive)
+                  StreamBuilder<Duration>(
+                    stream: timerProvider.remainingTimeStream,
+                    initialData: timerProvider.remainingTime,
+                    builder: (context, snapshot) {
+                      final remainingTime = snapshot.data ?? Duration.zero;
+                      final minutes = remainingTime.inMinutes;
+                      final seconds = remainingTime.inSeconds % 60;
+                      final timeDisplay = '$minutes:${seconds.toString().padLeft(2, '0')}';
+                      
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 16),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            SizedBox(
+                              width: 50,
+                              height: 50,
+                              child: CircularProgressIndicator(
+                                value: remainingTime.inSeconds / (timerProvider.totalDuration?.inSeconds ?? 1),
+                                backgroundColor: colorScheme.surfaceVariant,
+                                strokeWidth: 5,
+                                color: colorScheme.primary,
+                              ),
+                            ),
+                            const SizedBox(width: 16),
+                            Text(
+                              timeDisplay,
+                              style: TextStyle(
+                                color: colorScheme.primary,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 24,
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                  
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  alignment: WrapAlignment.center,
+                  children: [
+                    _buildTimerOption(5),
+                    _buildTimerOption(15),
+                    _buildTimerOption(30),
+                    _buildTimerOption(45),
+                    _buildTimerOption(60),
+                    _buildCustomTimerOption(),
+                  ],
+                ),
+                
+                if (timerProvider.isActive)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 16),
+                    child: OutlinedButton.icon(
+                      onPressed: () {
+                        timerProvider.cancelTimer();
+                        Navigator.of(context).pop();
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Sleep timer canceled'),
+                            duration: Duration(seconds: 2),
+                            behavior: SnackBarBehavior.floating,
+                          ),
+                        );
+                      },
+                      icon: const Icon(Icons.timer_off),
+                      label: const Text('Cancel Timer'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: colorScheme.error,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Close'),
+              ),
+            ],
+          );
+        }
+      ),
+    );
+  }
+  
+  // Build timer option button
+  Widget _buildTimerOption(int minutes) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final timerProvider = Provider.of<SleepTimerProvider>(context, listen: false);
+    
+    return ElevatedButton(
+      onPressed: () {
+        timerProvider.startTimer(Duration(minutes: minutes));
+        Navigator.of(context).pop();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Sleep timer set for $minutes minutes'),
+            duration: const Duration(seconds: 3),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      },
+      style: ElevatedButton.styleFrom(
+        backgroundColor: colorScheme.primaryContainer,
+        foregroundColor: colorScheme.onPrimaryContainer,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      ),
+      child: Text('$minutes min'),
+    );
+  }
+  
+  // Build custom timer option
+  Widget _buildCustomTimerOption() {
+    final colorScheme = Theme.of(context).colorScheme;
+    
+    return ElevatedButton(
+      onPressed: () {
+        Navigator.of(context).pop();
+        _showCustomTimerDialog();
+      },
+      style: ElevatedButton.styleFrom(
+        backgroundColor: colorScheme.primaryContainer,
+        foregroundColor: colorScheme.onPrimaryContainer,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      ),
+      child: const Text('Custom'),
+    );
+  }
+  
+  // Show custom timer dialog with number input
+  void _showCustomTimerDialog() {
+    final TextEditingController _minutesController = TextEditingController();
+    final colorScheme = Theme.of(context).colorScheme;
+    final timerProvider = Provider.of<SleepTimerProvider>(context, listen: false);
+    
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Set Custom Timer'),
+        content: TextField(
+          controller: _minutesController,
+          keyboardType: TextInputType.number,
+          decoration: const InputDecoration(
+            labelText: 'Minutes',
+            hintText: 'Enter minutes',
+          ),
+          autofocus: true,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final minutes = int.tryParse(_minutesController.text);
+              if (minutes != null && minutes > 0) {
+                timerProvider.startTimer(Duration(minutes: minutes));
+                Navigator.of(context).pop();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Sleep timer set for $minutes minutes'),
+                    duration: const Duration(seconds: 3),
+                    behavior: SnackBarBehavior.floating,
+                  ),
+                );
+              }
+            },
+            child: const Text('Start Timer'),
+          ),
+        ],
       ),
     );
   }

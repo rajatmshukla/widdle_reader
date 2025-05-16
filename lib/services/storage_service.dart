@@ -825,7 +825,7 @@ class StorageService {
       debugPrint("Error clearing progress cache for $audiobookId: $e");
     }
   }
-  
+
   /// Gets all audiobooks that have been listened to since the given date
   Future<List<String>> getAudiobooksPlayedSince(DateTime date) async {
     final SharedPreferences prefs = await SharedPreferences.getInstance();

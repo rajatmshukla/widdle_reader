@@ -16,6 +16,7 @@ import 'screens/bookmarks_screen.dart';
 import 'services/audio_handler.dart';
 import 'services/storage_service.dart';
 import 'theme.dart';
+import 'providers/sleep_timer_provider.dart';
 
 // Global flag for audio service initialization
 bool _audioServiceInitialized = false;
@@ -40,13 +41,13 @@ Future<void> main() async {
   await _initializeDataIntegrity();
 
   // Initialize audio background service
-  await JustAudioBackground.init(
+    await JustAudioBackground.init(
     androidNotificationChannelId: 'com.widdlereader.app.channel.audio',
-    androidNotificationChannelName: 'Audiobook Playback',
-    androidNotificationOngoing: true,
-    androidStopForegroundOnPause: true,
+      androidNotificationChannelName: 'Audiobook Playback',
+      androidNotificationOngoing: true,
+      androidStopForegroundOnPause: true,
     notificationColor: Colors.deepPurple.shade900,
-    androidShowNotificationBadge: true,
+      androidShowNotificationBadge: true,
     preloadArtwork: true,
   );
 
@@ -119,6 +120,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       providers: [
         ChangeNotifierProvider(create: (_) => AudiobookProvider()),
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
+        ChangeNotifierProvider(create: (_) => SleepTimerProvider()),
       ],
       child: Consumer<ThemeProvider>(
         builder: (context, themeProvider, _) {

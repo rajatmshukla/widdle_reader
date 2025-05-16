@@ -188,30 +188,34 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
               delay: 200,
             ),
 
-          // About section with delay
-          _buildSectionWithDelay(
-          'About',
-          Icons.info_outline_rounded,
-          textTheme,
-          colorScheme,
-            delay: 250,
-        ),
-          const SizedBox(height: 12),
-          _buildAnimatedCard(
-        _buildAboutCard(colorScheme, textTheme),
-            delay: 300,
-          ),
-
-          // Data Management
+          // Data Management section moved up
           _buildSectionWithDelay(
             'Data Management',
             Icons.storage_rounded,
             textTheme,
             colorScheme,
-            delay: 700,
+            delay: 250,
           ),
-          _buildDataBackupSection(colorScheme, textTheme),
-        ],
+          const SizedBox(height: 12),
+          _buildAnimatedCard(
+            _buildDataManagementCard(colorScheme, textTheme),
+            delay: 300,
+          ),
+
+          // About section moved to the end
+          _buildSectionWithDelay(
+          'About',
+          Icons.info_outline_rounded,
+          textTheme,
+          colorScheme,
+            delay: 700,
+        ),
+          const SizedBox(height: 12),
+          _buildAnimatedCard(
+        _buildAboutCard(colorScheme, textTheme),
+            delay: 800,
+          ),
+      ],
       ),
     );
   }
@@ -269,17 +273,32 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+                  // Data Management moved up
                   _buildSectionWithDelay(
-                'About',
-                Icons.info_outline_rounded,
+                    'Data Management',
+                    Icons.storage_rounded,
                 textTheme,
                 colorScheme,
                     delay: 75,
-              ),
+                  ),
                   const SizedBox(height: 12),
                   _buildAnimatedCard(
-              _buildAboutCard(colorScheme, textTheme),
+                    _buildDataManagementCard(colorScheme, textTheme),
                     delay: 125,
+                  ),
+
+                  // About moved to the end
+                  _buildSectionWithDelay(
+                    'About',
+                    Icons.info_outline_rounded,
+                textTheme,
+                colorScheme,
+                    delay: 175,
+                  ),
+                  const SizedBox(height: 12),
+                  _buildAnimatedCard(
+                    _buildAboutCard(colorScheme, textTheme),
+                    delay: 225,
                   ),
                 ],
               ),
@@ -981,8 +1000,8 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
     );
   }
 
-  /// Build the data backup and restore section
-  Widget _buildDataBackupSection(
+  // Data Management card
+  Widget _buildDataManagementCard(
     ColorScheme colorScheme,
     TextTheme textTheme,
   ) {
@@ -998,14 +1017,6 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              'Data Management',
-              style: textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            SizedBox(height: isLandscape ? 16 : 20),
-            
             // Data backup option
             ListTile(
               contentPadding: EdgeInsets.zero,
@@ -1046,8 +1057,8 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
       ),
     );
   }
-  
-  // Backup user data
+
+  /// Build the data backup and restore section
   Future<void> _backupUserData(BuildContext context) async {
     final storageService = StorageService();
     
