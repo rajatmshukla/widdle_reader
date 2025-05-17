@@ -2,6 +2,8 @@
 
 Widdle Reader is a feature-rich, modern audiobook player built with Flutter. The app provides a clean, intuitive interface for listening to audiobooks with support for background playback, media notifications, and progress tracking.
 
+**Current Version: 1.0.2** (See [Changelog](./CHANGELOG.md) for details)
+
 ## Features
 
 - **Audiobook Library Management**: Browse and manage your audiobook collection
