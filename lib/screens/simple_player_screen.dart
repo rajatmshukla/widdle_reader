@@ -747,7 +747,7 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
                           ),
                           const SizedBox(width: 8),
                           Text(
-                            "Chapters",
+                            _chaptersHeaderText(),
                             style: TextStyle(
                               fontWeight: FontWeight.bold,
                               fontSize: 18,
@@ -886,7 +886,7 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
                       ),
                       const SizedBox(width: 8),
                       Text(
-                        "Chapters",
+                        _chaptersHeaderText(),
                         style: TextStyle(
                           fontWeight: FontWeight.bold,
                           fontSize: 18,
@@ -1492,5 +1492,13 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
         ),
       ),
     );
+  }
+
+  String _chaptersHeaderText() {
+    final count = _audiobook?.chapters.length ?? 0;
+    if (count == 1) {
+      return '1 Chapter';
+    }
+    return '$count Chapters';
   }
 }

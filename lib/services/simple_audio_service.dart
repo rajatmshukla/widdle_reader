@@ -8,6 +8,7 @@ import 'package:audio_session/audio_session.dart';
 // Add this import:
 import 'package:just_audio_background/just_audio_background.dart';
 import '../models/audiobook.dart';
+import '../models/m4b_chapter.dart';
 import '../services/storage_service.dart';
 
 class SimpleAudioService {
@@ -25,6 +26,9 @@ class SimpleAudioService {
   // Current audiobook info
   Audiobook? _currentAudiobook;
   int _currentChapterIndex = 0;
+
+  // M4B-specific tracking
+  Timer? _m4bChapterTracker; // Timer to track M4B chapter progress
 
   // Stream controllers
   final _positionSubject = BehaviorSubject<Duration>.seeded(Duration.zero);
@@ -76,6 +80,11 @@ class SimpleAudioService {
     // Position updates
     _player.positionStream.listen((position) {
       _positionSubject.add(position);
+      
+      // Track M4B chapter changes based on position
+      if (_currentAudiobook?.isM4B == true) {
+        _updateM4BChapterIndex(position);
+      }
     });
 
     // Duration updates
@@ -88,6 +97,15 @@ class SimpleAudioService {
     // Playing state updates
     _player.playingStream.listen((playing) {
       _playingSubject.add(playing);
+      
+      // Start/stop M4B chapter tracking
+      if (_currentAudiobook?.isM4B == true) {
+        if (playing) {
+          _startM4BChapterTracking();
+        } else {
+          _stopM4BChapterTracking();
+        }
+      }
     });
 
     // Speed updates
@@ -115,6 +133,41 @@ class SimpleAudioService {
         debugPrint("Sequence state changed by notification controls");
       }
     });
+  }
+
+  /// Update the current M4B chapter index based on playback position
+  void _updateM4BChapterIndex(Duration position) {
+    if (_currentAudiobook?.m4bChapters == null) return;
+
+    final chapters = _currentAudiobook!.m4bChapters!;
+    for (int i = 0; i < chapters.length; i++) {
+      final chapter = chapters[i];
+      if (chapter.containsTimestamp(position)) {
+        if (i != _currentChapterIndex) {
+          debugPrint("M4B chapter changed from $_currentChapterIndex to $i at position $position");
+          _currentChapterIndex = i;
+          _currentChapterSubject.add(i);
+        }
+        break;
+      }
+    }
+  }
+
+  /// Start tracking M4B chapter changes
+  void _startM4BChapterTracking() {
+    _stopM4BChapterTracking(); // Stop any existing tracker
+    
+    _m4bChapterTracker = Timer.periodic(const Duration(milliseconds: 500), (_) {
+      if (_currentAudiobook?.isM4B == true && _player.playing) {
+        _updateM4BChapterIndex(_player.position);
+      }
+    });
+  }
+
+  /// Stop tracking M4B chapter changes
+  void _stopM4BChapterTracking() {
+    _m4bChapterTracker?.cancel();
+    _m4bChapterTracker = null;
   }
 
   // Initialize audio session
@@ -224,7 +277,7 @@ class SimpleAudioService {
     }
   }
 
-  // Load an audiobook
+  // Load an audiobook (supports both traditional and M4B audiobooks)
   Future<void> loadAudiobook(
     Audiobook audiobook, {
     int startChapter = 0,
@@ -234,21 +287,30 @@ class SimpleAudioService {
     try {
       // If we're already playing this audiobook, don't interrupt
       if (_currentAudiobook?.id == audiobook.id && _player.playing) {
-        debugPrint("Already playing this audiobook, continuing playback");
+        debugPrint("Already playing this audiobook, continuing playbook");
         return;
       }
 
-      // Stop any current playback
+      // Stop any current playback and M4B tracking
       await stopCurrentPlayback();
+      _stopM4BChapterTracking();
 
       _currentAudiobook = audiobook;
-      _currentChapterIndex = startChapter.clamp(
-        0,
-        audiobook.chapters.length - 1,
-      );
+      
+      // Handle chapter count based on audiobook type
+      final totalChapters = audiobook.isM4B 
+          ? (audiobook.m4bChapters?.length ?? 0)
+          : audiobook.chapters.length;
+          
+      _currentChapterIndex = startChapter.clamp(0, totalChapters - 1);
 
-      await loadChapter(_currentChapterIndex, startPosition: startPosition);
-      debugPrint("Loaded audiobook: ${audiobook.title}");
+      if (audiobook.isM4B) {
+        await _loadM4BAudiobook(startPosition: startPosition);
+      } else {
+        await loadChapter(_currentChapterIndex, startPosition: startPosition);
+      }
+      
+      debugPrint("Loaded ${audiobook.isM4B ? 'M4B' : 'traditional'} audiobook: ${audiobook.title}");
 
       // Only auto-play if explicitly requested
       if (autoPlay) {
@@ -258,6 +320,85 @@ class SimpleAudioService {
       debugPrint("Error loading audiobook: $e");
       rethrow;
     }
+  }
+
+  /// Load M4B audiobook with embedded chapters
+  Future<void> _loadM4BAudiobook({Duration? startPosition}) async {
+    if (_currentAudiobook?.m4bFilePath == null) {
+      throw Exception("M4B file path is null");
+    }
+
+    try {
+      // Calculate the actual start position for M4B
+      Duration actualStartPosition = Duration.zero;
+      
+      if (startPosition != null) {
+        actualStartPosition = startPosition;
+      } else if (_currentChapterIndex > 0 && _currentAudiobook!.m4bChapters != null) {
+        // Start at the beginning of the selected chapter
+        actualStartPosition = _currentAudiobook!.m4bChapters![_currentChapterIndex].startTime;
+      }
+
+      // Create MediaItem for M4B
+      final mediaItem = _createM4BMediaItem();
+
+      // Load the single M4B file
+      await _player.setAudioSource(
+        AudioSource.uri(
+          Uri.file(_currentAudiobook!.m4bFilePath!),
+          tag: mediaItem,
+        ),
+        initialPosition: actualStartPosition,
+      );
+
+      // Update chapter index based on position
+      _updateM4BChapterIndex(actualStartPosition);
+      
+      debugPrint("Loaded M4B file: ${_currentAudiobook!.m4bFilePath} at position $actualStartPosition");
+    } catch (e) {
+      debugPrint("Error loading M4B audiobook: $e");
+      rethrow;
+    }
+  }
+
+  /// Create MediaItem for M4B audiobook
+  MediaItem _createM4BMediaItem() {
+    if (_currentAudiobook?.m4bChapters == null || _currentChapterIndex < 0 || 
+        _currentChapterIndex >= _currentAudiobook!.m4bChapters!.length) {
+      // Fallback to audiobook-level MediaItem
+      return MediaItem(
+        id: _currentAudiobook!.id,
+        album: _currentAudiobook!.title,
+        title: _currentAudiobook!.title,
+        artist: _currentAudiobook!.author ?? 'Unknown Author',
+        duration: _currentAudiobook!.totalDuration,
+        displayTitle: _currentAudiobook!.title,
+        displaySubtitle: _currentAudiobook!.author,
+        extras: {
+          'audiobookId': _currentAudiobook!.id,
+          'isM4B': true,
+        },
+      );
+    }
+
+    final currentChapter = _currentAudiobook!.m4bChapters![_currentChapterIndex];
+    
+    return MediaItem(
+      id: currentChapter.id,
+      album: _currentAudiobook!.title,
+      title: currentChapter.title,
+      artist: _currentAudiobook!.author ?? 'Unknown Author',
+      duration: currentChapter.duration,
+      displayTitle: currentChapter.title,
+      displaySubtitle: _currentAudiobook!.title,
+      extras: {
+        'audiobookId': _currentAudiobook!.id,
+        'chapterIndex': _currentChapterIndex,
+        'totalChapters': _currentAudiobook!.m4bChapters!.length,
+        'startTime': currentChapter.startTime.inMilliseconds,
+        'isM4B': true,
+      },
+    );
   }
 
   // Helper method to save cover art to temporary file
@@ -476,9 +617,56 @@ class SimpleAudioService {
   Future<void> skipToChapter(int index) async {
     if (_currentAudiobook == null) return;
 
-    if (index >= 0 && index < _currentAudiobook!.chapters.length) {
-      await loadChapter(index);
+    // Handle M4B vs traditional audiobooks
+    if (_currentAudiobook!.isM4B) {
+      await _skipToM4BChapter(index);
+    } else {
+      if (index >= 0 && index < _currentAudiobook!.chapters.length) {
+        await loadChapter(index);
+        await play();
+      }
+    }
+  }
+
+  /// Skip to a specific M4B chapter by seeking to its timestamp
+  Future<void> _skipToM4BChapter(int index) async {
+    if (_currentAudiobook?.m4bChapters == null || 
+        index < 0 || 
+        index >= _currentAudiobook!.m4bChapters!.length) {
+      debugPrint("Invalid M4B chapter index: $index");
+      return;
+    }
+
+    try {
+      final targetChapter = _currentAudiobook!.m4bChapters![index];
+      
+      debugPrint("Seeking to M4B chapter $index: ${targetChapter.title} at ${targetChapter.startTime}");
+      
+      // Seek to the chapter's start time
+      await _player.seek(targetChapter.startTime);
+      
+      // Update current chapter index
+      _currentChapterIndex = index;
+      _currentChapterSubject.add(index);
+      
+      // Update MediaItem for the new chapter
+      final mediaItem = _createM4BMediaItem();
+      
+      // Update the player's tag with new MediaItem
+      await _player.setAudioSource(
+        AudioSource.uri(
+          Uri.file(_currentAudiobook!.m4bFilePath!),
+          tag: mediaItem,
+        ),
+        initialPosition: targetChapter.startTime,
+      );
+      
+      // Continue playing
       await play();
+      
+      debugPrint("Successfully seeked to M4B chapter: ${targetChapter.title}");
+    } catch (e) {
+      debugPrint("Error seeking to M4B chapter $index: $e");
     }
   }
 
@@ -506,6 +694,7 @@ class SimpleAudioService {
   // Cleanup
   Future<void> dispose() async {
     _autoSaveTimer?.cancel();
+    _stopM4BChapterTracking(); // Stop M4B chapter tracking
     await _saveCurrentPosition(); // Save position one last time
     await _player.dispose();
     await _positionSubject.close();

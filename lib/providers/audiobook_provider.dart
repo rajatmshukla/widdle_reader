@@ -498,8 +498,8 @@ class AudiobookProvider extends ChangeNotifier {
       // Use FilePicker to select a single directory path
       String? selectedDirectoryPath = await FilePicker.platform.getDirectoryPath(
         dialogTitle: 'Select Single Audiobook Folder',
-        lockParentWindow: true,
-      );
+            lockParentWindow: true,
+          );
 
       if (selectedDirectoryPath != null && selectedDirectoryPath.isNotEmpty) {
         debugPrint("Single audiobook folder selected: $selectedDirectoryPath");
@@ -520,7 +520,7 @@ class AudiobookProvider extends ChangeNotifier {
           final newBook = await _metadataService.getAudiobookDetails(selectedDirectoryPath);
 
           if (newBook.chapters.isEmpty) {
-            _errorMessage = 
+            _errorMessage =
                 "The selected folder contains no compatible audio files.\n\n"
                 "Supported formats: MP3, M4A, M4B, WAV, OGG, AAC, FLAC\n\n"
                 "Please select a folder that contains audio files, or use "

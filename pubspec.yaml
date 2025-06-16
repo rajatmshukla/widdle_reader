@@ -56,6 +56,9 @@ dependencies:
   # For Google Play License Verification
   flutter_secure_storage: ^9.0.0  # For secure storage of license info
   crypto: ^3.0.3  # For cryptographic operations
+  # For M4B chapter extraction
+  metadata_god: ^1.0.0  # For extracting M4B chapters
+  id3tag: ^0.2.0  # Alternative for ID3 chapter support
 
 # Add this section at the root level of your pubspec.yaml
 flutter_launcher_icons:
