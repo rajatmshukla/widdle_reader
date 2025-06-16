@@ -1496,9 +1496,6 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
 
   String _chaptersHeaderText() {
     final count = _audiobook?.chapters.length ?? 0;
-    if (count == 1) {
-      return '1 Chapter';
-    }
-    return '$count Chapters';
+    return count == 1 ? 'Chapter' : 'Chapters';
   }
 }
