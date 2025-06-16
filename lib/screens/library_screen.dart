@@ -404,12 +404,17 @@ class _LibraryScreenState extends State<LibraryScreen>
                     child: const AppLogo(size: 38, showTitle: false),
                   ),
                   const SizedBox(width: 12),
-                  Text(
-                    "Widdle Reader",
-                    style: TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                      color: seedColor,
+                  Flexible(
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        "Widdle Reader",
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          color: seedColor,
+                        ),
+                      ),
                     ),
                   ),
                 ],
