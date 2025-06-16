@@ -3,7 +3,7 @@ import 'package:flutter/foundation.dart'; // For debugPrint and ChangeNotifier
 import 'package:permission_handler/permission_handler.dart'; // For permissions
 import 'package:file_picker/file_picker.dart'; // For picking folders
 import 'package:device_info_plus/device_info_plus.dart'; // For Android version check
-import 'package:shared_preferences/shared_preferences.dart'; // For SharedPreferences
+// import 'package:shared_preferences/shared_preferences.dart'; // For SharedPreferences - not needed directly
 
 // Import local models and services
 import '../models/audiobook.dart';
@@ -329,102 +329,247 @@ class AudiobookProvider extends ChangeNotifier {
     }
   }
 
-  /// Allows the user to pick a folder using file_picker and adds it to the library.
-  Future<void> addAudiobookFolder() async {
-    _errorMessage = null;
-    _permissionPermanentlyDenied = false;
-    notifyListeners(); // Clear previous error messages from UI
-
-    // Ensure permissions are granted before opening picker.
+  /// Adds audiobooks recursively from a root directory.
+  /// This method can handle any folder structure including nested series folders.
+  Future<void> addAudiobooksRecursively() async {
     if (!await _requestPermissions()) {
-      // UI should show the error set by _requestPermissions
       return;
     }
 
     try {
-      // Let the user pick a directory. Result is String? (nullable)
-      String? selectedDirectoryPath = await FilePicker.platform
-          .getDirectoryPath(
-            dialogTitle: 'Select Audiobook Folder',
-            lockParentWindow: true,
+      // Use file picker to select the root directory
+      String? rootDirectoryPath = await FilePicker.platform.getDirectoryPath(
+        dialogTitle: 'Select Audiobooks Root Folder - Will scan all subfolders',
+        lockParentWindow: true,
+      );
+
+      if (rootDirectoryPath != null && rootDirectoryPath.isNotEmpty) {
+        debugPrint("Root audiobooks folder selected: $rootDirectoryPath");
+
+        _isLoading = true;
+        _errorMessage = null;
+        notifyListeners();
+
+        try {
+          // Use the new recursive scanning method
+          debugPrint("Starting recursive scan...");
+          final List<String> discoveredFolders = 
+              await _metadataService.scanForAudiobookFolders(rootDirectoryPath);
+
+          if (discoveredFolders.isEmpty) {
+            _errorMessage = 
+                "No audiobook folders found in the selected directory.\n\n"
+                "Make sure your audiobooks are in folders containing audio files:\n"
+                "• MP3, M4A, M4B, WAV, OGG, AAC, FLAC\n\n"
+                "The scanner looks for folders with audio files at any depth in your folder structure.";
+            debugPrint("No audiobook folders discovered in: $rootDirectoryPath");
+            _isLoading = false;
+            notifyListeners();
+            return;
+          }
+
+          debugPrint("Found ${discoveredFolders.length} potential audiobook folders");
+          int successCount = 0;
+          int skipCount = 0;
+          final List<String> failedPaths = [];
+          final List<String> skippedPaths = [];
+
+          // Process each discovered audiobook folder
+          for (int i = 0; i < discoveredFolders.length; i++) {
+            final folderPath = discoveredFolders[i];
+            
+            // Update progress for large operations
+            if (discoveredFolders.length > 10 && i % 5 == 0) {
+              debugPrint("Processing ${i + 1}/${discoveredFolders.length} audiobooks...");
+            }
+            
+            // Skip if this folder is already in the library
+            if (_audiobooks.any((book) => book.id == folderPath)) {
+              debugPrint("Skipping already added audiobook: $folderPath");
+              skippedPaths.add(folderPath);
+              skipCount++;
+              continue;
+            }
+
+            try {
+              // Get audiobook details for this folder
+              final newBook = await _metadataService.getAudiobookDetails(folderPath);
+
+              if (newBook.chapters.isEmpty) {
+                debugPrint("No valid chapters found in: $folderPath");
+                failedPaths.add(folderPath);
+                skipCount++;
+              } else {
+                // Mark the new book as "new" (never played)
+                _newBooks[newBook.id] = true;
+                _lastPlayedTimestamps[newBook.id] = 0;
+                _completedBooks[newBook.id] = false;
+
+                _audiobooks.add(newBook);
+                successCount++;
+                debugPrint(
+                  "✓ Added: ${newBook.title} (${newBook.chapters.length} chapters)"
+                );
+              }
+            } catch (e) {
+              debugPrint("Error processing audiobook folder $folderPath: $e");
+              failedPaths.add(folderPath);
+              skipCount++;
+            }
+          }
+
+          // Sort the library after adding all books
+          _sortAudiobooksByStatus();
+
+          // Save the updated list of folder paths
+          await _storageService.saveAudiobookFolders(
+            _audiobooks.map((b) => b.id).toList(),
           );
 
-      // Clear error message when user interacts with the picker
-      _errorMessage = null;
-      
-      // *** FIX: Check if the path is non-null before proceeding ***
+          // Provide detailed feedback to user
+          if (successCount > 0) {
+            _errorMessage = null;
+            debugPrint(
+              "Scan completed successfully: $successCount audiobooks added, $skipCount skipped"
+            );
+          } else {
+            String message = "No new audiobooks could be added.";
+            
+            if (skippedPaths.isNotEmpty) {
+              message += "\n\n${skippedPaths.length} audiobooks were already in your library.";
+            }
+            
+            if (failedPaths.isNotEmpty) {
+              message += "\n\n${failedPaths.length} folders could not be processed (no valid audio files found).";
+            }
+            
+            message += "\n\nSupported formats: MP3, M4A, M4B, WAV, OGG, AAC, FLAC";
+            
+            _errorMessage = message;
+            debugPrint("No new audiobooks added from scan of: $rootDirectoryPath");
+          }
+
+          // Log details for debugging
+          if (failedPaths.isNotEmpty) {
+            debugPrint("Failed to process these paths:");
+            for (final path in failedPaths) {
+              debugPrint("  - $path");
+            }
+          }
+          
+          if (skippedPaths.isNotEmpty) {
+            debugPrint("Skipped these already-added paths:");
+            for (final path in skippedPaths) {
+              debugPrint("  - $path");
+            }
+          }
+
+        } catch (e, stackTrace) {
+          debugPrint("Error during recursive audiobook scan: $e\n$stackTrace");
+          _errorMessage = 
+              "Failed to scan the selected folder.\n\n"
+              "This could be due to:\n"
+              "• Insufficient permissions\n"
+              "• Corrupted files\n"
+              "• Very large folder structure\n\n"
+              "Please try again or choose a smaller folder.";
+        } finally {
+          _isLoading = false;
+          notifyListeners();
+        }
+      } else {
+        debugPrint("Folder selection cancelled or resulted in null/empty path.");
+      }
+    } catch (e, stackTrace) {
+      debugPrint("Error during addAudiobooksRecursively process: $e\n$stackTrace");
+      _errorMessage = "An error occurred while accessing the file system.";
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  /// Enhanced single audiobook folder addition with better feedback
+  Future<void> addAudiobookFolder() async {
+    if (!await _requestPermissions()) {
+      return;
+    }
+
+    try {
+      // Use FilePicker to select a single directory path
+      String? selectedDirectoryPath = await FilePicker.platform.getDirectoryPath(
+        dialogTitle: 'Select Single Audiobook Folder',
+        lockParentWindow: true,
+      );
+
       if (selectedDirectoryPath != null && selectedDirectoryPath.isNotEmpty) {
-        debugPrint("Folder selected: $selectedDirectoryPath");
+        debugPrint("Single audiobook folder selected: $selectedDirectoryPath");
 
-        // Check if this exact path is already in the library.
-        // Audiobook ID is the path (String).
+        // Check if this exact path is already in the library
         if (_audiobooks.any((book) => book.id == selectedDirectoryPath)) {
-          _errorMessage = "Folder already exists in the library.";
-          debugPrint(
-            "Attempted to add duplicate folder: $selectedDirectoryPath",
-          );
+          _errorMessage = "This audiobook folder is already in your library.";
+          debugPrint("Attempted to add duplicate folder: $selectedDirectoryPath");
           notifyListeners();
           return;
         }
 
-        _isLoading = true; // Show loading indicator while scanning the folder.
+        _isLoading = true;
         notifyListeners();
 
         try {
-          // Get audiobook details for the selected path (guaranteed non-null here).
-          final newBook = await _metadataService.getAudiobookDetails(
-            selectedDirectoryPath,
-          );
+          // Get audiobook details for the selected path
+          final newBook = await _metadataService.getAudiobookDetails(selectedDirectoryPath);
 
           if (newBook.chapters.isEmpty) {
-            _errorMessage =
-                "The selected folder contains no compatible audio files. Please try a different folder.";
-            debugPrint(
-              "No compatible chapters found in: $selectedDirectoryPath",
-            );
-            _isLoading = false; // Make sure to set loading to false
-            notifyListeners(); // Ensure UI updates
+            _errorMessage = 
+                "The selected folder contains no compatible audio files.\n\n"
+                "Supported formats: MP3, M4A, M4B, WAV, OGG, AAC, FLAC\n\n"
+                "Please select a folder that contains audio files, or use "
+                "'Add Multiple Books' to scan for audiobooks in subfolders.";
+            debugPrint("No compatible chapters found in: $selectedDirectoryPath");
           } else {
             // Mark the new book as "new" (never played)
             _newBooks[newBook.id] = true;
-            _lastPlayedTimestamps[newBook.id] = 0; // Never played timestamp
-            _completedBooks[newBook.id] = false; // Not completed
+            _lastPlayedTimestamps[newBook.id] = 0;
+            _completedBooks[newBook.id] = false;
 
-            _audiobooks.add(newBook); // Add the new book to the list.
-
-            // Sort the library to ensure proper order (completed at bottom, etc.)
+            _audiobooks.add(newBook);
             _sortAudiobooksByStatus();
 
-            // Save the updated list of folder paths (all non-nullable Strings).
-            // The map creates a new list of non-nullable strings.
+            // Save the updated list of folder paths
             await _storageService.saveAudiobookFolders(
               _audiobooks.map((b) => b.id).toList(),
             );
-            _errorMessage = null; // Clear error on success.
-            debugPrint("Successfully added folder: $selectedDirectoryPath");
+            
+            _errorMessage = null;
+            debugPrint(
+              "Successfully added audiobook: ${newBook.title} with ${newBook.chapters.length} chapters"
+            );
           }
         } catch (e, stackTrace) {
-          debugPrint(
-            "Error processing newly added folder $selectedDirectoryPath: $e\n$stackTrace",
-          );
-          _errorMessage = "Failed to process the selected folder.";
+          debugPrint("Error processing single audiobook folder: $e\n$stackTrace");
+          _errorMessage = 
+              "Failed to process the selected folder. The folder may be corrupted "
+              "or contain unsupported file formats.";
         } finally {
-          _isLoading = false; // Hide loading indicator.
-          notifyListeners(); // Update UI with new book or error.
+          _isLoading = false;
+          notifyListeners();
         }
       } else {
-        // User canceled the picker dialog or selected path was invalid/null.
-        debugPrint(
-          "Folder selection cancelled or resulted in null/empty path.",
-        );
+        debugPrint("Single folder selection cancelled.");
       }
     } catch (e, stackTrace) {
-      // Catch potential errors from FilePicker itself or other unexpected issues.
       debugPrint("Error during addAudiobookFolder process: $e\n$stackTrace");
-      _errorMessage = "An unexpected error occurred while adding the folder.";
+      _errorMessage = "An error occurred while accessing the file system.";
       _isLoading = false;
       notifyListeners();
     }
+  }
+
+  /// Legacy method - now redirects to the new recursive method
+  /// Kept for backward compatibility with existing UI
+  Future<void> addMultipleAudiobooks() async {
+    // Simply call the new recursive method
+    await addAudiobooksRecursively();
   }
 
   /// Remove an audiobook from the library
@@ -473,122 +618,5 @@ class AudiobookProvider extends ChangeNotifier {
   Future<void> openSettings() async {
     debugPrint("Opening app settings...");
     await openAppSettings();
-  }
-
-  /// Adds multiple audiobooks at once by selecting a root folder and treating each subfolder as an audiobook.
-  Future<void> addMultipleAudiobooks() async {
-    _errorMessage = null;
-    _permissionPermanentlyDenied = false;
-    notifyListeners(); // Clear previous error messages from UI
-
-    // Ensure permissions are granted before opening picker
-    if (!await _requestPermissions()) {
-      // UI already shows error set by _requestPermissions
-      return;
-    }
-
-    try {
-      // Let the user pick a root directory
-      String? rootDirectoryPath = await FilePicker.platform.getDirectoryPath(
-        dialogTitle: 'Select Root Folder Containing Multiple Audiobooks',
-        lockParentWindow: true,
-      );
-
-      // Clear error message when user interacts with the picker
-      _errorMessage = null;
-      
-      if (rootDirectoryPath != null && rootDirectoryPath.isNotEmpty) {
-        debugPrint("Root folder selected: $rootDirectoryPath");
-
-        _isLoading = true; // Show loading indicator while scanning folders
-        notifyListeners();
-
-        try {
-          // Get all subdirectories in the root folder
-          final rootDirectory = Directory(rootDirectoryPath);
-          final List<FileSystemEntity> entities = await rootDirectory.list().toList();
-          final List<Directory> subfolders = entities
-              .whereType<Directory>()
-              .toList();
-
-          if (subfolders.isEmpty) {
-            _errorMessage = "No subfolders found in the selected folder. Each audiobook should be in its own folder.";
-            debugPrint("No subfolders found in: $rootDirectoryPath");
-            _isLoading = false; // Set loading to false
-            notifyListeners(); // Update UI immediately
-            return;
-          }
-
-          int successCount = 0;
-          int skipCount = 0;
-          List<String> newFolderPaths = [];
-
-          // Process each subfolder as a potential audiobook
-          for (final subfolder in subfolders) {
-            final folderPath = subfolder.path;
-            
-            // Skip if this folder is already in the library
-            if (_audiobooks.any((book) => book.id == folderPath)) {
-              debugPrint("Skipping already added folder: $folderPath");
-              skipCount++;
-              continue;
-            }
-
-            try {
-              // Get audiobook details for this subfolder
-              final newBook = await _metadataService.getAudiobookDetails(folderPath);
-
-              if (newBook.chapters.isEmpty) {
-                debugPrint("No compatible chapters found in: $folderPath");
-                skipCount++;
-              } else {
-                // Mark the new book as "new" (never played)
-                _newBooks[newBook.id] = true;
-                _lastPlayedTimestamps[newBook.id] = 0; // Never played timestamp
-                _completedBooks[newBook.id] = false; // Not completed
-
-                _audiobooks.add(newBook); // Add the new book to the list
-                newFolderPaths.add(folderPath);
-                successCount++;
-                debugPrint("Successfully added folder: $folderPath");
-              }
-            } catch (e) {
-              debugPrint("Error processing subfolder $folderPath: $e");
-              skipCount++;
-            }
-          }
-
-          // Sort the library after adding all books
-          _sortAudiobooksByStatus();
-
-          // Save the updated list of folder paths
-          await _storageService.saveAudiobookFolders(
-            _audiobooks.map((b) => b.id).toList(),
-          );
-
-          if (successCount > 0) {
-            _errorMessage = null; // Clear error on success
-            debugPrint("Successfully added $successCount audiobooks. Skipped $skipCount folders.");
-          } else {
-            _errorMessage = "No valid audiobooks found in the selected folders. Please check that your audiobooks have compatible audio files.";
-            debugPrint("No valid audiobooks found in root folder: $rootDirectoryPath");
-          }
-        } catch (e, stackTrace) {
-          debugPrint("Error scanning root folder $rootDirectoryPath: $e\n$stackTrace");
-          _errorMessage = "Failed to process the selected folder.";
-        } finally {
-          _isLoading = false; // Hide loading indicator
-          notifyListeners(); // Update UI with new books or error
-        }
-      } else {
-        // User canceled the picker dialog
-        debugPrint("Folder selection cancelled or resulted in null/empty path.");
-      }
-    } catch (e, stackTrace) {
-      debugPrint("Error during addMultipleAudiobooks process: $e\n$stackTrace");
-      _errorMessage = "An unexpected error occurred while adding audiobooks.";
-      _isLoading = false;
-      notifyListeners();
-    }
   }
 }

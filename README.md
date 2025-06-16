@@ -6,7 +6,8 @@ Widdle Reader is a feature-rich, modern audiobook player built with Flutter. The
 
 ## Features
 
-- **Audiobook Library Management**: Browse and manage your audiobook collection
+- **Robust Audiobook Library Management**: Advanced recursive folder scanning for any audiobook organization structure
+- **Flexible Folder Structure Support**: Works with single books, series, and nested folder hierarchies
 - **Background Playback**: Continue listening when the app is in the background
 - **Media Controls**: Control playback from notifications and lockscreen
 - **Progress Tracking**: Automatically saves your position in each audiobook
@@ -16,17 +17,114 @@ Widdle Reader is a feature-rich, modern audiobook player built with Flutter. The
 - **Sleep Timer**: Set a timer to automatically pause playback after a specified duration
 - **Bookmarks**: Add and manage bookmarks at specific points in your audiobooks
 - **Variable Playback Speed**: Adjust the playback speed from 0.5x to 2.0x
-- **In-Memory Caching**: Enhanced performance with efficient data caching
+- **Enhanced Metadata Support**: Automatic extraction of titles, authors, and cover art
 - **Data Management**: Reset progress and export/import user data
 - **Real-time Progress Display**: Visual indicators showing completion percentage
+
+## Audiobook Organization
+
+### Supported Folder Structures
+
+Widdle Reader now supports **any folder structure** for your audiobooks! The app uses advanced recursive scanning to find audiobooks regardless of how they're organized.
+
+#### Examples of Supported Structures:
+
+**Single Books:**
+```
+My Audiobooks/
+└── The Great Gatsby/
+    ├── chapter1.m4a
+    ├── chapter2.m4a
+    ├── chapter3.m4a
+    └── cover.jpg
+```
+
+**Book Series:**
+```
+My Audiobooks/
+├── Harry Potter Series/
+│   ├── Book 1 - Philosopher's Stone/
+│   │   ├── chapter1.m4a
+│   │   ├── chapter2.m4a
+│   │   └── cover.jpg
+│   ├── Book 2 - Chamber of Secrets/
+│   │   ├── chapter1.m4a
+│   │   ├── chapter2.m4a
+│   │   └── cover.jpg
+│   └── Book 3 - Prisoner of Azkaban/
+│       ├── chapter1.m4a
+│       └── cover.jpg
+└── Lord of the Rings/
+    ├── Fellowship of the Ring/
+    │   ├── part1.m4b
+    │   └── part2.m4b
+    └── Two Towers/
+        └── full_book.m4a
+```
+
+**Mixed Structure:**
+```
+Audiobooks/
+├── Single Books/
+│   ├── 1984/
+│   │   └── 1984_full.m4b
+│   └── Dune/
+│       ├── part1.m4a
+│       └── part2.m4a
+├── Science Fiction Series/
+│   └── Foundation Series/
+│       ├── Foundation/
+│       │   ├── ch1.mp3
+│       │   └── ch2.mp3
+│       └── Foundation and Empire/
+│           └── full.m4a
+└── Classics/
+    └── Pride and Prejudice/
+        ├── chapter1.mp3
+        └── cover.png
+```
+
+### How to Add Audiobooks
+
+1. **Scan for Books (Recommended)**: 
+   - Select your root audiobooks folder
+   - The app will recursively scan all subfolders
+   - Automatically finds all audiobooks regardless of nesting level
+   - Perfect for large, organized libraries
+
+2. **Add Single Book**: 
+   - Select a specific folder containing one audiobook
+   - Useful for adding individual books
+
+### Supported Audio Formats
+
+- **MP3** (.mp3)
+- **M4A** (.m4a) 
+- **M4B** (.m4b) - Audiobook format
+- **WAV** (.wav)
+- **OGG** (.ogg)
+- **AAC** (.aac)
+- **FLAC** (.flac)
+
+### Cover Art Support
+
+The app automatically finds cover art from:
+- **Embedded metadata** in audio files
+- **Image files** in the audiobook folder:
+  - `cover.jpg/png/webp`
+  - `folder.jpg/png/webp`
+  - `albumart.jpg/png/webp`
+  - `front.jpg/png/webp`
+  - `artwork.jpg/png/webp`
 
 ## Tech Stack
 
 - **Flutter**: Cross-platform UI framework
-- **Provider**: State management
+- **Provider**: State management (migrating to Riverpod)
 - **just_audio/just_audio_background**: Audio playback and background services
 - **Path Provider/File Picker**: File system interaction
 - **Shared Preferences**: Local data storage
+- **flutter_media_metadata**: Advanced metadata extraction
 
 ## Architecture
 
@@ -50,7 +148,7 @@ lib/
 
 #### Models
 
-- **Audiobook**: Represents an audiobook with metadata and chapters
+- **Audiobook**: Represents an audiobook with metadata, chapters, and author information
 - **Chapter**: Represents a chapter within an audiobook with playback info
 - **Bookmark**: Stores user-created bookmarks for specific points in audiobooks
 
@@ -58,8 +156,8 @@ lib/
 
 - **SimpleAudioService**: Core audio playback functionality
 - **AudioHandler**: Manages media session interactions and notifications
-- **StorageService**: Handles saving/loading progress and preferences
-- **MetadataService**: Extracts metadata from audio files
+- **StorageService**: Handles saving/loading progress and preferences with in-memory caching
+- **MetadataService**: Enhanced metadata extraction with recursive folder scanning
 
 #### Providers (State Management)
 
@@ -84,72 +182,56 @@ lib/
 
 ## Key Features Implementation
 
+### Advanced Folder Scanning
+
+The new recursive scanning system:
+- **Traverses any folder depth** to find audiobooks
+- **Identifies audiobook folders** by presence of audio files
+- **Handles series and single books** automatically
+- **Prevents duplicate chapter detection** by stopping at first audio file level
+- **Provides detailed feedback** on scan results
+- **Supports progress indication** for large libraries
+
+### Enhanced Metadata Extraction
+
+- **Author detection** from album artist or track artist metadata
+- **Improved cover art discovery** from multiple sources
+- **Better error handling** for corrupted files
+- **Fallback mechanisms** when metadata is unavailable
+
 ### Media Notifications
 
-The app implements media notifications using the just_audio_background plugin, allowing users to control playback from the notification area or lock screen. The implementation includes:
-
-- Custom notification channel setup
-- Metadata display (title, author, cover art)
-- Transport controls (play/pause, skip, seek)
-- Background playback support
+The app implements media notifications using the just_audio_background plugin, allowing users to control playback from the notification area or lock screen.
 
 ### Progress Tracking
 
-The app automatically saves and restores listening progress:
-
-- Position is saved periodically during playback and when app is paused/closed
-- When reopening an audiobook, playback resumes from the last position
-- Progress indicators show completion percentage in the library view
-- In-memory caching for improved performance
+The app automatically saves and restores listening progress with in-memory caching for improved performance.
 
 ### Sleep Timer
 
-The sleep timer feature allows users to:
-
-- Set a timer for 5, 15, 30, 45, or 60 minutes
-- Create custom timer durations
-- View real-time countdown display in both player and library screens
-- Access the sleep timer from any screen while playback is active
+Set timers with real-time countdown display, accessible from any screen during playback.
 
 ### Bookmarks
 
-The bookmarking system enables users to:
-
-- Create named bookmarks at specific points in an audiobook
-- View and manage all bookmarks for an audiobook
-- Jump directly to bookmarked positions during playback
+Create named bookmarks at specific points and jump directly to bookmarked positions.
 
 ### Responsive UI
 
-The app dynamically adjusts its layout based on screen orientation:
-
-- Portrait mode: List view of audiobooks
-- Landscape mode: Grid view for better space utilization
-- Responsive player screen with optimized controls
-- Scrollable interfaces that adapt to different device screen sizes
+Dynamic layout adaptation based on screen orientation with Material Design 3 principles.
 
 ### Theme Customization
 
-Users can customize the app appearance:
-
-- Light/dark mode with automatic system theme detection
-- Customizable accent colors that propagate throughout the UI
-- Persistent theme settings between app sessions
+Customizable accent colors with light/dark mode support and automatic system theme detection.
 
 ### Data Management
 
-Users can manage their app data:
-
-- Reset progress for individual audiobooks
-- Export user data for backup
-- Import previously exported data
-- Manage caching settings
+Comprehensive data backup, recovery, and export/import functionality with health checks.
 
 ## Getting Started
 
 ### Prerequisites
 
-- Flutter SDK (2.0 or higher)
+- Flutter SDK (3.7.2 or higher)
 - Android Studio / VS Code with Flutter extensions
 - Android/iOS development setup
 
@@ -159,8 +241,27 @@ Users can manage their app data:
 2. Run `flutter pub get` to install dependencies
 3. Run `flutter run` to launch the app on a connected device/emulator
 
+## Usage Tips
+
+### For Large Libraries
+- Use "Scan for Books" to add your entire audiobook collection at once
+- The app will handle any folder organization structure
+- Progress is shown for large scanning operations
+
+### For Organized Collections
+- Keep series in separate folders for better organization
+- Use descriptive folder names as they become the audiobook titles
+- Place cover art files in each audiobook folder for best results
+
+### Troubleshooting
+- If books aren't found, check file permissions
+- Ensure audio files are in supported formats
+- Check debug logs for detailed scanning information
+- Try scanning smaller folders if issues persist
+
 ## Future Roadmap
 
+- Migration to Riverpod for state management
 - Cloud synchronization
 - Enhanced metadata editing
 - Audio effects and equalization
@@ -168,3 +269,4 @@ Users can manage their app data:
 - Playlist support
 - Statistics dashboard for listening habits
 - Text-to-speech support for eBooks
+- Improved offline capability

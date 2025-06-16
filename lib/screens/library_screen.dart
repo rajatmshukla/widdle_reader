@@ -334,7 +334,7 @@ class _LibraryScreenState extends State<LibraryScreen>
             ListTile(
               leading: Icon(Icons.book, color: colorScheme.primary),
               title: const Text('Add Single Book'),
-              subtitle: const Text('Select a folder containing one audiobook'),
+              subtitle: const Text('Select a single folder containing audio files'),
               onTap: () {
                 Navigator.pop(context);
                 provider.addAudiobookFolder();
@@ -342,12 +342,12 @@ class _LibraryScreenState extends State<LibraryScreen>
             ),
             const Divider(),
             ListTile(
-              leading: Icon(Icons.library_add, color: colorScheme.primary),
-              title: const Text('Add Multiple Books'),
-              subtitle: const Text('Select a root folder with multiple audiobook subfolders'),
+              leading: Icon(Icons.auto_stories, color: colorScheme.primary),
+              title: const Text('Scan for Books'),
+              subtitle: const Text('Recursively scan for audiobooks in any folder structure'),
               onTap: () {
                 Navigator.pop(context);
-                provider.addMultipleAudiobooks();
+                provider.addAudiobooksRecursively();
               },
             ),
           ],
