@@ -8,6 +8,8 @@ import '../models/bookmark.dart'; // Import the Bookmark model
 import 'dart:async'; // For periodic cache persistence
 
 class StorageService {
+  // Callback for notifying providers about data changes
+  static Function()? _onDataImported;
   // Key constants for SharedPreferences
   static const foldersKey = 'audiobook_folders';
   static const lastPositionPrefix = 'last_pos_';
@@ -22,6 +24,10 @@ class StorageService {
   static const backupSuffix = '_backup';
   static const dataVersionKey = 'data_version';
   static const cacheSyncTimestampKey = 'cache_sync_timestamp';
+  
+  // Tag-related keys (from tag provider)
+  static const userTagsKey = 'user_tags';
+  static const audiobookTagsKey = 'audiobook_tags';
 
   // Singleton instance for this service 
   static final StorageService _instance = StorageService._internal();
@@ -197,6 +203,18 @@ class StorageService {
         }
       }
       
+      // Backup user tags
+      final userTags = prefs.getString(userTagsKey);
+      if (userTags != null) {
+        await prefs.setString('$userTagsKey$backupSuffix', userTags);
+      }
+      
+      // Backup audiobook tags (favorites and other tag assignments)
+      final audiobookTags = prefs.getString(audiobookTagsKey);
+      if (audiobookTags != null) {
+        await prefs.setString('$audiobookTagsKey$backupSuffix', audiobookTags);
+      }
+      
       debugPrint('Data backup created successfully.');
     } catch (e) {
       debugPrint('Error creating data backup: $e');
@@ -273,6 +291,20 @@ class StorageService {
         }
       }
       
+      // Restore user tags
+      final userTagsBackup = prefs.getString('$userTagsKey$backupSuffix');
+      if (userTagsBackup != null && !prefs.containsKey(userTagsKey)) {
+        await prefs.setString(userTagsKey, userTagsBackup);
+        restoredAnyData = true;
+      }
+      
+      // Restore audiobook tags (favorites and other tag assignments)
+      final audiobookTagsBackup = prefs.getString('$audiobookTagsKey$backupSuffix');
+      if (audiobookTagsBackup != null && !prefs.containsKey(audiobookTagsKey)) {
+        await prefs.setString(audiobookTagsKey, audiobookTagsBackup);
+        restoredAnyData = true;
+      }
+      
       if (restoredAnyData) {
         debugPrint('Data restored successfully from backup.');
         
@@ -323,6 +355,30 @@ class StorageService {
       final foldersCount = (prefs.getStringList(foldersKey) ?? []).length;
       final customTitlesCount = (prefs.getStringList(customTitlesKey) ?? []).length;
       
+      // Count tags
+      int userTagsCount = 0;
+      int audiobookTagAssignmentsCount = 0;
+      
+      final userTagsJson = prefs.getString(userTagsKey);
+      if (userTagsJson != null) {
+        try {
+          final tagsList = jsonDecode(userTagsJson) as List;
+          userTagsCount = tagsList.length;
+        } catch (e) {
+          // Invalid JSON, count as 0
+        }
+      }
+      
+      final audiobookTagsJson = prefs.getString(audiobookTagsKey);
+      if (audiobookTagsJson != null) {
+        try {
+          final tagsMap = jsonDecode(audiobookTagsJson) as Map<String, dynamic>;
+          audiobookTagAssignmentsCount = tagsMap.length;
+        } catch (e) {
+          // Invalid JSON, count as 0
+        }
+      }
+      
       result['counts'] = {
         'progress': progressCount,
         'positions': positionCount,
@@ -330,6 +386,8 @@ class StorageService {
         'completedBooks': completedBooksCount,
         'folders': foldersCount,
         'customTitles': customTitlesCount,
+        'userTags': userTagsCount,
+        'audiobookTagAssignments': audiobookTagAssignmentsCount,
       };
       
       // Get last cache sync timestamp
@@ -1062,6 +1120,18 @@ class StorageService {
       }
       allData['data']['timestamps'] = timestampData;
       
+      // Export user tags (includes Favorites tag definition)
+      final userTagsJson = prefs.getString(userTagsKey);
+      if (userTagsJson != null) {
+        allData['data']['user_tags'] = userTagsJson;
+      }
+      
+      // Export audiobook tag assignments (includes favorites assignments)
+      final audiobookTagsJson = prefs.getString(audiobookTagsKey);
+      if (audiobookTagsJson != null) {
+        allData['data']['audiobook_tags'] = audiobookTagsJson;
+      }
+      
       // Write to a file in the app's documents directory
       final dir = await getApplicationDocumentsDirectory();
       final now = DateTime.now().toIso8601String().replaceAll(':', '_');
@@ -1139,6 +1209,18 @@ class StorageService {
         await prefs.setInt(key, int.parse(entry.value.toString()));
       }
       
+      // Import user tags (includes Favorites tag definition)
+      final userTagsJson = data['user_tags'] as String?;
+      if (userTagsJson != null) {
+        await prefs.setString(userTagsKey, userTagsJson);
+      }
+      
+      // Import audiobook tag assignments (includes favorites assignments)
+      final audiobookTagsJson = data['audiobook_tags'] as String?;
+      if (audiobookTagsJson != null) {
+        await prefs.setString(audiobookTagsKey, audiobookTagsJson);
+      }
+      
       // Clear all caches to force reload from imported data
       _progressCache.clear();
       _positionCache.clear();
@@ -1155,11 +1237,26 @@ class StorageService {
       _dirtyCustomTitlesCache = false;
       _dirtyFoldersCache = false;
       
+      // Notify providers to refresh their data
+      if (_onDataImported != null) {
+        _onDataImported!();
+      }
+      
       debugPrint('User data imported successfully');
       return true;
     } catch (e) {
       debugPrint('Error importing user data: $e');
       return false;
     }
+  }
+
+  /// Set callback for data import notifications
+  static void setDataImportCallback(Function() callback) {
+    _onDataImported = callback;
+  }
+
+  /// Clear the data import callback
+  static void clearDataImportCallback() {
+    _onDataImported = null;
   }
 }

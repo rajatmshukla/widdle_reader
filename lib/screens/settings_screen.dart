@@ -648,7 +648,7 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
 
             // Version
             Text(
-              'Version 1.0.1',
+              'Version 1.0.3',
               style: textTheme.bodyMedium?.copyWith(
                 color: colorScheme.onSurfaceVariant,
               ),
@@ -1306,6 +1306,8 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
                   Text('• Bookmarks: ${healthCheck['counts']['bookmarks']}'),
                   Text('• Completed Books: ${healthCheck['counts']['completedBooks']}'),
                   Text('• Custom Titles: ${healthCheck['counts']['customTitles']}'),
+                  Text('• User Tags: ${healthCheck['counts']['userTags'] ?? 0}'),
+                  Text('• Tag Assignments: ${healthCheck['counts']['audiobookTagAssignments'] ?? 0}'),
                   const SizedBox(height: 16),
                   const Text('A backup of your data was created as a safety measure.'),
                 ],

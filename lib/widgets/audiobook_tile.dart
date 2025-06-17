@@ -1,11 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
+import 'package:provider/provider.dart' as provider;
 import '../models/audiobook.dart';
 import '../utils/helpers.dart';
 import '../services/storage_service.dart';
 import '../providers/audiobook_provider.dart';
 import '../utils/responsive_utils.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 class AudiobookTile extends StatefulWidget {
   final Audiobook audiobook;
@@ -175,11 +174,11 @@ class _AudiobookTileState extends State<AudiobookTile>
 
             // Update completion status if needed
             if (clampedProgress >= 0.99) {
-              final provider = Provider.of<AudiobookProvider>(
+              final audiobookProvider = provider.Provider.of<AudiobookProvider>(
                 context,
                 listen: false,
               );
-              await provider.updateCompletionStatus(widget.audiobook.id);
+              await audiobookProvider.updateCompletionStatus(widget.audiobook.id);
             }
           }
         } else {
@@ -214,7 +213,7 @@ class _AudiobookTileState extends State<AudiobookTile>
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final displayTitle = widget.customTitle ?? widget.audiobook.title;
-    final audiobookProvider = Provider.of<AudiobookProvider>(context);
+    final audiobookProvider = provider.Provider.of<AudiobookProvider>(context);
     final isNew = audiobookProvider.isNewBook(widget.audiobook.id);
     final isCompleted = audiobookProvider.isCompletedBook(widget.audiobook.id);
 
@@ -244,7 +243,7 @@ class _AudiobookTileState extends State<AudiobookTile>
     bool isCompleted,
   ) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 3),
       child: Card(
         elevation: 4,
         clipBehavior: Clip.antiAlias,
@@ -314,11 +313,12 @@ class _AudiobookTileState extends State<AudiobookTile>
                       ),
                     ),
 
-                    // Right arrow
+                    // Right arrow - moved and made smaller to give more space for tags
+                    const SizedBox(width: 8),
                     Icon(
                       Icons.arrow_forward_ios_rounded,
-                      size: 16,
-                      color: colorScheme.primary.withOpacity(0.7),
+                      size: 14,
+                      color: Colors.grey.withOpacity(0.5),
                     ),
                   ],
                 ),
@@ -353,7 +353,7 @@ class _AudiobookTileState extends State<AudiobookTile>
     return Card(
       elevation: 4,
       clipBehavior: Clip.antiAlias,
-      margin: const EdgeInsets.all(6),
+      margin: const EdgeInsets.all(3),
       child: Stack(
         children: [
           // Progress gradient background
@@ -481,30 +481,54 @@ class _AudiobookTileState extends State<AudiobookTile>
     
     return Row(
       children: [
-        Icon(
-          Icons.timer_outlined,
-          size: 14,
-          color: colorScheme.onSurfaceVariant.withOpacity(0.7),
-        ),
-        const SizedBox(width: 4),
-        Text(
-          formatDuration(widget.audiobook.totalDuration),
-          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-            color: colorScheme.onSurfaceVariant.withOpacity(0.7),
+        // Duration info
+        Flexible(
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.timer_outlined,
+                size: 14,
+                color: colorScheme.onSurfaceVariant.withOpacity(0.7),
+              ),
+              const SizedBox(width: 4),
+              Flexible(
+                child: Text(
+                  formatDuration(widget.audiobook.totalDuration),
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: colorScheme.onSurfaceVariant.withOpacity(0.7),
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
           ),
         ),
-        const SizedBox(width: 8),
+        
+        const SizedBox(width: 16),
 
-        Icon(
-          Icons.library_books_outlined,
-          size: 14,
-          color: colorScheme.onSurfaceVariant.withOpacity(0.7),
-        ),
-        const SizedBox(width: 4),
-        Text(
-          chapterText,
-          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-            color: colorScheme.onSurfaceVariant.withOpacity(0.7),
+        // Chapter info - now with more space and prominence
+        Flexible(
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.library_books_outlined,
+                size: 16,
+                color: colorScheme.onSurfaceVariant.withOpacity(0.8),
+              ),
+              const SizedBox(width: 4),
+              Flexible(
+                child: Text(
+                  chapterText,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: colorScheme.onSurfaceVariant.withOpacity(0.8),
+                    fontWeight: FontWeight.w500,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
           ),
         ),
       ],
@@ -740,4 +764,6 @@ class _AudiobookTileState extends State<AudiobookTile>
     // No badge
     return const SizedBox.shrink();
   }
+
+
 }

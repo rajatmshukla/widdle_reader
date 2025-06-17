@@ -7,8 +7,6 @@ import 'package:flutter_media_metadata/flutter_media_metadata.dart';
 
 import '../models/audiobook.dart';
 import '../models/chapter.dart';
-import '../models/m4b_chapter.dart';
-import 'm4b_chapter_service.dart';
 
 class MetadataService {
   final List<String> _supportedFormats = const [
@@ -19,9 +17,6 @@ class MetadataService {
   final List<String> _coverArtFormats = const [
     '.jpg', '.jpeg', '.png', '.webp'
   ];
-
-  // Initialize the M4B chapter service
-  final M4BChapterService _m4bChapterService = M4BChapterService();
 
   /// Recursively scans a root directory for audiobook folders.
   /// Returns a list of discovered audiobook folder paths.
@@ -106,105 +101,8 @@ class MetadataService {
     }
   }
 
-  /// Enhanced method to get audiobook details with M4B chapter support
+  /// Enhanced method to get audiobook details with better error handling and cover art detection
   Future<Audiobook> getAudiobookDetails(String folderPath) async {
-    debugPrint("Processing audiobook folder: $folderPath");
-    
-    // First, check if this is a single M4B file that should be treated as one audiobook
-    final m4bAudiobook = await _tryProcessM4BAudiobook(folderPath);
-    if (m4bAudiobook != null) {
-      debugPrint("Successfully processed as M4B audiobook with embedded chapters");
-      return m4bAudiobook;
-    }
-
-    // If not an M4B audiobook, process as traditional multi-file audiobook
-    return await _processTraditionalAudiobook(folderPath);
-  }
-
-  /// Try to process a folder as a single M4B audiobook with embedded chapters
-  Future<Audiobook?> _tryProcessM4BAudiobook(String folderPath) async {
-    try {
-      final directory = Directory(folderPath);
-      if (!await directory.exists()) {
-        return null;
-      }
-
-      final List<FileSystemEntity> files = await directory.list().toList();
-      
-      // Look for a single M4B file
-      File? m4bFile;
-      for (var entity in files) {
-        if (entity is File) {
-          final extension = p.extension(entity.path).toLowerCase();
-          if (extension == '.m4b' || extension == '.m4a') {
-            if (m4bFile == null) {
-              m4bFile = entity;
-            } else {
-              // Multiple M4B files - treat as traditional audiobook
-              debugPrint("Multiple M4B files found, treating as traditional audiobook");
-              return null;
-            }
-          }
-        }
-      }
-
-      if (m4bFile == null) {
-        debugPrint("No M4B file found in folder");
-        return null;
-      }
-
-      debugPrint("Found single M4B file: ${m4bFile.path}");
-
-      // Try to extract embedded chapters
-      final m4bChapters = await _m4bChapterService.extractM4BChapters(m4bFile.path);
-      
-      if (m4bChapters == null || m4bChapters.isEmpty) {
-        debugPrint("No embedded chapters found in M4B file");
-        return null;
-      }
-
-      debugPrint("Found ${m4bChapters.length} embedded chapters in M4B file");
-
-      // Get basic metadata
-      final title = p.basenameWithoutExtension(p.basename(folderPath));
-      final duration = await _m4bChapterService.getM4BDuration(m4bFile.path);
-      
-      // Try to get cover art and author
-      Uint8List? coverArt;
-      String? author;
-      
-      try {
-        final metadata = await MetadataRetriever.fromFile(m4bFile);
-        author = metadata.albumArtistName ?? metadata.trackArtistNames?.first;
-        if (metadata.albumArt != null && metadata.albumArt!.isNotEmpty) {
-          coverArt = metadata.albumArt;
-        }
-      } catch (e) {
-        debugPrint("Could not extract metadata from M4B file: $e");
-      }
-
-      // Look for cover art files in the folder if not found in metadata
-      if (coverArt == null) {
-        coverArt = await _findCoverArtInFolder(directory);
-      }
-
-      return Audiobook.fromM4BFile(
-        filePath: m4bFile.path,
-        title: title,
-        author: author,
-        m4bChapters: m4bChapters,
-        totalDuration: duration,
-        coverArt: coverArt,
-      );
-
-    } catch (e) {
-      debugPrint("Error processing M4B audiobook: $e");
-      return null;
-    }
-  }
-
-  /// Process folder as traditional multi-file audiobook (existing logic)
-  Future<Audiobook> _processTraditionalAudiobook(String folderPath) async {
     final directory = Directory(folderPath);
     List<Chapter> chapters = [];
     Duration totalDuration = Duration.zero;
@@ -236,18 +134,23 @@ class MetadataService {
       // Use a single player instance for duration checks
       final audioPlayer = AudioPlayer();
 
-      // First pass: Look for cover art and collect audio files
+      // First pass: Collect audio files and any image files
       final List<File> audioFiles = [];
-
-      // Look for cover art files
-      coverArt = await _findCoverArtInFolder(directory);
+      final List<File> imageFiles = [];
 
       for (var entity in files) {
         if (entity is File) {
-          final extension = p.extension(entity.path).toLowerCase();
+          final filePath = entity.path;
+          final fileName = p.basename(filePath);
+          final extension = p.extension(fileName).toLowerCase();
+
           // Check for audio files
           if (_supportedFormats.contains(extension)) {
             audioFiles.add(entity);
+          }
+          // Collect any image files for potential cover art
+          else if (_coverArtFormats.contains(extension)) {
+            imageFiles.add(entity);
           }
         }
       }
@@ -257,17 +160,17 @@ class MetadataService {
         final filePath = audioFile.path;
         final fileName = p.basename(filePath);
         
-        try {
-          final chapterId = filePath; // Use full path as unique ID
+            try {
+              final chapterId = filePath; // Use full path as unique ID
           String chapterTitle = p.basenameWithoutExtension(fileName); // Default title
-          Duration? chapterDuration; // Make it explicitly nullable
+              Duration? chapterDuration; // Make it explicitly nullable
 
-          // --- Metadata Extraction ---
-          try {
-            debugPrint("Attempting metadata extraction for: $fileName");
+              // --- Metadata Extraction ---
+              try {
+                debugPrint("Attempting metadata extraction for: $fileName");
             final metadata = await MetadataRetriever.fromFile(audioFile);
             
-            // Use metadata title if available, otherwise keep filename
+                // Use metadata title if available, otherwise keep filename
             chapterTitle = metadata.trackName?.isNotEmpty == true
                         ? metadata.trackName!
                         : chapterTitle;
@@ -280,74 +183,97 @@ class MetadataService {
               author = metadata.trackArtistNames!.first;
             }
             
-            // Metadata duration might be null or 0
+                // Metadata duration might be null or 0
             chapterDuration = (metadata.trackDuration != null &&
                             metadata.trackDuration! > 0)
                         ? Duration(milliseconds: metadata.trackDuration!)
                         : null; // Keep it null if metadata duration is invalid
 
-            // Attempt to get cover art from metadata (only if not found in files)
-            if (coverArt == null &&
-                metadata.albumArt != null &&
-                metadata.albumArt!.isNotEmpty) {
-              coverArt = metadata.albumArt;
-              debugPrint("Found cover art via metadata in: $fileName");
-            }
-            debugPrint(
+            // Priority 1: Try to get cover art from embedded metadata
+                if (coverArt == null &&
+                    metadata.albumArt != null &&
+                    metadata.albumArt!.isNotEmpty) {
+                  coverArt = metadata.albumArt;
+                  debugPrint("Found embedded cover art in: $fileName");
+                }
+                debugPrint(
               "Metadata for $fileName: Title='$chapterTitle', Duration=$chapterDuration, Author='$author'",
-            );
-          } catch (e) {
-            debugPrint(
-              "MetadataRetriever failed for $fileName: $e. Will try just_audio for duration.",
-            );
-            // chapterDuration remains null here
-          }
+                );
+              } catch (e) {
+                debugPrint(
+                  "MetadataRetriever failed for $fileName: $e. Will try just_audio for duration.",
+                );
+                // chapterDuration remains null here
+              }
 
-          // --- Fallback/Primary Duration Check with just_audio ---
-          // If metadata didn't provide a valid duration, use just_audio
-          if (chapterDuration == null || chapterDuration == Duration.zero) {
-            try {
-              debugPrint("Using just_audio to get duration for: $fileName");
-              // setFilePath returns the duration
+              // --- Fallback/Primary Duration Check with just_audio ---
+              // If metadata didn't provide a valid duration, use just_audio
+              if (chapterDuration == null || chapterDuration == Duration.zero) {
+                try {
+                  debugPrint("Using just_audio to get duration for: $fileName");
+                  // setFilePath returns the duration
               final durationOrNull = await audioPlayer.setFilePath(filePath);
               if (durationOrNull != null && durationOrNull > Duration.zero) {
-                chapterDuration = durationOrNull;
-                debugPrint(
-                  "just_audio duration for $fileName: $chapterDuration",
+                    chapterDuration = durationOrNull;
+                    debugPrint(
+                      "just_audio duration for $fileName: $chapterDuration",
+                    );
+                  } else {
+                    debugPrint(
+                      "just_audio returned zero/null duration for $fileName. Skipping chapter.",
+                    );
+                    // chapterDuration remains null or zero, chapter will be skipped below
+                  }
+                } catch (audioError) {
+                  debugPrint(
+                    "Could not get duration for $fileName using just_audio: $audioError",
+                  );
+                  // chapterDuration remains null, chapter will be skipped below
+                }
+              }
+
+              // --- Add Chapter ---
+              // *** FIX: Only add chapter if duration is valid (not null and > 0) ***
+              if (chapterDuration != null && chapterDuration > Duration.zero) {
+                totalDuration += chapterDuration; // Add to total duration
+                chapters.add(
+                  Chapter(
+                    id: chapterId,
+                    title: chapterTitle,
+                    audiobookId: folderPath,
+                    duration: chapterDuration, // Pass the non-nullable duration
+                  ),
                 );
               } else {
                 debugPrint(
-                  "just_audio returned zero/null duration for $fileName. Skipping chapter.",
+                  "Skipping chapter '$chapterTitle' due to zero or null duration.",
                 );
-                // chapterDuration remains null or zero, chapter will be skipped below
               }
-            } catch (audioError) {
-              debugPrint(
-                "Could not get duration for $fileName using just_audio: $audioError",
-              );
-              // chapterDuration remains null, chapter will be skipped below
+            } catch (e) {
+              debugPrint("Error processing audio file $filePath: $e");
             }
           }
 
-          // --- Add Chapter ---
-          // *** FIX: Only add chapter if duration is valid (not null and > 0) ***
-          if (chapterDuration != null && chapterDuration > Duration.zero) {
-            totalDuration += chapterDuration; // Add to total duration
-            chapters.add(
-              Chapter(
-                id: chapterId,
-                title: chapterTitle,
-                audiobookId: folderPath,
-                duration: chapterDuration, // Pass the non-nullable duration
-              ),
-            );
-          } else {
-            debugPrint(
-              "Skipping chapter '$chapterTitle' due to zero or null duration.",
-            );
+      // Priority 2: If no embedded cover art found, use any image file in the folder
+      if (coverArt == null && imageFiles.isNotEmpty) {
+        // Sort image files alphabetically for consistent selection
+        imageFiles.sort((a, b) => p.basename(a.path).toLowerCase().compareTo(p.basename(b.path).toLowerCase()));
+        
+        for (var imageFile in imageFiles) {
+          try {
+            final fileName = p.basename(imageFile.path);
+            debugPrint("Attempting to use image file as cover: $fileName");
+            coverArt = await imageFile.readAsBytes();
+            if (coverArt != null && coverArt.isNotEmpty) {
+              debugPrint("Successfully loaded cover art from: $fileName");
+              break; // Use the first valid image file
+            } else {
+              coverArt = null; // Reset if file is empty
+              debugPrint("Image file $fileName is empty, trying next...");
+            }
+          } catch (e) {
+            debugPrint("Error reading image file ${p.basename(imageFile.path)}: $e");
           }
-        } catch (e) {
-          debugPrint("Error processing audio file $filePath: $e");
         }
       }
       
@@ -375,43 +301,5 @@ class MetadataService {
       totalDuration: totalDuration,
       coverArt: coverArt,
     );
-  }
-
-  /// Find cover art files in a directory
-  Future<Uint8List?> _findCoverArtInFolder(Directory directory) async {
-    try {
-      final files = await directory.list().toList();
-      
-      for (var entity in files) {
-        if (entity is File) {
-          final fileName = p.basename(entity.path);
-          final extension = p.extension(fileName).toLowerCase();
-          
-          if (_coverArtFormats.contains(extension)) {
-            // Check for common cover art filenames
-            final baseName = p.basenameWithoutExtension(fileName).toLowerCase();
-            if (baseName == 'cover' || 
-                baseName == 'folder' || 
-                baseName == 'albumart' || 
-                baseName == 'front' ||
-                baseName == 'artwork') {
-              try {
-                debugPrint("Found cover art file: $fileName");
-                final coverArt = await entity.readAsBytes();
-                if (coverArt.isNotEmpty) {
-                  return coverArt;
-                }
-              } catch (e) {
-                debugPrint("Error reading cover file $fileName: $e");
-              }
-            }
-          }
-        }
-      }
-    } catch (e) {
-      debugPrint("Error finding cover art in folder: $e");
-    }
-    
-    return null;
   }
 }

@@ -1,5 +1,24 @@
 # Changelog
 
+## 1.0.3 - Current Release
+
+### Enhanced
+- Improved cover image priority system: Now prioritizes embedded metadata first, then any image file in folder
+- Added tag rename functionality alongside existing tag delete feature
+- Enhanced UI: Converted bottom sheet menus to dialogs for better user experience
+- Improved tag creation flow with textbox-first design
+
+### Added
+- Bulletproof Favorites tag system that cannot be deleted or renamed
+- Comprehensive data management: Tags, favorites, and all progress data now included in backup/restore
+- Enhanced backup system with automatic corruption detection and recovery
+- Data health monitoring with tag statistics in Settings
+
+### Fixed
+- Cover art now properly prioritizes embedded audio file metadata over folder images
+- Tag system maintains full data consistency during rename operations
+- Favorites tag guaranteed to always exist with multiple fallback mechanisms
+
 ## 1.0.2 - May 26, 2024
 
 ### Fixed

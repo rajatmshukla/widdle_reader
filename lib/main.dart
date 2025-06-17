@@ -1,6 +1,7 @@
 // lib/main.dart
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
+import 'package:provider/provider.dart' as provider;
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
 import 'package:just_audio_background/just_audio_background.dart';
 
@@ -11,12 +12,13 @@ import 'screens/library_screen.dart';
 import 'screens/simple_player_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/license_check_screen.dart';
-import 'screens/bookmarks_screen.dart';
+
 
 import 'services/audio_handler.dart';
 import 'services/storage_service.dart';
 import 'theme.dart';
 import 'providers/sleep_timer_provider.dart';
+import 'providers/tag_provider.dart';
 
 // Global flag for audio service initialization
 bool _audioServiceInitialized = false;
@@ -51,7 +53,7 @@ Future<void> main() async {
     preloadArtwork: true,
   );
 
-  runApp(const MyApp());
+  runApp(const ProviderScope(child: MyApp()));
 }
 
 // Initialize data integrity system
@@ -116,13 +118,13 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
-    return MultiProvider(
+    return provider.MultiProvider(
       providers: [
-        ChangeNotifierProvider(create: (_) => AudiobookProvider()),
-        ChangeNotifierProvider(create: (_) => ThemeProvider()),
-        ChangeNotifierProvider(create: (_) => SleepTimerProvider()),
+        provider.ChangeNotifierProvider(create: (_) => AudiobookProvider()),
+        provider.ChangeNotifierProvider(create: (_) => ThemeProvider()),
+        provider.ChangeNotifierProvider(create: (_) => SleepTimerProvider()),
       ],
-      child: Consumer<ThemeProvider>(
+      child: provider.Consumer<ThemeProvider>(
         builder: (context, themeProvider, _) {
           return MaterialApp(
             title: 'Widdle Reader',

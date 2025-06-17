@@ -1,6 +1,5 @@
 import 'dart:typed_data';
 import 'chapter.dart';
-import 'm4b_chapter.dart';
 
 class Audiobook {
   final String id; // Use folder path as unique ID
@@ -9,11 +8,8 @@ class Audiobook {
   final List<Chapter> chapters;
   Duration totalDuration;
   Uint8List? coverArt; // Store cover art data
-  
-  // M4B-specific properties
-  final bool isM4B; // Flag to indicate if this is an M4B audiobook
-  final List<M4BChapter>? m4bChapters; // Embedded M4B chapters
-  final String? m4bFilePath; // Path to the single M4B file
+  Set<String> tags;      // Multiple tags per book
+  bool isFavorited;      // Quick favorites access
 
   Audiobook({
     required this.id,
@@ -22,80 +18,63 @@ class Audiobook {
     required this.chapters,
     this.totalDuration = Duration.zero,
     this.coverArt,
-    this.isM4B = false,
-    this.m4bChapters,
-    this.m4bFilePath,
-  });
+    Set<String>? tags,
+    this.isFavorited = false,
+  }) : tags = tags ?? <String>{};
 
-  /// Get the appropriate chapters list (M4B embedded or traditional file-based)
-  List<dynamic> get activeChapters {
-    if (isM4B && m4bChapters != null && m4bChapters!.isNotEmpty) {
-      return m4bChapters!;
+  // Methods for tag management
+  bool hasTag(String tagName) {
+    return tags.contains(tagName);
+  }
+
+  void addTag(String tagName) {
+    tags.add(tagName);
+    if (tagName.toLowerCase() == 'favorites') {
+      isFavorited = true;
     }
-    return chapters;
   }
 
-  /// Get the number of chapters
-  int get chapterCount {
-    return activeChapters.length;
-  }
-
-  /// Check if this audiobook has embedded M4B chapters
-  bool get hasEmbeddedChapters {
-    return isM4B && m4bChapters != null && m4bChapters!.isNotEmpty;
-  }
-
-  /// Get chapter title by index (works with both chapter types)
-  String getChapterTitle(int index) {
-    final chapters = activeChapters;
-    if (index >= 0 && index < chapters.length) {
-      final chapter = chapters[index];
-      if (chapter is M4BChapter) {
-        return chapter.title;
-      } else if (chapter is Chapter) {
-        return chapter.title;
-      }
+  void removeTag(String tagName) {
+    tags.remove(tagName);
+    if (tagName.toLowerCase() == 'favorites') {
+      isFavorited = false;
     }
-    return 'Chapter ${index + 1}';
   }
 
-  /// Get chapter duration by index (works with both chapter types)
-  Duration? getChapterDuration(int index) {
-    final chapters = activeChapters;
-    if (index >= 0 && index < chapters.length) {
-      final chapter = chapters[index];
-      if (chapter is M4BChapter) {
-        return chapter.duration;
-      } else if (chapter is Chapter) {
-        return chapter.duration;
-      }
+  void toggleFavorite() {
+    isFavorited = !isFavorited;
+    if (isFavorited) {
+      tags.add('Favorites');
+    } else {
+      tags.remove('Favorites');
     }
-    return null;
   }
 
-  /// Create an M4B audiobook from a single file with embedded chapters
-  static Audiobook fromM4BFile({
-    required String filePath,
-    required String title,
-    String? author,
-    required List<M4BChapter> m4bChapters,
-    Duration? totalDuration,
-    Uint8List? coverArt,
-  }) {
+  // Serialization methods
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'title': title,
+      'author': author,
+      'totalDuration': totalDuration.inMilliseconds,
+      'tags': tags.toList(),
+      'isFavorited': isFavorited,
+      // Note: chapters and coverArt serialization would need custom handling if needed
+    };
+  }
+
+  factory Audiobook.fromJson(Map<String, dynamic> json) {
     return Audiobook(
-      id: filePath,
-      title: title,
-      author: author,
-      chapters: [], // Empty traditional chapters
-      totalDuration: totalDuration ?? Duration.zero,
-      coverArt: coverArt,
-      isM4B: true,
-      m4bChapters: m4bChapters,
-      m4bFilePath: filePath,
+      id: json['id'] as String,
+      title: json['title'] as String,
+      author: json['author'] as String?,
+      chapters: [], // Would need to be handled separately
+      totalDuration: Duration(milliseconds: json['totalDuration'] as int? ?? 0),
+      tags: Set<String>.from(json['tags'] as List? ?? []),
+      isFavorited: json['isFavorited'] as bool? ?? false,
     );
   }
 
-  /// Copy method for updating audiobook properties
   Audiobook copyWith({
     String? id,
     String? title,
@@ -103,9 +82,8 @@ class Audiobook {
     List<Chapter>? chapters,
     Duration? totalDuration,
     Uint8List? coverArt,
-    bool? isM4B,
-    List<M4BChapter>? m4bChapters,
-    String? m4bFilePath,
+    Set<String>? tags,
+    bool? isFavorited,
   }) {
     return Audiobook(
       id: id ?? this.id,
@@ -114,9 +92,8 @@ class Audiobook {
       chapters: chapters ?? this.chapters,
       totalDuration: totalDuration ?? this.totalDuration,
       coverArt: coverArt ?? this.coverArt,
-      isM4B: isM4B ?? this.isM4B,
-      m4bChapters: m4bChapters ?? this.m4bChapters,
-      m4bFilePath: m4bFilePath ?? this.m4bFilePath,
+      tags: tags ?? Set<String>.from(this.tags),
+      isFavorited: isFavorited ?? this.isFavorited,
     );
   }
 }
