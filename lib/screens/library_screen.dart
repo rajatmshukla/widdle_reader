@@ -8,13 +8,16 @@ import '../providers/audiobook_provider.dart';
 import '../providers/theme_provider.dart';
 import '../providers/sleep_timer_provider.dart';
 import '../providers/tag_provider.dart';
+import '../providers/search_provider.dart';
 import '../widgets/audiobook_tile.dart';
 import '../widgets/app_logo.dart';
 import '../widgets/countdown_timer_widget.dart';
 import '../widgets/library_toggle.dart';
 import '../widgets/tags_view.dart';
 import '../widgets/tag_assignment_dialog.dart';
+import '../widgets/search_bar_widget.dart';
 import '../models/audiobook.dart';
+import '../models/tag.dart';
 import '../services/storage_service.dart';
 import '../theme.dart';
 import '../utils/responsive_utils.dart';
@@ -404,9 +407,10 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
               leading: Icon(Icons.book, color: colorScheme.primary),
               title: const Text('Add Single Book'),
               subtitle: const Text('Select a single folder containing audio files'),
-              onTap: () {
+              onTap: () async {
                 Navigator.pop(context);
-                provider.addAudiobookFolder();
+                await provider.addAudiobookFolder();
+                await _handleAutoTagCreation(provider);
               },
             ),
             const Divider(),
@@ -414,9 +418,10 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
               leading: Icon(Icons.auto_stories, color: colorScheme.primary),
               title: const Text('Scan for Books'),
               subtitle: const Text('Recursively scan for audiobooks in any folder structure'),
-              onTap: () {
+              onTap: () async {
                 Navigator.pop(context);
-                provider.addAudiobooksRecursively();
+                await provider.addAudiobooksRecursively();
+                await _handleAutoTagCreation(provider);
               },
             ),
           ],
@@ -436,6 +441,94 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
         ),
       ),
     );
+  }
+
+  // Handle auto-tag creation after audiobooks are added
+  Future<void> _handleAutoTagCreation(AudiobookProvider provider) async {
+    try {
+      // Check if there are newly added books ready for auto-tagging
+      final rootPath = provider.lastScannedRootPath;
+      final addedPaths = provider.lastAddedPaths;
+      
+      if (rootPath != null && addedPaths != null && addedPaths.isNotEmpty) {
+        debugPrint("Creating auto-tags for ${addedPaths.length} newly added audiobooks");
+        
+        // Show loading indicator (optional - could be a SnackBar)
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Row(
+                children: [
+                  SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor: AlwaysStoppedAnimation<Color>(
+                        Theme.of(context).colorScheme.onInverseSurface,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  const Text('Creating auto-tags...'),
+                ],
+              ),
+              duration: const Duration(seconds: 2),
+            ),
+          );
+        }
+        
+        // Create auto-tags
+        if (addedPaths.length == 1) {
+          await provider.createAutoTagsForSingleBook(
+            addedPaths.first,
+            rootPath,
+            ref,
+          );
+        } else {
+          await provider.createAutoTagsForMultipleBooks(
+            addedPaths,
+            rootPath,
+            ref,
+          );
+        }
+        
+        // Show success message
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Row(
+                children: [
+                  Icon(
+                    Icons.local_offer_rounded,
+                    color: Theme.of(context).colorScheme.onInverseSurface,
+                    size: 16,
+                  ),
+                  const SizedBox(width: 12),
+                  const Text('Auto-tags created from folder structure'),
+                ],
+              ),
+              backgroundColor: Theme.of(context).colorScheme.inverseSurface,
+              duration: const Duration(seconds: 3),
+            ),
+          );
+        }
+        
+      } else {
+        debugPrint("No books available for auto-tagging");
+      }
+    } catch (e) {
+      debugPrint("Error in auto-tag creation: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error creating auto-tags: $e'),
+            backgroundColor: Theme.of(context).colorScheme.error,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    }
   }
 
   @override
@@ -489,6 +582,23 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
                 ],
               ),
               actions: [
+                // Search button
+                Consumer(
+                  builder: (context, widgetRef, child) {
+                    final searchState = ref.watch(searchProvider);
+                    return IconButton(
+                      icon: Icon(
+                        searchState.isActive ? Icons.search_off_rounded : Icons.search_rounded,
+                        size: 24,
+                      ),
+                      tooltip: searchState.isActive ? 'Close Search' : 'Search Library',
+                      onPressed: () {
+                        ref.read(searchProvider.notifier).toggleSearch();
+                      },
+                    );
+                  },
+                ),
+                
                 // Sleep Timer button
                 IconButton(
                   icon: CountdownTimerWidget(
@@ -500,29 +610,6 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
                   onPressed: _showSleepTimerDialog,
                 ),
                 
-                // Refresh button
-                AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 300),
-                  child:
-                      provider.isLoading
-                          ? Container(
-                            margin: const EdgeInsets.all(8),
-                            width: 40,
-                            height: 40,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: seedColor,
-                            ),
-                          )
-                          : IconButton(
-                            icon: const Icon(
-                              Icons.refresh_rounded,
-                              size: 24,
-                            ),
-                            tooltip: "Refresh Library",
-                            onPressed: () => provider.loadAudiobooks(),
-                          ),
-                ),
                 // Settings button
                 IconButton(
                   icon: const Icon(
@@ -545,8 +632,31 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
           decoration: AppTheme.gradientBackground(context),
           child: Column(
             children: [
-              // Toggle bar between Library and Tags
-              const LibraryToggle(),
+              // Search bar (only show when search is active)
+              Consumer(
+                builder: (context, widgetRef, child) {
+                  final searchState = ref.watch(searchProvider);
+                  return AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 300),
+                    child: searchState.isActive
+                        ? const SearchBarWidget()
+                        : const SizedBox.shrink(),
+                  );
+                },
+              ),
+              
+              // Toggle bar between Library and Tags (only show when search is not active)
+              Consumer(
+                builder: (context, widgetRef, child) {
+                  final searchState = ref.watch(searchProvider);
+                  return AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 300),
+                    child: searchState.isActive
+                        ? const SizedBox.shrink()
+                        : const LibraryToggle(),
+                  );
+                },
+              ),
               
               // Main content area
               Expanded(
@@ -558,6 +668,12 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
                       child: Consumer(
                         builder: (context, widgetRef, child) {
                           final libraryMode = ref.watch(libraryModeProvider);
+                          final searchState = ref.watch(searchProvider);
+                          
+                          // If search is active, show search results
+                          if (searchState.isActive) {
+                            return _buildSearchResults(context, provider, searchState, colorScheme);
+                          }
                           
                           if (libraryMode == LibraryMode.tags) {
                             return const TagsView();
@@ -782,6 +898,106 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
           ),
         );
       },
+    );
+  }
+
+  // Build search results view
+  Widget _buildSearchResults(BuildContext context, AudiobookProvider audiobookProvider, SearchState searchState, ColorScheme colorScheme) {
+    // Get search results
+    final results = _getSearchResults(audiobookProvider, searchState.query);
+    
+    if (searchState.query.trim().isEmpty) {
+      // Show empty search state
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32.0),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.search_rounded,
+                size: 64,
+                color: colorScheme.onSurfaceVariant.withOpacity(0.5),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'Start typing to search',
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w600,
+                  color: colorScheme.onSurface,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Search for books, authors, or tags',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 14,
+                  color: colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    // Build search result tiles
+    final searchResultTiles = results.map((audiobook) {
+      return GestureDetector(
+        onTap: () => _loadLastPositionAndNavigate(context, audiobook),
+        onLongPress: () => _showLongPressMenu(context, audiobook, audiobookProvider),
+        child: AudiobookTile(
+          key: ValueKey('search_${audiobook.id}'),
+          audiobook: audiobook,
+          customTitle: audiobookProvider.getTitleForAudiobook(audiobook),
+        ),
+      );
+    }).toList();
+
+    return SearchResultsWidget(
+      children: searchResultTiles,
+      query: searchState.query,
+    );
+  }
+
+  // Get search results using the search service
+  List<Audiobook> _getSearchResults(AudiobookProvider audiobookProvider, String query) {
+    if (query.trim().isEmpty) {
+      return [];
+    }
+
+    // Get all necessary data for search
+    final audiobooks = audiobookProvider.audiobooks;
+    final customTitles = audiobookProvider.customTitles;
+    
+    // Get audiobook tags
+    final Map<String, Set<String>> audiobookTags = {};
+    try {
+      final tagState = ref.read(audiobookTagsProvider);
+      audiobookTags.addAll(tagState);
+    } catch (e) {
+      // Handle case where tags provider is not available
+      debugPrint('Could not load tags for search: $e');
+    }
+    
+    // Get all tags
+    final List<Tag> allTags = [];
+    try {
+      final tagsAsyncValue = ref.read(syncedTagProvider);
+      tagsAsyncValue.whenData((tags) => allTags.addAll(tags));
+    } catch (e) {
+      // Handle case where tags provider is not available
+      debugPrint('Could not load tag list for search: $e');
+    }
+
+    return SearchService.searchAudiobooks(
+      audiobooks: audiobooks,
+      query: query,
+      customTitles: customTitles,
+      audiobookTags: audiobookTags,
+      allTags: allTags,
     );
   }
 

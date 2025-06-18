@@ -45,6 +45,8 @@ class MetadataService {
     }
   }
 
+
+
   /// Recursively scans a directory and its subdirectories for audiobook folders.
   /// A folder is considered an audiobook folder if it contains audio files.
   Future<void> _scanDirectoryRecursively(
@@ -301,5 +303,109 @@ class MetadataService {
       totalDuration: totalDuration,
       coverArt: coverArt,
     );
+  }
+
+  /// Extracts potential tag names from folder structure
+  /// Analyzes the path relative to the root to identify series, authors, and genres
+  List<String> extractPotentialTags(String audiobookPath, String rootPath) {
+    final List<String> potentialTags = [];
+    
+    try {
+      // Get the relative path from root to audiobook
+      String relativePath = p.relative(audiobookPath, from: rootPath);
+      
+      // Split the path into segments
+      final pathSegments = p.split(relativePath);
+      
+      // Remove the last segment (audiobook folder itself)
+      if (pathSegments.isNotEmpty) {
+        pathSegments.removeLast();
+      }
+      
+      // Each remaining segment is a potential tag
+      for (final segment in pathSegments) {
+        final cleanedSegment = _cleanTagName(segment);
+        if (cleanedSegment.isNotEmpty && cleanedSegment.length > 2) {
+          potentialTags.add(cleanedSegment);
+        }
+      }
+      
+      debugPrint("Extracted potential tags for $audiobookPath: $potentialTags");
+      
+    } catch (e) {
+      debugPrint("Error extracting potential tags from $audiobookPath: $e");
+    }
+    
+    return potentialTags;
+  }
+
+  /// Cleans and normalizes tag names
+  String _cleanTagName(String tagName) {
+    // Remove common prefixes and suffixes
+    String cleaned = tagName.trim();
+    
+    // Remove common patterns
+    cleaned = cleaned.replaceAll(RegExp(r'\s+'), ' '); // Multiple spaces to single
+    cleaned = cleaned.replaceAll(RegExp(r'[_\-]+'), ' '); // Underscores and dashes to spaces
+    
+    // Remove leading/trailing special characters
+    cleaned = cleaned.replaceAll(RegExp(r'^[^\w\s]+|[^\w\s]+$'), '');
+    
+    // Title case for better presentation
+    cleaned = _toTitleCase(cleaned);
+    
+    return cleaned.trim();
+  }
+
+  /// Converts string to title case
+  String _toTitleCase(String text) {
+    if (text.isEmpty) return text;
+    
+    return text.toLowerCase().split(' ').map((word) {
+      if (word.isEmpty) return word;
+      
+      // Handle special cases for common words
+      final lowerWord = word.toLowerCase();
+      if (['the', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by'].contains(lowerWord)) {
+        return lowerWord;
+      }
+      
+      return word[0].toUpperCase() + word.substring(1);
+    }).join(' ');
+  }
+
+  /// Suggests tag names based on folder structure analysis
+  /// This method analyzes common patterns to suggest better tag names
+  List<String> suggestTagNames(List<String> audiobookPaths, String rootPath) {
+    final Map<String, int> tagCounts = {};
+    final Map<String, Set<String>> tagToBooks = {};
+    
+    // Collect all potential tags and count their usage
+    for (final audiobookPath in audiobookPaths) {
+      final tags = extractPotentialTags(audiobookPath, rootPath);
+      for (final tag in tags) {
+        tagCounts[tag] = (tagCounts[tag] ?? 0) + 1;
+        tagToBooks.putIfAbsent(tag, () => <String>{});
+        tagToBooks[tag]!.add(p.basename(audiobookPath));
+      }
+    }
+    
+    // Filter tags that apply to multiple books (likely series or genres)
+    final suggestedTags = <String>[];
+    for (final entry in tagCounts.entries) {
+      final tagName = entry.key;
+      final count = entry.value;
+      
+      // Only suggest tags that apply to multiple books
+      if (count > 1) {
+        suggestedTags.add(tagName);
+        debugPrint("Suggested tag '$tagName' for $count books: ${tagToBooks[tagName]?.take(3).join(', ')}${count > 3 ? '...' : ''}");
+      }
+    }
+    
+    // Sort by frequency (most common first)
+    suggestedTags.sort((a, b) => (tagCounts[b] ?? 0).compareTo(tagCounts[a] ?? 0));
+    
+    return suggestedTags;
   }
 }

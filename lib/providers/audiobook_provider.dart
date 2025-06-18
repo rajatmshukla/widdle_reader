@@ -1,19 +1,26 @@
-import 'dart:io'; // For Platform
+import 'dart:io'; // For Platform and Directory
 import 'package:flutter/foundation.dart'; // For debugPrint and ChangeNotifier
 import 'package:permission_handler/permission_handler.dart'; // For permissions
 import 'package:file_picker/file_picker.dart'; // For picking folders
 import 'package:device_info_plus/device_info_plus.dart'; // For Android version check
+import 'package:flutter_riverpod/flutter_riverpod.dart'; // For WidgetRef
 // import 'package:shared_preferences/shared_preferences.dart'; // For SharedPreferences - not needed directly
 
 // Import local models and services
 import '../models/audiobook.dart';
+import '../models/tag.dart';
 import '../services/metadata_service.dart';
 import '../services/storage_service.dart';
+import '../services/auto_tag_service.dart';
 
 
 class AudiobookProvider extends ChangeNotifier {
   final MetadataService _metadataService = MetadataService();
   final StorageService _storageService = StorageService();
+  
+  // Store the root path for auto-tag creation
+  String? _lastScannedRootPath;
+  List<String>? _lastAddedPaths;
 
   List<Audiobook> _audiobooks = [];
   bool _isLoading = false;
@@ -42,6 +49,13 @@ class AudiobookProvider extends ChangeNotifier {
   bool isNewBook(String audiobookId) => _newBooks[audiobookId] ?? false;
   bool isCompletedBook(String audiobookId) =>
       _completedBooks[audiobookId] ?? false;
+  
+  // Getter for custom titles
+  Map<String, String> get customTitles => Map.from(_customTitles);
+  
+  // Getters for auto-tag information
+  String? get lastScannedRootPath => _lastScannedRootPath;
+  List<String>? get lastAddedPaths => _lastAddedPaths?.toList();
 
   // Constructor: Load audiobooks when the provider is created
   AudiobookProvider() {
@@ -225,6 +239,78 @@ class AudiobookProvider extends ChangeNotifier {
     }
   }
 
+  /// Creates and assigns auto-tags for multiple audiobooks using AutoTagService
+  Future<void> createAutoTagsForMultipleBooks(
+    List<String> audiobookPaths, 
+    String rootPath,
+    WidgetRef ref
+  ) async {
+    try {
+      debugPrint("Starting auto-tag creation for ${audiobookPaths.length} audiobooks");
+      
+      final autoTagService = AutoTagService(ref);
+      final result = await autoTagService.createAutoTagsForAudiobooks(
+        audiobookPaths: audiobookPaths,
+        rootPath: rootPath,
+        createTags: true,
+        assignTags: true,
+      );
+      
+      if (result.hasSuccess) {
+        debugPrint("Auto-tag creation successful: ${result.summary}");
+        
+        // Update error message to show success
+        _errorMessage = null;
+        
+        // Show success message in debug log
+        if (result.createdTags.isNotEmpty) {
+          debugPrint("Created tags: ${result.createdTags.join(', ')}");
+        }
+        if (result.totalAssignments > 0) {
+          debugPrint("Made ${result.totalAssignments} tag assignments");
+        }
+        
+      } else if (result.hasError) {
+        debugPrint("Auto-tag creation failed: ${result.error}");
+      } else {
+        debugPrint("No auto-tags created (no suitable folder structure found)");
+      }
+      
+    } catch (e) {
+      debugPrint("Error in auto-tag creation: $e");
+    }
+  }
+
+  /// Creates and assigns auto-tags for a single audiobook
+  Future<void> createAutoTagsForSingleBook(
+    String audiobookPath, 
+    String rootPath,
+    WidgetRef ref
+  ) async {
+    try {
+      debugPrint("Creating auto-tags for single audiobook: $audiobookPath");
+      
+      final autoTagService = AutoTagService(ref);
+      final result = await autoTagService.createAutoTagsForSingleAudiobook(
+        audiobookPath: audiobookPath,
+        rootPath: rootPath,
+        createTags: true,
+        assignTags: true,
+      );
+      
+      if (result.hasSuccess) {
+        debugPrint("Auto-tag creation for single book successful: ${result.summary}");
+      } else if (result.hasError) {
+        debugPrint("Auto-tag creation for single book failed: ${result.error}");
+      } else {
+        debugPrint("No auto-tags created for single book");
+      }
+      
+    } catch (e) {
+      debugPrint("Error creating auto-tags for single book: $e");
+    }
+  }
+
   /// Loads audiobook details from saved folder paths using StorageService.
   Future<void> loadAudiobooks() async {
     _isLoading = true;
@@ -346,6 +432,9 @@ class AudiobookProvider extends ChangeNotifier {
       if (rootDirectoryPath != null && rootDirectoryPath.isNotEmpty) {
         debugPrint("Root audiobooks folder selected: $rootDirectoryPath");
 
+        // Store the root path for auto-tag creation
+        _lastScannedRootPath = rootDirectoryPath;
+
         _isLoading = true;
         _errorMessage = null;
         notifyListeners();
@@ -425,6 +514,21 @@ class AudiobookProvider extends ChangeNotifier {
           await _storageService.saveAudiobookFolders(
             _audiobooks.map((b) => b.id).toList(),
           );
+
+                      // Note: Auto-tag creation will be handled from the UI layer with ref
+            // Store the paths and root for potential auto-tag creation
+            if (successCount > 0 && _lastScannedRootPath != null) {
+              final newlyAddedPaths = discoveredFolders.where((path) => 
+                !skippedPaths.contains(path) && !failedPaths.contains(path)
+              ).toList();
+              
+              if (newlyAddedPaths.isNotEmpty) {
+                debugPrint("${newlyAddedPaths.length} new audiobooks added and ready for auto-tagging");
+                
+                // Store for potential auto-tag creation from UI
+                _lastAddedPaths = newlyAddedPaths;
+              }
+            }
 
           // Provide detailed feedback to user
           if (successCount > 0) {
@@ -539,6 +643,11 @@ class AudiobookProvider extends ChangeNotifier {
             await _storageService.saveAudiobookFolders(
               _audiobooks.map((b) => b.id).toList(),
             );
+
+            // Store info for potential auto-tag creation from UI
+            _lastScannedRootPath = Directory(selectedDirectoryPath).parent.path;
+            _lastAddedPaths = [selectedDirectoryPath];
+            debugPrint("Single audiobook added and ready for auto-tagging");
             
             _errorMessage = null;
             debugPrint(
