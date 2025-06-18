@@ -428,11 +428,49 @@ class AudiobookProvider extends ChangeNotifier {
     try {
       final directory = Directory(folderPath);
       if (!await directory.exists()) {
-        // Book folder was deleted - remove from library silently
+        // Try to locate the missing audiobook using file tracking 🐛
+        final newPath = await _storageService.locateMissingAudiobook(folderPath);
+        
+        if (newPath != null) {
+          // Found the audiobook - update the ID and path
+          final bookIndex = _audiobooks.indexWhere((book) => book.id == folderPath);
+          if (bookIndex != -1) {
+            final book = _audiobooks[bookIndex];
+            // Create new audiobook with updated path
+            final updatedBook = Audiobook(
+              id: newPath,
+              title: book.title,
+              author: book.author,
+              chapters: book.chapters.map((chapter) => Chapter(
+                id: chapter.id.replaceFirst(folderPath, newPath),
+                title: chapter.title,
+                audiobookId: newPath,
+                duration: chapter.duration,
+              )).toList(),
+              totalDuration: book.totalDuration,
+              coverArt: book.coverArt,
+              tags: book.tags,
+            );
+            
+            _audiobooks[bookIndex] = updatedBook;
+            
+            // Update all related data with new path
+            await _migrateAudiobookData(folderPath, newPath);
+            
+            // Update folders list
+            await _storageService.saveAudiobookFolders(_audiobooks.map((b) => b.id).toList());
+            
+            notifyListeners();
+            debugPrint("Successfully relocated audiobook: $folderPath -> $newPath");
+            return;
+          }
+        }
+        
+        // Could not locate - remove from library silently
         _audiobooks.removeWhere((book) => book.id == folderPath);
         await _storageService.saveAudiobookFolders(_audiobooks.map((b) => b.id).toList());
         notifyListeners(); // Update UI to remove deleted book
-        debugPrint("Removed deleted book: $folderPath");
+        debugPrint("Removed missing book (could not relocate): $folderPath");
         return;
       }
       
@@ -760,6 +798,14 @@ class AudiobookProvider extends ChangeNotifier {
             await _cacheBasicBookInfo(newBook, folderPath);
             await _cacheDetailedMetadata(newBook);
             
+            // Register with file tracking system 🐛
+            await _storageService.registerAudiobook(
+              folderPath,
+              title: newBook.title,
+              author: newBook.author,
+              chapterCount: newBook.chapters.length,
+            );
+            
             // Update UI with each new book (seamless addition)
             _sortAudiobooksByStatus();
             notifyListeners();
@@ -873,6 +919,14 @@ class AudiobookProvider extends ChangeNotifier {
         // Cache the new book
         await _cacheBasicBookInfo(newBook, selectedDirectoryPath);
         await _cacheDetailedMetadata(newBook);
+        
+        // Register with file tracking system 🐛
+        await _storageService.registerAudiobook(
+          selectedDirectoryPath,
+          title: newBook.title,
+          author: newBook.author,
+          chapterCount: newBook.chapters.length,
+        );
 
         // Save the updated list of folder paths
         await _storageService.saveAudiobookFolders(
@@ -939,6 +993,44 @@ class AudiobookProvider extends ChangeNotifier {
     } catch (e) {
       debugPrint("Error removing audiobook: $e");
       return false;
+    }
+  }
+
+  /// Migrate all audiobook-related data when path changes 🐛
+  Future<void> _migrateAudiobookData(String oldPath, String newPath) async {
+    try {
+      // Migrate last played timestamps
+      if (_lastPlayedTimestamps.containsKey(oldPath)) {
+        _lastPlayedTimestamps[newPath] = _lastPlayedTimestamps[oldPath]!;
+        _lastPlayedTimestamps.remove(oldPath);
+      }
+      
+      // Migrate completion status
+      if (_completedBooks.containsKey(oldPath)) {
+        _completedBooks[newPath] = _completedBooks[oldPath]!;
+        _completedBooks.remove(oldPath);
+      }
+      
+      // Migrate new book status
+      if (_newBooks.containsKey(oldPath)) {
+        _newBooks[newPath] = _newBooks[oldPath]!;
+        _newBooks.remove(oldPath);
+      }
+      
+      // Migrate custom titles
+      if (_customTitles.containsKey(oldPath)) {
+        _customTitles[newPath] = _customTitles[oldPath]!;
+        _customTitles.remove(oldPath);
+        await _saveCustomTitles();
+      }
+      
+      // Migrate last position data through storage service
+      // This will be handled automatically by the storage service
+      
+      debugPrint("Migrated audiobook data: $oldPath -> $newPath");
+      
+    } catch (e) {
+      debugPrint("Error migrating audiobook data: $e");
     }
   }
 

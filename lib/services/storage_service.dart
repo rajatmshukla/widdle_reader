@@ -1,6 +1,6 @@
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/foundation.dart'; // For debugPrint
-import 'package:path/path.dart';
+import 'package:path/path.dart' as path;
 import 'dart:io';
 import 'dart:convert'; // Add this import for JSON encoding/decoding
 import 'dart:typed_data'; // For Uint8List
@@ -29,6 +29,12 @@ class StorageService {
   // Tag-related keys (from tag provider)
   static const userTagsKey = 'user_tags';
   static const audiobookTagsKey = 'audiobook_tags';
+  
+  // FILE TRACKING SYSTEM KEYS 🐛
+  static const fileTrackingKey = 'file_tracking_v2';
+  static const pathMigrationsKey = 'path_migrations';
+  static const contentHashesKey = 'content_hashes';
+  static const orphanedDataKey = 'orphaned_data';
 
   // Singleton instance for this service 
   static final StorageService _instance = StorageService._internal();
@@ -49,6 +55,12 @@ class StorageService {
   Map<String, String> _customTitlesCache = {};
   List<String> _foldersCache = [];
   
+  // FILE TRACKING CACHES 🐛
+  Map<String, Map<String, dynamic>> _fileTrackingCache = {}; // path -> metadata
+  Map<String, String> _pathMigrationsCache = {}; // oldPath -> newPath
+  Map<String, String> _contentHashesCache = {}; // hash -> currentPath
+  Map<String, Map<String, dynamic>> _orphanedDataCache = {}; // path -> preserved data
+  
   // Cache dirty flags to track which caches need persisting
   final Set<String> _dirtyProgressCache = {};
   final Set<String> _dirtyPositionCache = {};
@@ -56,6 +68,12 @@ class StorageService {
   bool _dirtyCompletedBooksCache = false;
   bool _dirtyCustomTitlesCache = false;
   bool _dirtyFoldersCache = false;
+  
+  // FILE TRACKING DIRTY FLAGS 🐛
+  bool _dirtyFileTrackingCache = false;
+  bool _dirtyPathMigrationsCache = false;
+  bool _dirtyContentHashesCache = false;
+  bool _dirtyOrphanedDataCache = false;
 
   // Periodic timer for cache persistence
   Timer? _cachePersistenceTimer;
@@ -134,6 +152,27 @@ class StorageService {
         if (_dirtyFoldersCache) {
           await prefs.setStringList(foldersKey, _foldersCache);
           _dirtyFoldersCache = false;
+        }
+        
+        // Persist file tracking caches 🐛
+        if (_dirtyFileTrackingCache) {
+          await prefs.setString(fileTrackingKey, jsonEncode(_fileTrackingCache));
+          _dirtyFileTrackingCache = false;
+        }
+        
+        if (_dirtyPathMigrationsCache) {
+          await prefs.setString(pathMigrationsKey, jsonEncode(_pathMigrationsCache));
+          _dirtyPathMigrationsCache = false;
+        }
+        
+        if (_dirtyContentHashesCache) {
+          await prefs.setString(contentHashesKey, jsonEncode(_contentHashesCache));
+          _dirtyContentHashesCache = false;
+        }
+        
+        if (_dirtyOrphanedDataCache) {
+          await prefs.setString(orphanedDataKey, jsonEncode(_orphanedDataCache));
+          _dirtyOrphanedDataCache = false;
         }
         
         // Update cache sync timestamp
@@ -529,15 +568,415 @@ class StorageService {
       final prefs = await _preferences;
       final folders = prefs.getStringList(foldersKey) ?? [];
       
+      // Apply path migrations if any exist
+      final migratedFolders = await _applyPathMigrations(folders);
+      
       // Update cache
-      _foldersCache = folders;
+      _foldersCache = migratedFolders;
       _dirtyFoldersCache = false;
       
-      debugPrint("Loaded audiobook folders: $folders");
-      return folders;
+      debugPrint("Loaded audiobook folders: $migratedFolders");
+      return migratedFolders;
     } catch (e) {
       debugPrint("Error loading audiobook folders: $e");
       return []; // Return empty list on error
+    }
+  }
+
+  // 🐛 FILE TRACKING SYSTEM IMPLEMENTATION
+  
+  /// Generate content-based hash for an audiobook folder
+  /// Uses first and last audio file info + folder structure for fingerprinting
+  Future<String> generateContentHash(String folderPath) async {
+    try {
+      final directory = Directory(folderPath);
+      if (!await directory.exists()) {
+        return '';
+      }
+
+      final List<FileSystemEntity> files = await directory.list().toList();
+      final audioFiles = files
+          .whereType<File>()
+          .where((file) => _isAudioFile(file.path))
+          .toList();
+
+      if (audioFiles.isEmpty) {
+        return '';
+      }
+
+      // Sort for consistent ordering
+      audioFiles.sort((a, b) => path.basename(a.path).compareTo(path.basename(b.path)));
+
+      // Create hash from:
+      // 1. Folder name
+      // 2. Number of audio files  
+      // 3. First file name and size
+      // 4. Last file name and size
+      // 5. Total folder size (approximate)
+
+      final folderName = path.basename(folderPath);
+      final fileCount = audioFiles.length;
+      
+      final firstFile = audioFiles.first;
+      final lastFile = audioFiles.last;
+      
+      final firstFileInfo = '${path.basename(firstFile.path)}_${await firstFile.length()}';
+      final lastFileInfo = '${path.basename(lastFile.path)}_${await lastFile.length()}';
+      
+      // Calculate approximate total size from sample files
+      int totalSize = 0;
+      final sampleSize = (audioFiles.length / 5).ceil().clamp(1, 10);
+      for (int i = 0; i < sampleSize && i < audioFiles.length; i += audioFiles.length ~/ sampleSize) {
+        totalSize += await audioFiles[i].length();
+      }
+
+      final hashInput = '$folderName|$fileCount|$firstFileInfo|$lastFileInfo|$totalSize';
+      final hash = hashInput.hashCode.abs().toString();
+      
+      debugPrint("Generated content hash for $folderPath: $hash");
+      return hash;
+      
+    } catch (e) {
+      debugPrint("Error generating content hash for $folderPath: $e");
+      return '';
+    }
+  }
+
+  /// Check if file is an audio file
+  bool _isAudioFile(String filePath) {
+    final extension = path.extension(filePath).toLowerCase();
+    return ['.mp3', '.m4a', '.m4b', '.wav', '.ogg', '.aac', '.flac'].contains(extension);
+  }
+
+  /// Register a new audiobook with robust tracking
+  Future<void> registerAudiobook(String folderPath, {
+    String? title,
+    String? author,
+    int? chapterCount,
+  }) async {
+    try {
+      // Generate content hash
+      final contentHash = await generateContentHash(folderPath);
+      
+      if (contentHash.isEmpty) {
+        debugPrint("Could not generate content hash for $folderPath");
+        return;
+      }
+
+      // Store file tracking metadata
+      final trackingData = {
+        'originalPath': folderPath,
+        'currentPath': folderPath,
+        'contentHash': contentHash,
+        'title': title ?? path.basename(folderPath),
+        'author': author,
+        'chapterCount': chapterCount ?? 0,
+        'registeredAt': DateTime.now().millisecondsSinceEpoch,
+        'lastVerified': DateTime.now().millisecondsSinceEpoch,
+      };
+
+      _fileTrackingCache[folderPath] = trackingData;
+      _contentHashesCache[contentHash] = folderPath;
+      _dirtyFileTrackingCache = true;
+      _dirtyContentHashesCache = true;
+
+      debugPrint("Registered audiobook: $folderPath with hash: $contentHash");
+      
+    } catch (e) {
+      debugPrint("Error registering audiobook $folderPath: $e");
+    }
+  }
+
+  /// Find audiobook by content hash (for moved/renamed detection)
+  Future<String?> findAudiobookByContentHash(String contentHash) async {
+    await _loadFileTrackingCaches();
+    return _contentHashesCache[contentHash];
+  }
+
+  /// Attempt to locate a missing audiobook folder
+  Future<String?> locateMissingAudiobook(String missingPath) async {
+    try {
+      debugPrint("Attempting to locate missing audiobook: $missingPath");
+      
+      // Load tracking data
+      await _loadFileTrackingCaches();
+      
+      // Check if we have tracking data for this path
+      final trackingData = _fileTrackingCache[missingPath];
+      if (trackingData == null) {
+        debugPrint("No tracking data found for $missingPath");
+        return null;
+      }
+
+      final expectedHash = trackingData['contentHash'] as String?;
+      if (expectedHash == null) {
+        debugPrint("No content hash in tracking data for $missingPath");
+        return null;
+      }
+
+      // Strategy 1: Check if path migration exists
+      final migratedPath = _pathMigrationsCache[missingPath];
+      if (migratedPath != null && await Directory(migratedPath).exists()) {
+        final currentHash = await generateContentHash(migratedPath);
+        if (currentHash == expectedHash) {
+          debugPrint("Found via path migration: $missingPath -> $migratedPath");
+          return migratedPath;
+        }
+      }
+
+      // Strategy 2: Check content hash lookup
+      final hashPath = _contentHashesCache[expectedHash];
+      if (hashPath != null && hashPath != missingPath && await Directory(hashPath).exists()) {
+        final currentHash = await generateContentHash(hashPath);
+        if (currentHash == expectedHash) {
+          debugPrint("Found via content hash: $missingPath -> $hashPath");
+          await _recordPathMigration(missingPath, hashPath);
+          return hashPath;
+        }
+      }
+
+      // Strategy 3: Search in parent directory for matching folder
+      final parentDir = Directory(path.dirname(missingPath));
+      if (await parentDir.exists()) {
+        await for (final entity in parentDir.list()) {
+          if (entity is Directory) {
+            final currentHash = await generateContentHash(entity.path);
+            if (currentHash == expectedHash) {
+              debugPrint("Found via parent search: $missingPath -> ${entity.path}");
+              await _recordPathMigration(missingPath, entity.path);
+              return entity.path;
+            }
+          }
+        }
+      }
+
+      // Strategy 4: Broader search in common audiobook locations
+      final title = trackingData['title'] as String?;
+      if (title != null) {
+        final foundPath = await _searchForAudiobookByTitle(title, expectedHash);
+        if (foundPath != null) {
+          debugPrint("Found via title search: $missingPath -> $foundPath");
+          await _recordPathMigration(missingPath, foundPath);
+          return foundPath;
+        }
+      }
+
+      debugPrint("Could not locate missing audiobook: $missingPath");
+      
+      // Store as orphaned data for potential manual recovery
+      await _storeOrphanedData(missingPath, trackingData);
+      
+      return null;
+      
+    } catch (e) {
+      debugPrint("Error locating missing audiobook $missingPath: $e");
+      return null;
+    }
+  }
+
+  /// Search for audiobook by title in common locations
+  Future<String?> _searchForAudiobookByTitle(String title, String expectedHash) async {
+    try {
+      // Search in common audiobook directories
+      final commonPaths = [
+        '/storage/emulated/0/Audiobooks',
+        '/storage/emulated/0/Downloads',
+        '/storage/emulated/0/Music',
+        '/storage/emulated/0',
+      ];
+
+      for (final commonPath in commonPaths) {
+        final commonDir = Directory(commonPath);
+        if (await commonDir.exists()) {
+          await for (final entity in commonDir.list(recursive: true)) {
+            if (entity is Directory && path.basename(entity.path).toLowerCase().contains(title.toLowerCase())) {
+              final hash = await generateContentHash(entity.path);
+              if (hash == expectedHash) {
+                return entity.path;
+              }
+            }
+          }
+        }
+      }
+      return null;
+    } catch (e) {
+      debugPrint("Error searching for audiobook by title: $e");
+      return null;
+    }
+  }
+
+  /// Record a path migration for future reference
+  Future<void> _recordPathMigration(String oldPath, String newPath) async {
+    _pathMigrationsCache[oldPath] = newPath;
+    _dirtyPathMigrationsCache = true;
+    
+    // Update content hash mapping
+    final trackingData = _fileTrackingCache[oldPath];
+    if (trackingData != null) {
+      trackingData['currentPath'] = newPath;
+      trackingData['lastVerified'] = DateTime.now().millisecondsSinceEpoch;
+      
+      // Move tracking data to new path
+      _fileTrackingCache[newPath] = trackingData;
+      _fileTrackingCache.remove(oldPath);
+      _dirtyFileTrackingCache = true;
+      
+      // Update content hash lookup
+      final contentHash = trackingData['contentHash'] as String?;
+      if (contentHash != null) {
+        _contentHashesCache[contentHash] = newPath;
+        _dirtyContentHashesCache = true;
+      }
+    }
+    
+    debugPrint("Recorded path migration: $oldPath -> $newPath");
+  }
+
+  /// Store orphaned data for potential recovery
+  Future<void> _storeOrphanedData(String missingPath, Map<String, dynamic> trackingData) async {
+    _orphanedDataCache[missingPath] = {
+      ...trackingData,
+      'orphanedAt': DateTime.now().millisecondsSinceEpoch,
+    };
+    _dirtyOrphanedDataCache = true;
+    debugPrint("Stored orphaned data for: $missingPath");
+  }
+
+  /// Apply path migrations to a list of folder paths
+  Future<List<String>> _applyPathMigrations(List<String> folders) async {
+    await _loadFileTrackingCaches();
+    
+    final migratedFolders = <String>[];
+    bool hasMigrations = false;
+    
+    for (final folder in folders) {
+      final migratedPath = _pathMigrationsCache[folder];
+      if (migratedPath != null && await Directory(migratedPath).exists()) {
+        migratedFolders.add(migratedPath);
+        hasMigrations = true;
+        debugPrint("Applied migration: $folder -> $migratedPath");
+      } else {
+        migratedFolders.add(folder);
+      }
+    }
+    
+    // Save updated folders list if we had migrations
+    if (hasMigrations) {
+      await saveAudiobookFolders(migratedFolders);
+    }
+    
+    return migratedFolders;
+  }
+
+  /// Load file tracking caches from storage
+  Future<void> _loadFileTrackingCaches() async {
+    if (_fileTrackingCache.isNotEmpty) return; // Already loaded
+    
+    try {
+      final prefs = await _preferences;
+      
+      // Load file tracking data
+      final trackingJson = prefs.getString(fileTrackingKey);
+      if (trackingJson != null) {
+        final trackingMap = jsonDecode(trackingJson) as Map<String, dynamic>;
+        _fileTrackingCache = trackingMap.map((key, value) => MapEntry(key, Map<String, dynamic>.from(value)));
+      }
+      
+      // Load path migrations
+      final migrationsJson = prefs.getString(pathMigrationsKey);
+      if (migrationsJson != null) {
+        final migrationsMap = jsonDecode(migrationsJson) as Map<String, dynamic>;
+        _pathMigrationsCache = migrationsMap.cast<String, String>();
+      }
+      
+      // Load content hashes
+      final hashesJson = prefs.getString(contentHashesKey);
+      if (hashesJson != null) {
+        final hashesMap = jsonDecode(hashesJson) as Map<String, dynamic>;
+        _contentHashesCache = hashesMap.cast<String, String>();
+      }
+      
+      // Load orphaned data
+      final orphanedJson = prefs.getString(orphanedDataKey);
+      if (orphanedJson != null) {
+        final orphanedMap = jsonDecode(orphanedJson) as Map<String, dynamic>;
+        _orphanedDataCache = orphanedMap.map((key, value) => MapEntry(key, Map<String, dynamic>.from(value)));
+      }
+      
+      debugPrint("Loaded file tracking caches");
+      
+    } catch (e) {
+      debugPrint("Error loading file tracking caches: $e");
+    }
+  }
+
+  /// Get list of orphaned audiobooks for user recovery
+  Future<List<Map<String, dynamic>>> getOrphanedAudiobooks() async {
+    await _loadFileTrackingCaches();
+    
+    final orphaned = <Map<String, dynamic>>[];
+    
+    for (final entry in _orphanedDataCache.entries) {
+      final originalPath = entry.key;
+      final data = entry.value;
+      
+      orphaned.add({
+        'originalPath': originalPath,
+        'title': data['title'] ?? path.basename(originalPath),
+        'author': data['author'],
+        'chapterCount': data['chapterCount'] ?? 0,
+        'orphanedAt': data['orphanedAt'],
+        'originalRegistered': data['registeredAt'],
+      });
+    }
+    
+    // Sort by title
+    orphaned.sort((a, b) => (a['title'] as String).compareTo(b['title'] as String));
+    
+    return orphaned;
+  }
+
+  /// Remove orphaned audiobook data
+  Future<void> removeOrphanedData(String originalPath) async {
+    await _loadFileTrackingCaches();
+    _orphanedDataCache.remove(originalPath);
+    _dirtyOrphanedDataCache = true;
+  }
+
+  /// Manual path correction by user
+  Future<bool> correctAudiobookPath(String oldPath, String newPath) async {
+    try {
+      if (!await Directory(newPath).exists()) {
+        debugPrint("New path does not exist: $newPath");
+        return false;
+      }
+
+      // Verify it's the same audiobook by generating hash
+      final trackingData = _fileTrackingCache[oldPath];
+      if (trackingData != null) {
+        final expectedHash = trackingData['contentHash'] as String?;
+        final currentHash = await generateContentHash(newPath);
+        
+        if (expectedHash != null && currentHash == expectedHash) {
+          await _recordPathMigration(oldPath, newPath);
+          
+          // Remove from orphaned data if present
+          _orphanedDataCache.remove(oldPath);
+          _dirtyOrphanedDataCache = true;
+          
+          debugPrint("Successfully corrected path: $oldPath -> $newPath");
+          return true;
+        } else {
+          debugPrint("Content hash mismatch. Expected: $expectedHash, Got: $currentHash");
+          return false;
+        }
+      }
+      
+      return false;
+      
+    } catch (e) {
+      debugPrint("Error correcting audiobook path: $e");
+      return false;
     }
   }
 
