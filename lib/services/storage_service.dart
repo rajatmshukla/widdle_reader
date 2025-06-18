@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart'; // For debugPrint
 import 'package:path/path.dart';
 import 'dart:io';
 import 'dart:convert'; // Add this import for JSON encoding/decoding
+import 'dart:typed_data'; // For Uint8List
 import 'package:path_provider/path_provider.dart';
 import '../models/bookmark.dart'; // Import the Bookmark model
 import 'dart:async'; // For periodic cache persistence
@@ -1258,5 +1259,139 @@ class StorageService {
   /// Clear the data import callback
   static void clearDataImportCallback() {
     _onDataImported = null;
+  }
+
+  /// ========================================
+  /// PERFORMANCE OPTIMIZATION - CACHING
+  /// ========================================
+
+  /// Cache basic audiobook info (lightweight data for initial load)
+  Future<void> cacheBasicBookInfo(String audiobookId, Map<String, dynamic> basicInfo) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final key = 'basic_book_info_$audiobookId';
+      await prefs.setString(key, jsonEncode(basicInfo));
+    } catch (e) {
+      debugPrint("Error caching basic book info for $audiobookId: $e");
+    }
+  }
+
+  /// Load cached basic book info
+  Future<Map<String, dynamic>?> loadCachedBasicBookInfo(String audiobookId) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final key = 'basic_book_info_$audiobookId';
+      final cached = prefs.getString(key);
+      if (cached != null) {
+        return Map<String, dynamic>.from(jsonDecode(cached));
+      }
+    } catch (e) {
+      debugPrint("Error loading cached basic book info for $audiobookId: $e");
+    }
+    return null;
+  }
+
+  /// Cache detailed metadata (heavy data loaded on-demand)
+  Future<void> cacheDetailedMetadata(String audiobookId, Map<String, dynamic> metadata) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final key = 'detailed_metadata_$audiobookId';
+      await prefs.setString(key, jsonEncode(metadata));
+    } catch (e) {
+      debugPrint("Error caching detailed metadata for $audiobookId: $e");
+    }
+  }
+
+  /// Load cached detailed metadata
+  Future<Map<String, dynamic>?> loadCachedDetailedMetadata(String audiobookId) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final key = 'detailed_metadata_$audiobookId';
+      final cached = prefs.getString(key);
+      if (cached != null) {
+        return Map<String, dynamic>.from(jsonDecode(cached));
+      }
+    } catch (e) {
+      debugPrint("Error loading cached detailed metadata for $audiobookId: $e");
+    }
+    return null;
+  }
+
+  /// Cache cover art separately (can be large)
+  Future<void> cacheCoverArt(String audiobookId, Uint8List coverArt) async {
+    try {
+      final directory = await getApplicationDocumentsDirectory();
+      final file = File('${directory.path}/cover_${audiobookId.hashCode}.jpg');
+      await file.writeAsBytes(coverArt);
+    } catch (e) {
+      debugPrint("Error caching cover art for $audiobookId: $e");
+    }
+  }
+
+  /// Load cached cover art
+  Future<Uint8List?> loadCachedCoverArt(String audiobookId) async {
+    try {
+      final directory = await getApplicationDocumentsDirectory();
+      final file = File('${directory.path}/cover_${audiobookId.hashCode}.jpg');
+      if (await file.exists()) {
+        return await file.readAsBytes();
+      }
+    } catch (e) {
+      debugPrint("Error loading cached cover art for $audiobookId: $e");
+    }
+    return null;
+  }
+
+  /// Clear all metadata cache (for debugging or storage cleanup)
+  Future<void> clearMetadataCache() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final keys = prefs.getKeys().where((key) => 
+        key.startsWith('basic_book_info_') || 
+        key.startsWith('detailed_metadata_')
+      ).toList();
+      
+      for (final key in keys) {
+        await prefs.remove(key);
+      }
+
+      // Clear cover art cache
+      final directory = await getApplicationDocumentsDirectory();
+      final files = await directory.list().where((entity) => 
+        entity is File && entity.path.contains('cover_')
+      ).toList();
+      
+      for (final file in files) {
+        try {
+          await file.delete();
+        } catch (e) {
+          debugPrint("Error deleting cached cover art: $e");
+        }
+      }
+      
+      debugPrint("Metadata cache cleared");
+    } catch (e) {
+      debugPrint("Error clearing metadata cache: $e");
+    }
+  }
+
+  /// Check if basic book info is cached and up-to-date
+  Future<bool> isBasicBookInfoCached(String audiobookId, String folderPath) async {
+    try {
+      final cached = await loadCachedBasicBookInfo(audiobookId);
+      if (cached == null) return false;
+
+      // Check if folder still exists and hasn't been modified
+      final directory = Directory(folderPath);
+      if (!await directory.exists()) return false;
+
+      final stat = await directory.stat();
+      final cachedModified = cached['folderModified'] as int?;
+      
+      return cachedModified == stat.modified.millisecondsSinceEpoch;
+    } catch (e) {
+      debugPrint("Error checking cache validity for $audiobookId: $e");
+      return false;
+    }
   }
 }

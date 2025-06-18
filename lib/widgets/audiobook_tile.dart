@@ -8,13 +8,13 @@ import '../utils/responsive_utils.dart';
 
 class AudiobookTile extends StatefulWidget {
   final Audiobook audiobook;
-  final String? customTitle;
+  final String customTitle;
   final VoidCallback? onTap;
 
   const AudiobookTile({
     super.key,
     required this.audiobook,
-    this.customTitle,
+    required this.customTitle,
     this.onTap,
   });
 
@@ -212,7 +212,7 @@ class _AudiobookTileState extends State<AudiobookTile>
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    final displayTitle = widget.customTitle ?? widget.audiobook.title;
+    final displayTitle = widget.customTitle;
     final audiobookProvider = provider.Provider.of<AudiobookProvider>(context);
     final isNew = audiobookProvider.isNewBook(widget.audiobook.id);
     final isCompleted = audiobookProvider.isCompletedBook(widget.audiobook.id);

@@ -693,45 +693,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
                     if (provider.errorMessage != null && !provider.isLoading)
                       _buildErrorMessage(context, provider),
                       
-                    // Loading overlay
-                    if (provider.isLoading)
-                      Container(
-                        color: Colors.black.withOpacity(0.3),
-                        child: Center(
-                          child: Card(
-                            elevation: 6,
-                            shadowColor: colorScheme.shadow.withOpacity(0.2),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(24),
-                            ),
-                            child: Padding(
-                              padding: const EdgeInsets.all(24),
-                              child: Column(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  SizedBox(
-                                    width: 48,
-                                    height: 48,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 3,
-                                      color: colorScheme.primary,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 24),
-                                  Text(
-                                    "Loading Library...",
-                                    style: TextStyle(
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.w500,
-                                      color: colorScheme.onSurface,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
+                    // No loading overlays - seamless experience
                   ],
                 ),
               ),
