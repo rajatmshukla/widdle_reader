@@ -382,22 +382,22 @@ class AudiobookProvider extends ChangeNotifier {
         
       case LibrarySortOption.completionStatus:
         // Sort by completion status (incomplete first, then completed, within each group by recency)
-        _audiobooks.sort((a, b) {
-          final aCompleted = _completedBooks[a.id] ?? false;
-          final bCompleted = _completedBooks[b.id] ?? false;
-          
-          // If one book is completed and the other isn't, the completed one goes to the bottom
-          if (aCompleted && !bCompleted) {
-            return 1; // a (completed) goes after b
-          } else if (!aCompleted && bCompleted) {
-            return -1; // a (not completed) goes before b
-          }
-          
-          // If both are completed or both are not completed, sort by recency
-          final aTimestamp = _lastPlayedTimestamps[a.id] ?? 0;
-          final bTimestamp = _lastPlayedTimestamps[b.id] ?? 0;
-          return bTimestamp.compareTo(aTimestamp);
-        });
+    _audiobooks.sort((a, b) {
+      final aCompleted = _completedBooks[a.id] ?? false;
+      final bCompleted = _completedBooks[b.id] ?? false;
+
+      // If one book is completed and the other isn't, the completed one goes to the bottom
+      if (aCompleted && !bCompleted) {
+        return 1; // a (completed) goes after b
+      } else if (!aCompleted && bCompleted) {
+        return -1; // a (not completed) goes before b
+      }
+
+      // If both are completed or both are not completed, sort by recency
+      final aTimestamp = _lastPlayedTimestamps[a.id] ?? 0;
+      final bTimestamp = _lastPlayedTimestamps[b.id] ?? 0;
+      return bTimestamp.compareTo(aTimestamp);
+    });
         break;
     }
     
@@ -667,9 +667,9 @@ class AudiobookProvider extends ChangeNotifier {
       final hasPermissions = await _checkPermissionsQuietly();
       if (!hasPermissions) {
         debugPrint("Background sync skipped: no permissions");
-        return;
-      }
-      
+      return;
+    }
+
       debugPrint("Starting invisible background sync with folder rename detection...");
       
       // Get current folder paths
@@ -926,7 +926,7 @@ class AudiobookProvider extends ChangeNotifier {
           // Android 13+ - check for specific permissions
           final audioPermission = await Permission.audio.status;
           return audioPermission.isGranted;
-        } else {
+          } else {
           // Android 12 and below - check storage permission
           final storagePermission = await Permission.storage.status;
           return storagePermission.isGranted;
@@ -1144,7 +1144,7 @@ class AudiobookProvider extends ChangeNotifier {
     } catch (e, stackTrace) {
       debugPrint("Error during addAudiobooksRecursively process: $e\n$stackTrace");
       _errorMessage = "An error occurred while accessing the file system.";
-      notifyListeners();
+        notifyListeners();
     }
   }
 
@@ -1157,26 +1157,26 @@ class AudiobookProvider extends ChangeNotifier {
       _addToActivityLog("⚙️ Initializing audio format detection engine...");
       _addDetailedStat("Supported Formats: MP3, M4A, M4B, WAV, OGG, AAC, FLAC");
       
-      // Use the new recursive scanning method
+          // Use the new recursive scanning method
       debugPrint("Starting invisible book scan...");
       _addToActivityLog("📂 Traversing directory structure...");
-      final List<String> discoveredFolders = 
-          await _metadataService.scanForAudiobookFolders(rootDirectoryPath);
+          final List<String> discoveredFolders = 
+              await _metadataService.scanForAudiobookFolders(rootDirectoryPath);
 
-      if (discoveredFolders.isEmpty) {
+          if (discoveredFolders.isEmpty) {
         _addToActivityLog("❌ No audiobook folders found");
         _addToActivityLog("📋 Scan complete - 0 books discovered");
         _addDetailedStat("Directory Structure: No valid audiobook folders");
         _stopDetailedLoading();
-        _errorMessage = 
-            "No audiobook folders found in the selected directory.\n\n"
-            "Make sure your audiobooks are in folders containing audio files:\n"
-            "• MP3, M4A, M4B, WAV, OGG, AAC, FLAC\n\n"
-            "The scanner looks for folders with audio files at any depth in your folder structure.";
-        debugPrint("No audiobook folders discovered in: $rootDirectoryPath");
-        notifyListeners();
-        return;
-      }
+            _errorMessage = 
+                "No audiobook folders found in the selected directory.\n\n"
+                "Make sure your audiobooks are in folders containing audio files:\n"
+                "• MP3, M4A, M4B, WAV, OGG, AAC, FLAC\n\n"
+                "The scanner looks for folders with audio files at any depth in your folder structure.";
+            debugPrint("No audiobook folders discovered in: $rootDirectoryPath");
+            notifyListeners();
+            return;
+          }
 
       _addToActivityLog("📊 Found ${discoveredFolders.length} potential audiobook folders");
       _addToActivityLog("🔍 Filtering existing books from scan results...");
@@ -1230,16 +1230,16 @@ class AudiobookProvider extends ChangeNotifier {
           _addToActivityLog("🎵 Reading audio file headers...");
           _addToActivityLog("🔍 Analyzing audio formats and bitrates...");
           
-          // Get audiobook details for this folder
-          final newBook = await _metadataService.getAudiobookDetails(folderPath);
+              // Get audiobook details for this folder
+              final newBook = await _metadataService.getAudiobookDetails(folderPath);
 
-          if (newBook.chapters.isEmpty) {
+              if (newBook.chapters.isEmpty) {
             _addToActivityLog("⚠️ No audio files found in $fileName");
             _addToActivityLog("📋 Skipping - No compatible audio content");
             _logBookProcessingActivity(fileName, "Skipped - No valid audio files");
-            debugPrint("No valid chapters found in: $folderPath");
-            skipCount++;
-          } else {
+                debugPrint("No valid chapters found in: $folderPath");
+                skipCount++;
+              } else {
             _updateLoadingWithMetadata(fileName, i, "Extracting cover art and duration...");
             _addToActivityLog("🖼️ Processing cover art and audio metadata...");
             _addToActivityLog("⏱️ Calculating total duration from ${newBook.chapters.length} chapters...");
@@ -1261,17 +1261,17 @@ class AudiobookProvider extends ChangeNotifier {
             
             _addToActivityLog("📊 Computing audio quality metrics...");
             
-            // Mark the new book as "new" (never played)
-            _newBooks[newBook.id] = true;
-            _lastPlayedTimestamps[newBook.id] = 0;
-            _completedBooks[newBook.id] = false;
+                // Mark the new book as "new" (never played)
+                _newBooks[newBook.id] = true;
+                _lastPlayedTimestamps[newBook.id] = 0;
+                _completedBooks[newBook.id] = false;
 
-            _audiobooks.add(newBook);
+                _audiobooks.add(newBook);
             // Reset sort option to ensure new book gets sorted properly
             _currentSortOption = null;
             _sortAudiobooksByStatus();
             newlyAddedPaths.add(folderPath);
-            successCount++;
+                successCount++;
             
             _updateLoadingWithMetadata(fileName, i, "Caching metadata for faster access...");
             _addToActivityLog("💾 Storing metadata cache...");
@@ -1318,27 +1318,27 @@ class AudiobookProvider extends ChangeNotifier {
           // Small delay to keep system responsive
           await Future.delayed(const Duration(milliseconds: 100));
           
-        } catch (e) {
+            } catch (e) {
           _addToActivityLog("❌ Error processing $fileName");
           _addToActivityLog("🔧 System attempting error recovery...");
           _logBookProcessingActivity(fileName, "Processing failed", details: {
             "Error": e.toString().substring(0, 50),
             "Recovery": "Continuing with next book",
           });
-          debugPrint("Error processing audiobook folder $folderPath: $e");
-          skipCount++;
-        }
-      }
+              debugPrint("Error processing audiobook folder $folderPath: $e");
+              skipCount++;
+            }
+          }
 
       _addToActivityLog("💾 Saving library configuration...");
       _addToActivityLog("🗄️ Persisting audiobook registry...");
       _addToActivityLog("🏷️ Preparing auto-tag creation...");
       _addToActivityLog("🔍 Analyzing folder hierarchy for tag suggestions...");
 
-      // Save the updated list of folder paths
-      await _storageService.saveAudiobookFolders(
-        _audiobooks.map((b) => b.id).toList(),
-      );
+          // Save the updated list of folder paths
+          await _storageService.saveAudiobookFolders(
+            _audiobooks.map((b) => b.id).toList(),
+          );
 
       // Store for potential auto-tag creation
       if (successCount > 0 && _lastScannedRootPath != null) {
@@ -1367,18 +1367,18 @@ class AudiobookProvider extends ChangeNotifier {
       
       notifyListeners();
 
-    } catch (e, stackTrace) {
+        } catch (e, stackTrace) {
       // Stop detailed loading on error
       _stopDetailedLoading();
       
-      debugPrint("Error during recursive audiobook scan: $e\n$stackTrace");
-      _errorMessage = 
-          "Failed to scan the selected folder.\n\n"
-          "This could be due to:\n"
-          "• Insufficient permissions\n"
-          "• Corrupted files\n"
-          "• Very large folder structure\n\n"
-          "Please try again or choose a smaller folder.";
+          debugPrint("Error during recursive audiobook scan: $e\n$stackTrace");
+          _errorMessage = 
+              "Failed to scan the selected folder.\n\n"
+              "This could be due to:\n"
+              "• Insufficient permissions\n"
+              "• Corrupted files\n"
+              "• Very large folder structure\n\n"
+              "Please try again or choose a smaller folder.";
       notifyListeners();
     }
   }
@@ -1393,8 +1393,8 @@ class AudiobookProvider extends ChangeNotifier {
       // Use FilePicker to select a single directory path
       String? selectedDirectoryPath = await FilePicker.platform.getDirectoryPath(
         dialogTitle: 'Select Single Audiobook Folder',
-        lockParentWindow: true,
-      );
+            lockParentWindow: true,
+          );
 
       if (selectedDirectoryPath != null && selectedDirectoryPath.isNotEmpty) {
         debugPrint("Single audiobook folder selected: $selectedDirectoryPath");
@@ -1416,7 +1416,7 @@ class AudiobookProvider extends ChangeNotifier {
     } catch (e, stackTrace) {
       debugPrint("Error during addAudiobookFolder process: $e\n$stackTrace");
       _errorMessage = "An error occurred while accessing the file system.";
-      notifyListeners();
+        notifyListeners();
     }
   }
 
@@ -1438,23 +1438,23 @@ class AudiobookProvider extends ChangeNotifier {
       _addToActivityLog("🎵 Extracting metadata from audio headers...");
       _addToActivityLog("🔍 Analyzing audio formats and quality...");
       
-      // Get audiobook details for the selected path
-      final newBook = await _metadataService.getAudiobookDetails(selectedDirectoryPath);
+          // Get audiobook details for the selected path
+          final newBook = await _metadataService.getAudiobookDetails(selectedDirectoryPath);
 
-      if (newBook.chapters.isEmpty) {
+          if (newBook.chapters.isEmpty) {
         _addToActivityLog("❌ No compatible audio files found");
         _addToActivityLog("📋 Verified: No valid audio content in directory");
         _logBookProcessingActivity(fileName, "Processing failed - No audio files");
         _addDetailedStat("Result: No compatible audio files found");
         _stopDetailedLoading();
-        _errorMessage =
-            "The selected folder contains no compatible audio files.\n\n"
-            "Supported formats: MP3, M4A, M4B, WAV, OGG, AAC, FLAC\n\n"
-            "Please select a folder that contains audio files, or use "
-            "'Add Multiple Books' to scan for audiobooks in subfolders.";
-        debugPrint("No compatible chapters found in: $selectedDirectoryPath");
+            _errorMessage =
+                "The selected folder contains no compatible audio files.\n\n"
+                "Supported formats: MP3, M4A, M4B, WAV, OGG, AAC, FLAC\n\n"
+                "Please select a folder that contains audio files, or use "
+                "'Add Multiple Books' to scan for audiobooks in subfolders.";
+            debugPrint("No compatible chapters found in: $selectedDirectoryPath");
         notifyListeners();
-      } else {
+          } else {
         _updateLoadingWithMetadata(fileName, 0, "Extracting cover art and duration...");
         _addToActivityLog("🖼️ Processing cover art and calculating duration...");
         _addToActivityLog("⏱️ Computing total duration from ${newBook.chapters.length} chapters...");
@@ -1476,15 +1476,15 @@ class AudiobookProvider extends ChangeNotifier {
         
         _addToActivityLog("🎯 Preparing book for library integration...");
         
-        // Mark the new book as "new" (never played)
-        _newBooks[newBook.id] = true;
-        _lastPlayedTimestamps[newBook.id] = 0;
-        _completedBooks[newBook.id] = false;
+            // Mark the new book as "new" (never played)
+            _newBooks[newBook.id] = true;
+            _lastPlayedTimestamps[newBook.id] = 0;
+            _completedBooks[newBook.id] = false;
 
-        _audiobooks.add(newBook);
+            _audiobooks.add(newBook);
         // Reset sort option to ensure new book gets sorted properly
         _currentSortOption = null;
-        _sortAudiobooksByStatus();
+            _sortAudiobooksByStatus();
 
         _updateLoadingWithMetadata(fileName, 0, "Caching metadata for faster access...");
         _addToActivityLog("💾 Creating metadata cache for future quick loading...");
@@ -1512,10 +1512,10 @@ class AudiobookProvider extends ChangeNotifier {
         _addToActivityLog("💾 Updating library database...");
         _addToActivityLog("🗄️ Persisting library configuration...");
 
-        // Save the updated list of folder paths
-        await _storageService.saveAudiobookFolders(
-          _audiobooks.map((b) => b.id).toList(),
-        );
+            // Save the updated list of folder paths
+            await _storageService.saveAudiobookFolders(
+              _audiobooks.map((b) => b.id).toList(),
+            );
 
         // Store info for potential auto-tag creation from UI
         _lastScannedRootPath = Directory(selectedDirectoryPath).parent.path;
@@ -1536,19 +1536,19 @@ class AudiobookProvider extends ChangeNotifier {
         // Complete loading process
         _updateLoadingProgress("Completed", 1);
         _stopDetailedLoading();
-        
-        _errorMessage = null;
+            
+            _errorMessage = null;
         notifyListeners();
         debugPrint("Successfully added audiobook: ${newBook.title} with ${newBook.chapters.length} chapters");
-      }
-    } catch (e, stackTrace) {
+          }
+        } catch (e, stackTrace) {
       // Stop detailed loading on error
       _stopDetailedLoading();
       
-      debugPrint("Error processing single audiobook folder: $e\n$stackTrace");
-      _errorMessage = 
-          "Failed to process the selected folder. The folder may be corrupted "
-          "or contain unsupported file formats.";
+          debugPrint("Error processing single audiobook folder: $e\n$stackTrace");
+          _errorMessage = 
+              "Failed to process the selected folder. The folder may be corrupted "
+              "or contain unsupported file formats.";
       notifyListeners();
     }
   }
@@ -1570,10 +1570,10 @@ class AudiobookProvider extends ChangeNotifier {
       // Remove custom title if exists
       _customTitles.remove(audiobookId);
       await _saveCustomTitles();
-      
+
       // Remove from completed books tracking
       _completedBooks.remove(audiobookId);
-      
+
       // Remove from new books tracking
       _newBooks.remove(audiobookId);
       

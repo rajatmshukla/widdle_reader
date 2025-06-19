@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.0.3 - Current Release
+## 1.0.4 - Current Release
 
 ### Enhanced
 - Improved cover image priority system: Now prioritizes embedded metadata first, then any image file in folder
