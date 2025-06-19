@@ -130,12 +130,12 @@ class TagNotifier extends StateNotifier<AsyncValue<List<Tag>>> {
       );
       state = AsyncValue.data([favoritesTag]);
       
-              // Try to save the default state
-        try {
-          await _saveTags([favoritesTag]);
-        } catch (saveError) {
-          // If we can't save, at least we have the in-memory state
-        }
+      // Try to save the default state
+      try {
+        await _saveTags([favoritesTag]);
+      } catch (saveError) {
+        // If we can't save, at least we have the in-memory state
+      }
     }
   }
 
@@ -376,9 +376,9 @@ class TagNotifier extends StateNotifier<AsyncValue<List<Tag>>> {
   /// Private method to save tags to SharedPreferences
   Future<void> _saveTags(List<Tag> tags) async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final tagsJson = json.encode(tags.map((tag) => tag.toJson()).toList());
-      await prefs.setString(_tagsKey, tagsJson);
+    final prefs = await SharedPreferences.getInstance();
+    final tagsJson = json.encode(tags.map((tag) => tag.toJson()).toList());
+    await prefs.setString(_tagsKey, tagsJson);
       debugPrint("Saved ${tags.length} tags to storage");
     } catch (error) {
       debugPrint("Error saving tags: $error");

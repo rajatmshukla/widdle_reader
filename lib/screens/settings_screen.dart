@@ -648,7 +648,7 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
 
             // Version
             Text(
-              'Version 1.0.4',
+              'Version 1.0.5',
               style: textTheme.bodyMedium?.copyWith(
                 color: colorScheme.onSurfaceVariant,
               ),

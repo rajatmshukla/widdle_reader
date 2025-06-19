@@ -22,42 +22,42 @@ class LibraryToggle extends ConsumerWidget {
         children: [
           // Main toggle container
           Container(
-            width: screenWidth * 2 / 3, // 2/3 of screen width
-            margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            padding: const EdgeInsets.all(4),
-            decoration: BoxDecoration(
-              color: colorScheme.surfaceContainerHighest.withOpacity(0.5),
-              borderRadius: BorderRadius.circular(20),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.1),
-                  blurRadius: 4,
-                  offset: const Offset(0, 2),
-                ),
-              ],
+        width: screenWidth * 2 / 3, // 2/3 of screen width
+        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        padding: const EdgeInsets.all(4),
+        decoration: BoxDecoration(
+          color: colorScheme.surfaceContainerHighest.withOpacity(0.5),
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.1),
+              blurRadius: 4,
+              offset: const Offset(0, 2),
             ),
-            child: Row(
-              children: [
-                _buildToggleButton(
-                  context: context,
-                  ref: ref,
-                  mode: LibraryMode.library,
-                  label: 'Library',
-                  icon: Icons.auto_stories,
-                  isSelected: currentMode == LibraryMode.library,
-                  colorScheme: colorScheme,
-                ),
-                _buildToggleButton(
-                  context: context,
-                  ref: ref,
-                  mode: LibraryMode.tags,
-                  label: 'Tags',
-                  icon: Icons.local_offer,
-                  isSelected: currentMode == LibraryMode.tags,
-                  colorScheme: colorScheme,
-                ),
-              ],
+          ],
+        ),
+        child: Row(
+          children: [
+            _buildToggleButton(
+              context: context,
+              ref: ref,
+              mode: LibraryMode.library,
+              label: 'Library',
+              icon: Icons.auto_stories,
+              isSelected: currentMode == LibraryMode.library,
+              colorScheme: colorScheme,
             ),
+            _buildToggleButton(
+              context: context,
+              ref: ref,
+              mode: LibraryMode.tags,
+              label: 'Tags',
+              icon: Icons.local_offer,
+              isSelected: currentMode == LibraryMode.tags,
+              colorScheme: colorScheme,
+            ),
+          ],
+        ),
           ),
           
           // Sort button

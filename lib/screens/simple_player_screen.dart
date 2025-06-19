@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart'; // Import the package
@@ -45,13 +46,14 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     
+    // IMMEDIATE LOADING FIX: Show loading state immediately
+    _isLoading = true;
+    
     // Initialize the audio service with a single instance
     _audioService.init();
     
-    // Load audiobook after the first frame is rendered
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _loadAudiobook();
-    });
+    // DON'T load audiobook in initState - move to didChangeDependencies
+    // _loadAudiobook(); // REMOVED - this causes Provider access before widget is ready
 
     // Listen to chapter changes to scroll and center the item
     _chapterSubscription = _audioService.currentChapterStream.listen((index) {
@@ -59,17 +61,36 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
       Future.delayed(const Duration(milliseconds: 100), () {
         if (mounted && _itemScrollController.isAttached) {
           // Check if controller is ready and widget is mounted
-          _itemScrollController.scrollTo(
-            index: index,
-            duration: const Duration(milliseconds: 400),
-            curve: Curves.easeInOutCubic,
-            // Use alignment to position the item in view with one item before it
-            // 0.3 will position the current item about 1/3 from the top
-            alignment: 0.3,
-          );
+          try {
+            final targetIndex = index.clamp(0, (_audiobook?.chapters.length ?? 1) - 1);
+            debugPrint("Scrolling to chapter index: $targetIndex");
+            _itemScrollController.scrollTo(
+              index: targetIndex,
+              duration: const Duration(milliseconds: 300),
+              curve: Curves.easeInOut,
+            );
+          } catch (e) {
+            debugPrint("Error scrolling to chapter: $e");
+          }
         }
       });
     });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    
+    // CRITICAL FIX: Load audiobook here instead of initState
+    // This ensures all inherited widgets (like Provider) are available
+    if (_isLoading && _audiobook == null) {
+      // Use post-frame callback to ensure widget tree is complete
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _loadAudiobook();
+        }
+      });
+    }
   }
 
   Future<void> _loadAudiobook() async {
@@ -81,7 +102,7 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
     try {
       final args = ModalRoute.of(context)?.settings.arguments;
       if (args == null || args is! Map<String, dynamic>) {
-        throw Exception("Invalid arguments");
+        throw Exception("Invalid navigation arguments");
       }
 
       _audiobook = args['audiobook'] as Audiobook?;
@@ -89,7 +110,12 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
       final startPosition = args['startPosition'] as Duration?;
 
       if (_audiobook == null) {
-        throw Exception("Audiobook data missing");
+        throw Exception("Audiobook data is missing");
+      }
+      
+      // Validate audiobook has chapters
+      if (_audiobook!.chapters.isEmpty) {
+        throw Exception("This audiobook has no playable chapters");
       }
 
       if (!mounted) return;
@@ -104,19 +130,49 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
         startChapterIndex = _audiobook!.chapters.indexWhere(
           (c) => c.id == startChapterId,
         );
-        if (startChapterIndex == -1) startChapterIndex = 0;
+        if (startChapterIndex == -1) {
+          debugPrint("Warning: Start chapter not found, using first chapter");
+          startChapterIndex = 0;
+        }
       }
 
-      // Load the audiobook
-      await _audioService.loadAudiobook(
-        _audiobook!,
-        startChapter: startChapterIndex,
-        startPosition: startPosition,
-        autoPlay: false,
-      );
+      debugPrint("Loading audiobook: ${_audiobook!.title} with ${_audiobook!.chapters.length} chapters");
+      debugPrint("Starting at chapter $startChapterIndex: ${_audiobook!.chapters[startChapterIndex].title}");
+
+      // Load the audiobook with better error context
+      try {
+        await _audioService.loadAudiobook(
+          _audiobook!,
+          startChapter: startChapterIndex,
+          startPosition: startPosition,
+          autoPlay: false,
+        );
+      } catch (audioError) {
+        // Handle specific audio loading errors
+        String errorMessage = "Failed to load audiobook";
+        if (audioError.toString().contains("not found")) {
+          errorMessage = "Audio files not found. The audiobook files may have been moved or deleted.";
+        } else if (audioError.toString().contains("corrupted")) {
+          errorMessage = "Audio files appear to be corrupted. Try re-importing the audiobook.";
+        } else if (audioError.toString().contains("permissions")) {
+          errorMessage = "Cannot access audio files. Check storage permissions.";
+        } else if (audioError.toString().contains("Unsupported") || audioError.toString().contains("format")) {
+          errorMessage = "Unsupported audio format. This audiobook contains files in an unsupported format.";
+        } else if (audioError.toString().contains("unavailable drive")) {
+          errorMessage = "Audio files are on an unavailable storage device. Check if the drive is connected.";
+        } else {
+          errorMessage = "Failed to load audiobook: ${audioError.toString()}";
+        }
+        throw Exception(errorMessage);
+      }
 
       // Enable notifications
-      await _audioService.enableNotifications();
+      try {
+        await _audioService.enableNotifications();
+      } catch (notificationError) {
+        debugPrint("Warning: Could not enable notifications: $notificationError");
+        // Don't fail the entire load for notification issues
+      }
 
       if (!mounted) return;
       
@@ -125,14 +181,63 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
         _isLoading = false;
       });
       
+      debugPrint("Audiobook loaded successfully: ${_audiobook!.title}");
+      
     } catch (e) {
+      debugPrint("Error in _loadAudiobook: $e");
+      
       if (!mounted) return;
       
       setState(() {
         _isLoading = false;
-        _errorMessage = "Failed to load audiobook: $e";
+        _errorMessage = e.toString().replaceFirst('Exception: ', '');
       });
     }
+  }
+
+  // Add diagnostic information for debugging
+  Future<String> _getDiagnosticInfo() async {
+    if (_audiobook == null) return "No audiobook loaded";
+    
+    final StringBuffer diagnostics = StringBuffer();
+    diagnostics.writeln("=== AUDIOBOOK DIAGNOSTICS ===");
+    diagnostics.writeln("Title: ${_audiobook!.title}");
+    diagnostics.writeln("Author: ${_audiobook!.author ?? 'Unknown'}");
+    diagnostics.writeln("Total Chapters: ${_audiobook!.chapters.length}");
+    diagnostics.writeln("Total Duration: ${_audiobook!.totalDuration}");
+    
+    // Check each chapter file
+    int validChapters = 0;
+    int invalidChapters = 0;
+    
+    for (int i = 0; i < _audiobook!.chapters.length; i++) {
+      final chapter = _audiobook!.chapters[i];
+      final file = File(chapter.id);
+      final exists = await file.exists();
+      
+      if (exists) {
+        try {
+          final size = await file.length();
+          if (size > 1024) {
+            validChapters++;
+          } else {
+            invalidChapters++;
+            diagnostics.writeln("⚠️ Chapter ${i + 1}: File too small (${size} bytes)");
+          }
+        } catch (e) {
+          invalidChapters++;
+          diagnostics.writeln("❌ Chapter ${i + 1}: Cannot read file size - $e");
+        }
+      } else {
+        invalidChapters++;
+        diagnostics.writeln("❌ Chapter ${i + 1}: File not found - ${file.path}");
+      }
+    }
+    
+    diagnostics.writeln("Valid Chapters: $validChapters");
+    diagnostics.writeln("Invalid Chapters: $invalidChapters");
+    
+    return diagnostics.toString();
   }
 
   void _retryInitialization() {
@@ -591,62 +696,93 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
       child: Center(
         child: Padding(
           padding: const EdgeInsets.all(20.0),
-          child: Card(
-            elevation: 8,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(24),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(
+              maxWidth: 400,
+              maxHeight: 600, // Prevent overflow on small screens
             ),
-            child: Padding(
-              padding: const EdgeInsets.all(24.0),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: colorScheme.errorContainer.withAlpha(
-                        (0.2 * 255).round(),
+            child: Card(
+              elevation: 8,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(24),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(24.0),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: colorScheme.errorContainer.withAlpha(
+                          (0.2 * 255).round(),
+                        ),
+                        borderRadius: BorderRadius.circular(50),
                       ),
-                      borderRadius: BorderRadius.circular(50),
-                    ),
-                    child: Icon(
-                      Icons.error_outline_rounded,
-                      size: 48,
-                      color: colorScheme.error,
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                  Text(
-                    _errorMessage ?? "An error occurred",
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: 16,
-                      color: colorScheme.onSurface,
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-                  ElevatedButton.icon(
-                    icon: const Icon(Icons.refresh_rounded),
-                    label: const Text("Try Again"),
-                    style: ElevatedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 24,
-                        vertical: 12,
-                      ),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
+                      child: Icon(
+                        Icons.error_outline_rounded,
+                        size: 48,
+                        color: colorScheme.error,
                       ),
                     ),
-                    onPressed: _canRetry ? _retryInitialization : null,
-                  ),
-                  const SizedBox(height: 12),
-                  TextButton(
-                    child: const Text("Go Back"),
-                    onPressed: () {
-                      Navigator.of(context).pop(true); // Return with result
-                    },
-                  ),
-                ],
+                    const SizedBox(height: 20),
+                    Flexible(
+                      child: Text(
+                        _errorMessage ?? "An error occurred",
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 16,
+                          color: colorScheme.onSurface,
+                        ),
+                        maxLines: 6, // Limit lines to prevent overflow
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    Wrap(
+                      alignment: WrapAlignment.center,
+                      spacing: 12,
+                      runSpacing: 8,
+                      children: [
+                        ElevatedButton.icon(
+                          icon: const Icon(Icons.refresh_rounded),
+                          label: const Text("Try Again"),
+                          style: ElevatedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 20,
+                              vertical: 12,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                          ),
+                          onPressed: _canRetry ? _retryInitialization : null,
+                        ),
+                        OutlinedButton.icon(
+                          icon: const Icon(Icons.info_outline),
+                          label: const Text("Details"),
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 20,
+                              vertical: 12,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                          ),
+                          onPressed: _showDetailedError,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    TextButton(
+                      child: const Text("Go Back"),
+                      onPressed: () {
+                        Navigator.of(context).pop(true); // Return with result
+                      },
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -1497,5 +1633,54 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
   String _chaptersHeaderText() {
     final count = _audiobook?.chapters.length ?? 0;
     return count == 1 ? 'Chapter' : 'Chapters';
+  }
+
+  // Show detailed error dialog with diagnostics
+  void _showDetailedError() async {
+    final diagnostics = await _getDiagnosticInfo();
+    
+    if (!mounted) return;
+    
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Audiobook Loading Error'),
+        content: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                _errorMessage ?? 'Unknown error',
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'Diagnostic Information:',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                diagnostics,
+                style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Close'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.of(context).pop();
+              _retryInitialization();
+            },
+            child: const Text('Retry'),
+          ),
+        ],
+      ),
+    );
   }
 }

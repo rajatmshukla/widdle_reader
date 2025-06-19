@@ -224,21 +224,9 @@ class AudiobookProvider extends ChangeNotifier {
 
   /// Stop detailed loading progress tracking
   void _stopDetailedLoading() {
-    _addToActivityLog("✅ Processing completed successfully");
-    _addToActivityLog("🎉 Library updated with new audiobooks");
-    _addDetailedStat("Final Status: Complete");
-    _addDetailedStat("Total Processed: $_filesProcessed books");
-    
-    // Small delay to show completion logs
-    Future.delayed(const Duration(milliseconds: 500), () {
-      _isDetailedLoading = false;
-      _currentLoadingStep = '';
-      _currentLoadingFile = '';
-      _totalFilesToProcess = 0;
-      _filesProcessed = 0;
-      _loadingProgress = 0.0;
-      notifyListeners();
-    });
+    _isDetailedLoading = false;
+    _isLoading = false;
+    notifyListeners();
   }
 
   /// Loads the last played timestamps for all audiobooks
@@ -586,47 +574,39 @@ class AudiobookProvider extends ChangeNotifier {
     }
   }
 
-  /// SEAMLESS APPROACH: Instant loading from cache with invisible background sync
-  /// App opens immediately with cached data, background sync happens transparently
+  /// OPTIMIZED APPROACH: Fast startup with immediate UI display
   Future<void> loadAudiobooks() async {
-    // Never show loading state - use cached data immediately
+    debugPrint("=== FAST STARTUP: loadAudiobooks started ===");
+    
+    // CRITICAL FIX: Never show loading state on startup - show UI immediately
     _isLoading = false;
     _errorMessage = null;
     _permissionPermanentlyDenied = false;
     
     try {
-      // STEP 1: Instantly load cached audiobooks (no delay, no loading state)
-      await _loadCachedAudiobooksInstantly();
-      
-      // STEP 2: Start invisible background sync (user doesn't see this)
-      unawaited(_performInvisibleBackgroundSync());
-      
-    } catch (e, stackTrace) {
-      debugPrint("Error in seamless loading: $e\n$stackTrace");
-      // Even on error, don't show loading - try to show what we have cached
-      await _loadCachedAudiobooksInstantly();
-    }
-  }
-  
-  /// Load all cached audiobooks instantly without any loading indicators
-  Future<void> _loadCachedAudiobooksInstantly() async {
-    try {
-      // Get saved folder paths
+      // STEP 1: Load from storage super fast - this should be near-instant
       final List<String> folderPaths = await _storageService.loadAudiobookFolders();
-      final List<Audiobook> cachedBooks = [];
+      debugPrint("Found ${folderPaths.length} cached audiobook paths");
       
-      // Load all cached audiobooks at once (this should be very fast)
+      if (folderPaths.isEmpty) {
+        // No audiobooks cached, show empty state immediately
+        _audiobooks = [];
+      notifyListeners();
+        debugPrint("No cached audiobooks, showing empty library");
+      return;
+    }
+
+      // STEP 2: Load basic info from cache super fast
+      final List<Audiobook> loadedBooks = [];
       for (final path in folderPaths) {
         try {
-          // Try detailed metadata cache first
+          // Try to load from detailed cache first
           final cachedMetadata = await _storageService.loadCachedDetailedMetadata(path);
-          final cachedCoverArt = await _storageService.loadCachedCoverArt(path);
-          
           if (cachedMetadata != null) {
-            // Create full audiobook from cache
+            final cachedCoverArt = await _storageService.loadCachedCoverArt(path);
             final audiobook = _createAudiobookFromDetailedCache(path, cachedMetadata, cachedCoverArt);
             if (audiobook.chapters.isNotEmpty) {
-              cachedBooks.add(audiobook);
+              loadedBooks.add(audiobook);
               continue;
             }
           }
@@ -636,84 +616,86 @@ class AudiobookProvider extends ChangeNotifier {
           if (cachedBasicInfo != null) {
             final audiobook = _createAudiobookFromCachedInfo(path, cachedBasicInfo);
             if (audiobook.chapters.isNotEmpty) {
-              cachedBooks.add(audiobook);
+              loadedBooks.add(audiobook);
             }
           }
         } catch (e) {
-          debugPrint("Error loading cached audiobook $path: $e");
+          debugPrint("Error loading cached book $path: $e");
           // Skip this book but continue with others
         }
       }
       
-      // Update UI immediately with cached books
-      _audiobooks = cachedBooks;
+      // STEP 3: Update UI immediately with what we have
+      _audiobooks = loadedBooks;
       await _loadLastPlayedTimestamps();
-      notifyListeners(); // UI shows instantly
+      _sortAudiobooksByStatus();
+      notifyListeners(); // Show UI immediately
       
-      debugPrint("Instant load complete: ${cachedBooks.length} audiobooks from cache");
+      debugPrint("=== FAST STARTUP: UI displayed with ${loadedBooks.length} books ===");
       
-    } catch (e) {
-      debugPrint("Error loading cached audiobooks: $e");
-      // Even on error, try to show empty state rather than loading
+      // STEP 4: Start background validation (no UI impact)
+      unawaited(_validateLibraryInBackground());
+      
+    } catch (e, stackTrace) {
+      debugPrint("Error in fast startup loading: $e\n$stackTrace");
+      // Even on error, show empty state rather than loading
       _audiobooks = [];
       notifyListeners();
     }
   }
   
-  /// Invisible background sync - no UI changes, no loading indicators
-  Future<void> _performInvisibleBackgroundSync() async {
+  /// Background validation of library without affecting UI
+  Future<void> _validateLibraryInBackground() async {
     try {
-      // Only sync if we have permissions (don't request them, just check)
+      debugPrint("Starting background library validation...");
+      
+      // Only validate if we have permissions (don't request them)
       final hasPermissions = await _checkPermissionsQuietly();
       if (!hasPermissions) {
-        debugPrint("Background sync skipped: no permissions");
-      return;
-    }
-
-      debugPrint("Starting invisible background sync with folder rename detection...");
+        debugPrint("Background validation skipped: no permissions");
+        return;
+      }
       
-      // Get current folder paths
       final List<String> folderPaths = await _storageService.loadAudiobookFolders();
       bool anyChangesDetected = false;
       
-      // PROACTIVE FOLDER RENAME DETECTION
+      // Check each book path still exists
       for (final path in folderPaths) {
         final directory = Directory(path);
         if (!await directory.exists()) {
-          // Folder doesn't exist - try to find it in nearby locations
+          // Try to find renamed folder
           final newPath = await _findRenamedFolder(path);
           if (newPath != null) {
-            debugPrint("🔄 Detected folder rename: $path -> $newPath");
+            debugPrint("Background: Found renamed folder $path -> $newPath");
             await _handleFolderRename(path, newPath);
             anyChangesDetected = true;
           } else {
-            // Book truly missing - remove it
-            debugPrint("❌ Book not found, removing: $path");
+            // Remove missing book
+            debugPrint("Background: Removing missing book $path");
             _audiobooks.removeWhere((book) => book.id == path);
             anyChangesDetected = true;
           }
-        } else {
-          // Folder exists - check for metadata changes
-          await _syncBookInBackground(path);
         }
         
         // Small delay to keep system responsive
-        await Future.delayed(const Duration(milliseconds: 50));
+        await Future.delayed(const Duration(milliseconds: 10));
       }
       
-      // Update folder list if changes were detected
+      // Update UI if changes were detected
       if (anyChangesDetected) {
         await _storageService.saveAudiobookFolders(_audiobooks.map((b) => b.id).toList());
-        notifyListeners(); // Update UI to reflect changes
+        _sortAudiobooksByStatus();
+        notifyListeners();
+        debugPrint("Background validation: UI updated due to changes");
       }
       
-      debugPrint("Background sync completed with rename detection");
+      debugPrint("Background library validation completed");
       
     } catch (e) {
-      debugPrint("Error in background sync: $e");
+      debugPrint("Error in background validation: $e");
     }
   }
-  
+
   /// Proactively search for a renamed folder by checking parent directory
   Future<String?> _findRenamedFolder(String oldPath) async {
     try {
@@ -915,26 +897,26 @@ class AudiobookProvider extends ChangeNotifier {
     }
   }
 
-  /// Check permissions without requesting them
+  /// Check permissions quietly without requesting them
   Future<bool> _checkPermissionsQuietly() async {
     try {
       if (Platform.isAndroid) {
-        final deviceInfo = DeviceInfoPlugin();
-        final androidInfo = await deviceInfo.androidInfo;
+        DeviceInfoPlugin deviceInfo = DeviceInfoPlugin();
+        AndroidDeviceInfo androidInfo = await deviceInfo.androidInfo;
         
-        if (androidInfo.version.sdkInt >= 33) {
-          // Android 13+ - check for specific permissions
-          final audioPermission = await Permission.audio.status;
-          return audioPermission.isGranted;
-          } else {
-          // Android 12 and below - check storage permission
-          final storagePermission = await Permission.storage.status;
-          return storagePermission.isGranted;
+        if (androidInfo.version.sdkInt >= 30) {
+          // Android 11+ (API 30+)
+          return await Permission.manageExternalStorage.isGranted;
+        } else {
+          // Android 10 and below
+          return await Permission.storage.isGranted;
         }
+      } else {
+        // iOS or other platforms - assume granted
+        return true;
       }
-      return true; // Assume granted on other platforms
     } catch (e) {
-      debugPrint("Error checking permissions: $e");
+      debugPrint("Error checking permissions quietly: $e");
       return false;
     }
   }
@@ -1118,7 +1100,14 @@ class AudiobookProvider extends ChangeNotifier {
 
   /// Add audiobooks with seamless background processing
   Future<void> addAudiobooksRecursively() async {
+    // CRITICAL FIX: Ensure loading state is set immediately
+    _isLoading = true;
+    _errorMessage = null;
+    notifyListeners();
+    
     if (!await _requestPermissions()) {
+      _isLoading = false;
+      notifyListeners();
       return;
     }
 
@@ -1135,23 +1124,27 @@ class AudiobookProvider extends ChangeNotifier {
         // Store the root path for auto-tag creation
         _lastScannedRootPath = rootDirectoryPath;
 
-        // Start processing in background - don't block UI
-        unawaited(_processNewBooksInBackground(rootDirectoryPath));
+        // Start processing immediately with proper error handling
+        await _processNewBooksInBackground(rootDirectoryPath);
 
       } else {
         debugPrint("Folder selection cancelled or resulted in null/empty path.");
+        _isLoading = false;
+        notifyListeners();
       }
     } catch (e, stackTrace) {
       debugPrint("Error during addAudiobooksRecursively process: $e\n$stackTrace");
-      _errorMessage = "An error occurred while accessing the file system.";
-        notifyListeners();
+      _errorMessage = "An error occurred while accessing the file system: $e";
+      _isLoading = false;
+      notifyListeners();
     }
   }
 
   /// Process new books in background without blocking UI
   Future<void> _processNewBooksInBackground(String rootDirectoryPath) async {
     try {
-      // Start detailed loading
+      // CRITICAL FIX: Start detailed loading immediately
+      _startDetailedLoading("Initializing scan...", 0);
       _updateLoadingStep("Scanning directories...");
       _addToActivityLog("🔍 Starting recursive directory scan...");
       _addToActivityLog("⚙️ Initializing audio format detection engine...");
@@ -1174,6 +1167,7 @@ class AudiobookProvider extends ChangeNotifier {
                 "• MP3, M4A, M4B, WAV, OGG, AAC, FLAC\n\n"
                 "The scanner looks for folders with audio files at any depth in your folder structure.";
             debugPrint("No audiobook folders discovered in: $rootDirectoryPath");
+            _isLoading = false;
             notifyListeners();
             return;
           }
@@ -1192,6 +1186,7 @@ class AudiobookProvider extends ChangeNotifier {
         _addDetailedStat("Library Status: All books up to date");
         _stopDetailedLoading();
         _errorMessage = "All audiobooks in this directory are already in your library.";
+        _isLoading = false;
         notifyListeners();
         return;
       }
@@ -1201,8 +1196,11 @@ class AudiobookProvider extends ChangeNotifier {
       _addToActivityLog("🎵 Loading audio codec libraries...");
       _addToActivityLog("🖼️ Preparing cover art processing pipeline...");
 
-      // Start detailed progress tracking
-      _startDetailedLoading("Processing audiobooks...", newFolders.length);
+      // Update detailed progress tracking with actual count
+      _totalFilesToProcess = newFolders.length;
+      _filesProcessed = 0;
+      _loadingProgress = 0.0;
+      notifyListeners();
       
       debugPrint("Found ${discoveredFolders.length} potential audiobook folders (${newFolders.length} new)");
       int successCount = 0;
@@ -1219,14 +1217,14 @@ class AudiobookProvider extends ChangeNotifier {
           _addToActivityLog("🔒 Validating folder permissions...");
           
           // Update progress with detailed steps
-          _updateLoadingWithMetadata(fileName, i, "Analyzing folder structure...");
+          _updateLoadingWithMetadata(fileName, i + 1, "Analyzing folder structure...");
           _addToActivityLog("🔍 Scanning folder contents...");
           _addToActivityLog("📋 Building file inventory...");
           
           // Brief delay to show step
           await Future.delayed(const Duration(milliseconds: 150));
           
-          _updateLoadingWithMetadata(fileName, i, "Reading audio file metadata...");
+          _updateLoadingWithMetadata(fileName, i + 1, "Reading audio file metadata...");
           _addToActivityLog("🎵 Reading audio file headers...");
           _addToActivityLog("🔍 Analyzing audio formats and bitrates...");
           
@@ -1240,14 +1238,14 @@ class AudiobookProvider extends ChangeNotifier {
                 debugPrint("No valid chapters found in: $folderPath");
                 skipCount++;
               } else {
-            _updateLoadingWithMetadata(fileName, i, "Extracting cover art and duration...");
+            _updateLoadingWithMetadata(fileName, i + 1, "Extracting cover art and duration...");
             _addToActivityLog("🖼️ Processing cover art and audio metadata...");
             _addToActivityLog("⏱️ Calculating total duration from ${newBook.chapters.length} chapters...");
             
             // Brief delay to show step
             await Future.delayed(const Duration(milliseconds: 100));
             
-            _updateLoadingWithMetadata(fileName, i, "Building chapter information...");
+            _updateLoadingWithMetadata(fileName, i + 1, "Building chapter information...");
             _addToActivityLog("📚 Building chapter structure...");
             _addToActivityLog("🏷️ Organizing chapter metadata...");
             
@@ -1273,7 +1271,7 @@ class AudiobookProvider extends ChangeNotifier {
             newlyAddedPaths.add(folderPath);
                 successCount++;
             
-            _updateLoadingWithMetadata(fileName, i, "Caching metadata for faster access...");
+            _updateLoadingWithMetadata(fileName, i + 1, "Caching metadata for faster access...");
             _addToActivityLog("💾 Storing metadata cache...");
             _addToActivityLog("🔄 Optimizing for fast library access...");
             
@@ -1297,88 +1295,40 @@ class AudiobookProvider extends ChangeNotifier {
             await _storageService.updateContentHash(contentHash, folderPath);
             
             _updateLoadingWithMetadata(fileName, i + 1, "Updating library...");
-            _addToActivityLog("🔄 Refreshing library display...");
-            _addToActivityLog("📱 Updating user interface...");
-            
-            // Update UI with each new book (seamless addition)
-            _sortAudiobooksByStatus();
-            notifyListeners();
-            
-            _logBookProcessingActivity(fileName, "Successfully added", details: {
-              "Status": "Complete",
-              "Library Position": "${_audiobooks.length}",
-              "Processing Time": "~${(i + 1) * 2}s",
-            });
-            
-            _addToActivityLog("✅ $fileName successfully integrated into library");
-            
-            debugPrint("✓ Added: ${newBook.title} (${newBook.chapters.length} chapters)");
           }
-          
-          // Small delay to keep system responsive
-          await Future.delayed(const Duration(milliseconds: 100));
-          
-            } catch (e) {
-          _addToActivityLog("❌ Error processing $fileName");
-          _addToActivityLog("🔧 System attempting error recovery...");
-          _logBookProcessingActivity(fileName, "Processing failed", details: {
-            "Error": e.toString().substring(0, 50),
-            "Recovery": "Continuing with next book",
-          });
-              debugPrint("Error processing audiobook folder $folderPath: $e");
-              skipCount++;
-            }
-          }
-
-      _addToActivityLog("💾 Saving library configuration...");
-      _addToActivityLog("🗄️ Persisting audiobook registry...");
-      _addToActivityLog("🏷️ Preparing auto-tag creation...");
-      _addToActivityLog("🔍 Analyzing folder hierarchy for tag suggestions...");
-
-          // Save the updated list of folder paths
-          await _storageService.saveAudiobookFolders(
-            _audiobooks.map((b) => b.id).toList(),
-          );
-
-      // Store for potential auto-tag creation
-      if (successCount > 0 && _lastScannedRootPath != null) {
-        if (newlyAddedPaths.isNotEmpty) {
-          _addToActivityLog("🔖 Auto-tag system ready for ${newlyAddedPaths.length} books");
-          debugPrint("${newlyAddedPaths.length} new audiobooks added and ready for auto-tagging");
-          _lastAddedPaths = newlyAddedPaths;
+        } catch (e) {
+          debugPrint("Error processing folder $folderPath: $e");
+          _addToActivityLog("❌ Error processing $fileName: $e");
+          skipCount++;
         }
       }
 
-      // Final progress update
-      _updateLoadingProgress("Completed", newFolders.length);
-      
-      _addToActivityLog("📊 Processing summary: $successCount added, $skipCount skipped");
-      _addDetailedStat("Success Rate: ${((successCount / newFolders.length) * 100).toInt()}%");
-      _addDetailedStat("Total Books in Library: ${_audiobooks.length}");
-      
-      // Stop detailed loading
-      _stopDetailedLoading();
-      
-      // Clear any error message on success
-      if (successCount > 0) {
-        _errorMessage = null;
-        debugPrint("Scan completed successfully: $successCount audiobooks added, $skipCount skipped");
-      }
-      
-      notifyListeners();
+      // Store the newly added paths for auto-tag creation
+      _lastAddedPaths = newlyAddedPaths;
 
-        } catch (e, stackTrace) {
-      // Stop detailed loading on error
-      _stopDetailedLoading();
+      // Save the updated audiobook folders list
+      await _storageService.saveAudiobookFolders(_audiobooks.map((book) => book.id).toList());
+
+      // Final completion
+      _addToActivityLog("🎉 Processing complete!");
+      _addToActivityLog("✅ Added $successCount new audiobooks");
+      if (skipCount > 0) {
+        _addToActivityLog("⚠️ Skipped $skipCount invalid folders");
+      }
+      _addDetailedStat("Success Rate: ${successCount}/${newFolders.length} (${((successCount / newFolders.length) * 100).toInt()}%)");
       
-          debugPrint("Error during recursive audiobook scan: $e\n$stackTrace");
-          _errorMessage = 
-              "Failed to scan the selected folder.\n\n"
-              "This could be due to:\n"
-              "• Insufficient permissions\n"
-              "• Corrupted files\n"
-              "• Very large folder structure\n\n"
-              "Please try again or choose a smaller folder.";
+      _stopDetailedLoading();
+          _isLoading = false;
+          notifyListeners();
+
+      debugPrint("Background processing complete: $successCount added, $skipCount skipped");
+      
+    } catch (e) {
+      debugPrint("Error in background processing: $e");
+      _addToActivityLog("❌ Processing failed: $e");
+      _stopDetailedLoading();
+      _errorMessage = "Error processing audiobooks: $e";
+      _isLoading = false;
       notifyListeners();
     }
   }

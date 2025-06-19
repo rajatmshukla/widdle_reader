@@ -78,13 +78,21 @@ class _LicenseCheckScreenState extends State<LicenseCheckScreen> with SingleTick
     });
     
     try {
-      await LicenseService.initialize();
-      final isLicensed = await LicenseService.isLicenseValid();
+      // CRITICAL FIX: Reduce timeouts for faster startup
+      await LicenseService.initialize().timeout(
+        const Duration(seconds: 1), // Reduced from 3 seconds
+        onTimeout: () => throw TimeoutException('License service timeout'),
+      );
+      
+      final isLicensed = await LicenseService.isLicenseValid().timeout(
+        const Duration(milliseconds: 800), // Reduced from 2 seconds
+        onTimeout: () => throw TimeoutException('License check timeout'),
+      );
       
       if (isLicensed) {
-        // License is valid, navigate to the app
+        // License is valid, go directly to library - bypass splash screen
         if (mounted) {
-          Navigator.of(context).pushReplacementNamed('/splash');
+          Navigator.of(context).pushReplacementNamed('/library');
         }
       } else {
         // Not licensed - show the purchase screen
@@ -97,16 +105,16 @@ class _LicenseCheckScreenState extends State<LicenseCheckScreen> with SingleTick
     } catch (e) {
       // Error occurred during license check
       if (_retryCount < _maxRetries) {
-        // Retry with exponential backoff
+        // Retry with much shorter delays for faster startup
         _retryCount++;
-        final delaySeconds = _retryCount * 2; // 2, 4, 6 seconds
+        final delayMilliseconds = _retryCount * 300; // 300ms, 600ms, 900ms
         
         setState(() {
           _isChecking = true;
-          _errorMessage = 'Verifying purchase... Retrying in $delaySeconds seconds.';
+          _errorMessage = 'Verifying purchase... Retrying in ${(delayMilliseconds/1000).toStringAsFixed(1)}s.';
         });
         
-        _retryTimer = Timer(Duration(seconds: delaySeconds), _checkLicense);
+        _retryTimer = Timer(Duration(milliseconds: delayMilliseconds), _checkLicense);
       } else {
         // Max retries reached, show persistent error
         setState(() {

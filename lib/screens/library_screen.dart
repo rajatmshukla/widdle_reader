@@ -500,7 +500,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
           );
         }
         
-        // Create auto-tags
+        // CRITICAL FIX: Create auto-tags based on number of books
         if (addedPaths.length == 1) {
           debugPrint("Processing single book auto-tags");
           await provider.createAutoTagsForSingleBook(

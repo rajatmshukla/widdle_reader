@@ -278,11 +278,26 @@ class SimpleAudioService {
     if (_currentAudiobook == null ||
         index < 0 ||
         index >= _currentAudiobook!.chapters.length) {
-      throw Exception("Invalid chapter index");
+      throw Exception("Invalid chapter index: $index");
     }
 
     try {
       final chapter = _currentAudiobook!.chapters[index];
+      final audioFilePath = chapter.id;
+      
+      // CRITICAL FIX: Validate audio file exists and is accessible
+      final audioFile = File(audioFilePath);
+      if (!await audioFile.exists()) {
+        throw Exception("Audio file not found: ${audioFile.path}");
+      }
+      
+      // Check file size to ensure it's not corrupted
+      final fileSize = await audioFile.length();
+      if (fileSize < 1024) { // Less than 1KB is likely corrupted
+        throw Exception("Audio file appears corrupted (too small): ${audioFile.path}");
+      }
+      
+      debugPrint("Loading chapter: ${chapter.title} from ${audioFile.path} (${(fileSize / 1024 / 1024).toStringAsFixed(1)} MB)");
 
       // Prepare artUri from cover art if available
       Uri? artUri;
@@ -319,21 +334,52 @@ class SimpleAudioService {
         },
       );
 
-      // Always use the MediaItem tag regardless of notification state
-      await _player.setAudioSource(
-        AudioSource.uri(
-          Uri.file(chapter.id),
-          tag: mediaItem,
-        ),
-        initialPosition: startPosition,
-      );
+      // CRITICAL FIX: Better error handling for audio source loading
+      try {
+        debugPrint("Setting audio source for: ${audioFile.path}");
+        await _player.setAudioSource(
+          AudioSource.uri(
+            Uri.file(audioFile.path),
+            tag: mediaItem,
+          ),
+          initialPosition: startPosition,
+        );
+        debugPrint("Audio source set successfully");
+      } catch (audioSourceError) {
+        // More specific error handling for common audio issues
+        if (audioSourceError.toString().contains('FileSystemException')) {
+          throw Exception("Cannot access audio file. Check file permissions: ${audioFile.path}");
+        } else if (audioSourceError.toString().contains('FormatException') || 
+                   audioSourceError.toString().contains('Unsupported')) {
+          throw Exception("Unsupported audio format or corrupted file: ${audioFile.path}");
+        } else if (audioSourceError.toString().contains('NetworkException')) {
+          throw Exception("File access error (may be on unavailable drive): ${audioFile.path}");
+        } else {
+          throw Exception("Failed to load audio file: $audioSourceError");
+        }
+      }
 
       _currentChapterIndex = index;
       _currentChapterSubject.add(index);
-      debugPrint("Loaded chapter: ${chapter.title}");
+      debugPrint("Successfully loaded chapter: ${chapter.title}");
     } catch (e) {
-      debugPrint("Error loading chapter: $e");
-      rethrow;
+      debugPrint("Error loading chapter $index: $e");
+      
+      // Provide user-friendly error message
+      String userMessage = "Failed to load chapter.";
+      if (e.toString().contains("not found")) {
+        userMessage = "Audio file not found. The file may have been moved or deleted.";
+      } else if (e.toString().contains("corrupted")) {
+        userMessage = "Audio file appears to be corrupted.";
+      } else if (e.toString().contains("permissions")) {
+        userMessage = "Cannot access audio file. Check file permissions.";
+      } else if (e.toString().contains("Unsupported") || e.toString().contains("format")) {
+        userMessage = "Unsupported audio format.";
+      } else if (e.toString().contains("unavailable drive")) {
+        userMessage = "Audio file is on an unavailable drive or storage device.";
+      }
+      
+      throw Exception(userMessage);
     }
   }
 

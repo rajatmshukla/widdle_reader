@@ -568,10 +568,10 @@ class _AudiobookTileState extends State<AudiobookTile>
         const SizedBox(width: 2),
         Flexible(
           child: Text(
-            chapterText,
-            style: TextStyle(
-              fontSize: 10,
-              color: colorScheme.onSurfaceVariant.withOpacity(0.7),
+          chapterText,
+          style: TextStyle(
+            fontSize: 10,
+            color: colorScheme.onSurfaceVariant.withOpacity(0.7),
             ),
             overflow: TextOverflow.ellipsis,
           ),
