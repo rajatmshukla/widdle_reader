@@ -541,7 +541,7 @@ class _AudiobookTileState extends State<AudiobookTile>
     ColorScheme colorScheme,
   ) {
     final chapterCount = widget.audiobook.chapters.length;
-    final chapterText = chapterCount == 1 ? '1' : '$chapterCount';
+    final chapterText = chapterCount == 1 ? '1 Chapter' : '$chapterCount Chapters';
     
     return Row(
       children: [
@@ -558,7 +558,7 @@ class _AudiobookTileState extends State<AudiobookTile>
             color: colorScheme.onSurfaceVariant.withOpacity(0.7),
           ),
         ),
-        const SizedBox(width: 4),
+        const SizedBox(width: 6),
 
         Icon(
           Icons.library_books_outlined,
@@ -566,11 +566,14 @@ class _AudiobookTileState extends State<AudiobookTile>
           color: colorScheme.onSurfaceVariant.withOpacity(0.7),
         ),
         const SizedBox(width: 2),
-        Text(
-          chapterText,
-          style: TextStyle(
-            fontSize: 10,
-            color: colorScheme.onSurfaceVariant.withOpacity(0.7),
+        Flexible(
+          child: Text(
+            chapterText,
+            style: TextStyle(
+              fontSize: 10,
+              color: colorScheme.onSurfaceVariant.withOpacity(0.7),
+            ),
+            overflow: TextOverflow.ellipsis,
           ),
         ),
       ],

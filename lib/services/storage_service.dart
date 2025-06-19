@@ -22,6 +22,7 @@ class StorageService {
   static const completedBooksKey =
       'completed_books'; // New key for completed books
   static const bookmarksKey = 'bookmarks'; // New key for bookmarks
+  static const bookmarksPrefix = 'bookmarks_'; // Prefix for individual audiobook bookmarks
   static const backupSuffix = '_backup';
   static const dataVersionKey = 'data_version';
   static const cacheSyncTimestampKey = 'cache_sync_timestamp';
@@ -34,7 +35,7 @@ class StorageService {
   static const fileTrackingKey = 'file_tracking_v2';
   static const pathMigrationsKey = 'path_migrations';
   static const contentHashesKey = 'content_hashes';
-  static const orphanedDataKey = 'orphaned_data';
+
 
   // Singleton instance for this service 
   static final StorageService _instance = StorageService._internal();
@@ -59,7 +60,7 @@ class StorageService {
   Map<String, Map<String, dynamic>> _fileTrackingCache = {}; // path -> metadata
   Map<String, String> _pathMigrationsCache = {}; // oldPath -> newPath
   Map<String, String> _contentHashesCache = {}; // hash -> currentPath
-  Map<String, Map<String, dynamic>> _orphanedDataCache = {}; // path -> preserved data
+
   
   // Cache dirty flags to track which caches need persisting
   final Set<String> _dirtyProgressCache = {};
@@ -73,7 +74,7 @@ class StorageService {
   bool _dirtyFileTrackingCache = false;
   bool _dirtyPathMigrationsCache = false;
   bool _dirtyContentHashesCache = false;
-  bool _dirtyOrphanedDataCache = false;
+
 
   // Periodic timer for cache persistence
   Timer? _cachePersistenceTimer;
@@ -170,10 +171,7 @@ class StorageService {
           _dirtyContentHashesCache = false;
         }
         
-        if (_dirtyOrphanedDataCache) {
-          await prefs.setString(orphanedDataKey, jsonEncode(_orphanedDataCache));
-          _dirtyOrphanedDataCache = false;
-        }
+
         
         // Update cache sync timestamp
         await prefs.setInt(cacheSyncTimestampKey, DateTime.now().millisecondsSinceEpoch);
@@ -763,9 +761,6 @@ class StorageService {
 
       debugPrint("Could not locate missing audiobook: $missingPath");
       
-      // Store as orphaned data for potential manual recovery
-      await _storeOrphanedData(missingPath, trackingData);
-      
       return null;
       
     } catch (e) {
@@ -832,15 +827,7 @@ class StorageService {
     debugPrint("Recorded path migration: $oldPath -> $newPath");
   }
 
-  /// Store orphaned data for potential recovery
-  Future<void> _storeOrphanedData(String missingPath, Map<String, dynamic> trackingData) async {
-    _orphanedDataCache[missingPath] = {
-      ...trackingData,
-      'orphanedAt': DateTime.now().millisecondsSinceEpoch,
-    };
-    _dirtyOrphanedDataCache = true;
-    debugPrint("Stored orphaned data for: $missingPath");
-  }
+
 
   /// Apply path migrations to a list of folder paths
   Future<List<String>> _applyPathMigrations(List<String> folders) async {
@@ -896,12 +883,7 @@ class StorageService {
         _contentHashesCache = hashesMap.cast<String, String>();
       }
       
-      // Load orphaned data
-      final orphanedJson = prefs.getString(orphanedDataKey);
-      if (orphanedJson != null) {
-        final orphanedMap = jsonDecode(orphanedJson) as Map<String, dynamic>;
-        _orphanedDataCache = orphanedMap.map((key, value) => MapEntry(key, Map<String, dynamic>.from(value)));
-      }
+
       
       debugPrint("Loaded file tracking caches");
       
@@ -910,38 +892,7 @@ class StorageService {
     }
   }
 
-  /// Get list of orphaned audiobooks for user recovery
-  Future<List<Map<String, dynamic>>> getOrphanedAudiobooks() async {
-    await _loadFileTrackingCaches();
-    
-    final orphaned = <Map<String, dynamic>>[];
-    
-    for (final entry in _orphanedDataCache.entries) {
-      final originalPath = entry.key;
-      final data = entry.value;
-      
-      orphaned.add({
-        'originalPath': originalPath,
-        'title': data['title'] ?? path.basename(originalPath),
-        'author': data['author'],
-        'chapterCount': data['chapterCount'] ?? 0,
-        'orphanedAt': data['orphanedAt'],
-        'originalRegistered': data['registeredAt'],
-      });
-    }
-    
-    // Sort by title
-    orphaned.sort((a, b) => (a['title'] as String).compareTo(b['title'] as String));
-    
-    return orphaned;
-  }
 
-  /// Remove orphaned audiobook data
-  Future<void> removeOrphanedData(String originalPath) async {
-    await _loadFileTrackingCaches();
-    _orphanedDataCache.remove(originalPath);
-    _dirtyOrphanedDataCache = true;
-  }
 
   /// Manual path correction by user
   Future<bool> correctAudiobookPath(String oldPath, String newPath) async {
@@ -960,9 +911,7 @@ class StorageService {
         if (expectedHash != null && currentHash == expectedHash) {
           await _recordPathMigration(oldPath, newPath);
           
-          // Remove from orphaned data if present
-          _orphanedDataCache.remove(oldPath);
-          _dirtyOrphanedDataCache = true;
+
           
           debugPrint("Successfully corrected path: $oldPath -> $newPath");
           return true;
@@ -1831,6 +1780,302 @@ class StorageService {
     } catch (e) {
       debugPrint("Error checking cache validity for $audiobookId: $e");
       return false;
+    }
+  }
+
+  /// Removes all data associated with an audiobook when it's deleted
+  Future<void> removeAudiobookData(String audiobookId) async {
+    try {
+      final prefs = await _preferences;
+      
+      // Remove progress data
+      final progressKey = '$progressCachePrefix$audiobookId';
+      await prefs.remove(progressKey);
+      _progressCache.remove(audiobookId);
+      _dirtyProgressCache.remove(audiobookId);
+      
+      // Remove position data
+      final positionKey = '$lastPositionPrefix$audiobookId';
+      await prefs.remove(positionKey);
+      _positionCache.remove(audiobookId);
+      _dirtyPositionCache.remove(audiobookId);
+      
+      // Remove bookmarks
+      final bookmarksKey = '$bookmarksPrefix$audiobookId';
+      await prefs.remove(bookmarksKey);
+      
+      // Remove timestamp data
+      final timestampKey = '$lastPlayedTimestampPrefix$audiobookId';
+      await prefs.remove(timestampKey);
+      _timestampCache.remove(audiobookId);
+      _dirtyTimestampCache.remove(audiobookId);
+      
+      // Remove from completed books
+      await removeFromCompleted(audiobookId);
+      
+      // Remove basic and detailed cache data
+      await prefs.remove('basic_book_info_$audiobookId');
+      await prefs.remove('detailed_metadata_$audiobookId');
+      
+      // Remove cached cover art
+      try {
+        final directory = await getApplicationDocumentsDirectory();
+        final file = File('${directory.path}/cover_${audiobookId.hashCode}.jpg');
+        if (await file.exists()) {
+          await file.delete();
+        }
+      } catch (e) {
+        debugPrint("Error removing cached cover art for $audiobookId: $e");
+      }
+      
+      // Update folder list to remove this audiobook
+      final folders = await loadAudiobookFolders();
+      final updatedFolders = folders.where((folder) => folder != audiobookId).toList();
+      await saveAudiobookFolders(updatedFolders);
+      
+      debugPrint("Successfully removed all data for audiobook: $audiobookId");
+    } catch (e) {
+      debugPrint("Error removing audiobook data for $audiobookId: $e");
+      rethrow;
+    }
+  }
+
+  /// Updates all stored references to an audiobook when its ID changes
+  Future<void> updateAudiobookId(String oldId, String newId) async {
+    try {
+      final prefs = await _preferences;
+      
+      // Update progress data
+      final oldProgressKey = '$progressCachePrefix$oldId';
+      final newProgressKey = '$progressCachePrefix$newId';
+      final progressValue = prefs.getDouble(oldProgressKey);
+      if (progressValue != null) {
+        await prefs.setDouble(newProgressKey, progressValue);
+        await prefs.remove(oldProgressKey);
+        _progressCache[newId] = _progressCache.remove(oldId) ?? 0.0;
+        if (_dirtyProgressCache.remove(oldId)) {
+          _dirtyProgressCache.add(newId);
+        }
+      }
+      
+      // Update position data
+      final oldPositionKey = '$lastPositionPrefix$oldId';
+      final newPositionKey = '$lastPositionPrefix$newId';
+      final positionValue = prefs.getInt(oldPositionKey);
+      if (positionValue != null) {
+        await prefs.setInt(newPositionKey, positionValue);
+        await prefs.remove(oldPositionKey);
+        _positionCache[newId] = _positionCache.remove(oldId) ?? {};
+        if (_dirtyPositionCache.remove(oldId)) {
+          _dirtyPositionCache.add(newId);
+        }
+      }
+      
+      // Update bookmarks
+      final oldBookmarksKey = '$bookmarksPrefix$oldId';
+      final newBookmarksKey = '$bookmarksPrefix$newId';
+      final bookmarksValue = prefs.getString(oldBookmarksKey);
+      if (bookmarksValue != null) {
+        await prefs.setString(newBookmarksKey, bookmarksValue);
+        await prefs.remove(oldBookmarksKey);
+      }
+      
+      // Update timestamp data
+      final oldTimestampKey = '$lastPlayedTimestampPrefix$oldId';
+      final newTimestampKey = '$lastPlayedTimestampPrefix$newId';
+      final timestampValue = prefs.getInt(oldTimestampKey);
+      if (timestampValue != null) {
+        await prefs.setInt(newTimestampKey, timestampValue);
+        await prefs.remove(oldTimestampKey);
+        _timestampCache[newId] = _timestampCache.remove(oldId) ?? 0;
+        if (_dirtyTimestampCache.remove(oldId)) {
+          _dirtyTimestampCache.add(newId);
+        }
+      }
+      
+      // Update completed books list
+      if (_completedBooksCache.contains(oldId)) {
+        _completedBooksCache.remove(oldId);
+        _completedBooksCache.add(newId);
+        _dirtyCompletedBooksCache = true;
+        await _saveCompletedBooksCache();
+      }
+      
+      // Update basic and detailed cache data
+      final basicInfo = prefs.getString('basic_book_info_$oldId');
+      if (basicInfo != null) {
+        await prefs.setString('basic_book_info_$newId', basicInfo);
+        await prefs.remove('basic_book_info_$oldId');
+      }
+      
+      final detailedInfo = prefs.getString('detailed_metadata_$oldId');
+      if (detailedInfo != null) {
+        await prefs.setString('detailed_metadata_$newId', detailedInfo);
+        await prefs.remove('detailed_metadata_$oldId');
+      }
+      
+      // Update cached cover art
+      try {
+        final directory = await getApplicationDocumentsDirectory();
+        final oldFile = File('${directory.path}/cover_${oldId.hashCode}.jpg');
+        final newFile = File('${directory.path}/cover_${newId.hashCode}.jpg');
+        
+        if (await oldFile.exists()) {
+          await oldFile.copy(newFile.path);
+          await oldFile.delete();
+        }
+      } catch (e) {
+        debugPrint("Error updating cached cover art for $oldId -> $newId: $e");
+      }
+      
+      // Update folder list
+      final folders = await loadAudiobookFolders();
+      final folderIndex = folders.indexOf(oldId);
+      if (folderIndex != -1) {
+        folders[folderIndex] = newId;
+        await saveAudiobookFolders(folders);
+      }
+      
+      debugPrint("Successfully updated audiobook ID: $oldId -> $newId");
+    } catch (e) {
+      debugPrint("Error updating audiobook ID from $oldId to $newId: $e");
+      rethrow;
+    }
+  }
+
+  /// Removes an audiobook from the completed books list
+  Future<void> removeFromCompleted(String audiobookId) async {
+    try {
+      if (_completedBooksCache.contains(audiobookId)) {
+        _completedBooksCache.remove(audiobookId);
+        _dirtyCompletedBooksCache = true;
+        await _saveCompletedBooksCache();
+        debugPrint("Removed $audiobookId from completed books");
+      }
+    } catch (e) {
+      debugPrint("Error removing $audiobookId from completed books: $e");
+    }
+  }
+
+  /// Saves the completed books cache to SharedPreferences
+  Future<void> _saveCompletedBooksCache() async {
+    try {
+      final prefs = await _preferences;
+      await prefs.setStringList(completedBooksKey, _completedBooksCache.toList());
+      _dirtyCompletedBooksCache = false;
+      debugPrint("Saved completed books cache: ${_completedBooksCache.length} items");
+    } catch (e) {
+      debugPrint("Error saving completed books cache: $e");
+    }
+  }
+
+  /// Finds a migrated path for an audiobook using the file tracking system
+  Future<String?> findMigratedPath(String oldPath) async {
+    try {
+      // Load path migrations cache if not already loaded
+      if (_pathMigrationsCache.isEmpty) {
+        final prefs = await _preferences;
+        final migrationsJson = prefs.getString(pathMigrationsKey);
+        if (migrationsJson != null) {
+          final Map<String, dynamic> migrationsData = jsonDecode(migrationsJson);
+          _pathMigrationsCache = Map<String, String>.from(migrationsData);
+        }
+      }
+
+      // Check direct path migration mapping
+      if (_pathMigrationsCache.containsKey(oldPath)) {
+        final newPath = _pathMigrationsCache[oldPath]!;
+        if (await Directory(newPath).exists()) {
+          return newPath;
+        }
+      }
+
+      // Try to find using content hash (more comprehensive search)
+      final contentHash = await generateContentHash(oldPath);
+      if (contentHash.isNotEmpty) {
+        // Load content hashes cache
+        if (_contentHashesCache.isEmpty) {
+          final prefs = await _preferences;
+          final hashesJson = prefs.getString(contentHashesKey);
+          if (hashesJson != null) {
+            final Map<String, dynamic> hashesData = jsonDecode(hashesJson);
+            _contentHashesCache = Map<String, String>.from(hashesData);
+          }
+        }
+
+        // Check if this content hash maps to a current path
+        if (_contentHashesCache.containsKey(contentHash)) {
+          final currentPath = _contentHashesCache[contentHash]!;
+          if (await Directory(currentPath).exists() && currentPath != oldPath) {
+            // Found a match - update path migration mapping
+            _pathMigrationsCache[oldPath] = currentPath;
+            _dirtyPathMigrationsCache = true;
+            return currentPath;
+          }
+        }
+      }
+
+      return null; // No migration path found
+    } catch (e) {
+      debugPrint("Error finding migrated path for $oldPath: $e");
+      return null;
+    }
+  }
+
+  /// Loads a stored content hash for an audiobook path
+  Future<String?> loadStoredContentHash(String audiobookPath) async {
+    try {
+      // Load content hashes cache if not already loaded
+      if (_contentHashesCache.isEmpty) {
+        final prefs = await _preferences;
+        final hashesJson = prefs.getString(contentHashesKey);
+        if (hashesJson != null) {
+          final Map<String, dynamic> hashesData = jsonDecode(hashesJson);
+          _contentHashesCache = Map<String, String>.from(hashesData);
+        }
+      }
+
+      // Find the hash for this path
+      for (final entry in _contentHashesCache.entries) {
+        if (entry.value == audiobookPath) {
+          return entry.key; // Return the hash
+        }
+      }
+
+      return null;
+    } catch (e) {
+      debugPrint("Error loading stored content hash for $audiobookPath: $e");
+      return null;
+    }
+  }
+
+  /// Updates the content hash mapping for an audiobook
+  Future<void> updateContentHash(String contentHash, String currentPath) async {
+    try {
+      if (contentHash.isEmpty) return;
+
+      // Load content hashes cache if not already loaded
+      if (_contentHashesCache.isEmpty) {
+        final prefs = await _preferences;
+        final hashesJson = prefs.getString(contentHashesKey);
+        if (hashesJson != null) {
+          final Map<String, dynamic> hashesData = jsonDecode(hashesJson);
+          _contentHashesCache = Map<String, String>.from(hashesData);
+        }
+      }
+
+      // Update the mapping
+      _contentHashesCache[contentHash] = currentPath;
+      _dirtyContentHashesCache = true;
+
+      // Immediately persist this important change
+      final prefs = await _preferences;
+      await prefs.setString(contentHashesKey, jsonEncode(_contentHashesCache));
+      _dirtyContentHashesCache = false;
+
+      debugPrint("Updated content hash mapping: $contentHash -> $currentPath");
+    } catch (e) {
+      debugPrint("Error updating content hash for $currentPath: $e");
     }
   }
 }

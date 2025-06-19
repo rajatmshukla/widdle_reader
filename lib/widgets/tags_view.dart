@@ -91,50 +91,7 @@ class _TagsViewState extends ConsumerState<TagsView> {
 
     return Column(
       children: [
-        // Sort dropdown
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          child: Row(
-            children: [
-              Text(
-                'Sort by:',
-                style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                  color: colorScheme.onSurface,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: DropdownButtonFormField<TagSortOption>(
-                  value: sortOption,
-                  decoration: InputDecoration(
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 8,
-                    ),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    isDense: true,
-                  ),
-                  items: TagSortOption.values.map((option) {
-                    return DropdownMenuItem(
-                      value: option,
-                      child: Text(option.displayName),
-                    );
-                  }).toList(),
-                  onChanged: (TagSortOption? newValue) {
-                    if (newValue != null) {
-                      ref.read(tagSortOptionProvider.notifier).state = newValue;
-                    }
-                  },
-                ),
-              ),
-            ],
-          ),
-        ),
-
-        // Tags list
+        // Tags list (removed sort dropdown)
         Expanded(
           child: tags.when(
             data: (tagList) => _buildTagsList(tagList, sortOption, colorScheme),

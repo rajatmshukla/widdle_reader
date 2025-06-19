@@ -84,4 +84,45 @@ extension TagSortOptionExtension on TagSortOption {
         return 'Recently Created';
     }
   }
+}
+
+/// Sorting options for the library view
+enum LibrarySortOption {
+  alphabeticalAZ,
+  alphabeticalZA,
+  authorAZ,
+  authorZA,
+  dateAddedNewest,
+  dateAddedOldest,
+  lastPlayedRecent,
+  lastPlayedOldest,
+  series,
+  completionStatus,
+}
+
+extension LibrarySortOptionExtension on LibrarySortOption {
+  String get displayName {
+    switch (this) {
+      case LibrarySortOption.alphabeticalAZ:
+        return 'Title A-Z';
+      case LibrarySortOption.alphabeticalZA:
+        return 'Title Z-A';
+      case LibrarySortOption.authorAZ:
+        return 'Author A-Z';
+      case LibrarySortOption.authorZA:
+        return 'Author Z-A';
+      case LibrarySortOption.dateAddedNewest:
+        return 'Date Added (Newest)';
+      case LibrarySortOption.dateAddedOldest:
+        return 'Date Added (Oldest)';
+      case LibrarySortOption.lastPlayedRecent:
+        return 'Last Played (Recent)';
+      case LibrarySortOption.lastPlayedOldest:
+        return 'Last Played (Oldest)';
+      case LibrarySortOption.series:
+        return 'By Series';
+      case LibrarySortOption.completionStatus:
+        return 'Completion Status';
+    }
+  }
 } 

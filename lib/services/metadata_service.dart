@@ -313,26 +313,37 @@ class MetadataService {
     final List<String> potentialTags = [];
     
     try {
+      debugPrint("Extracting potential tags:");
+      debugPrint("  audiobookPath: $audiobookPath");
+      debugPrint("  rootPath: $rootPath");
+      
       // Get the relative path from root to audiobook
       String relativePath = p.relative(audiobookPath, from: rootPath);
+      debugPrint("  relativePath: $relativePath");
       
       // Split the path into segments
       final pathSegments = p.split(relativePath);
+      debugPrint("  pathSegments: $pathSegments");
       
       // Remove the last segment (audiobook folder itself)
       if (pathSegments.isNotEmpty) {
         pathSegments.removeLast();
+        debugPrint("  pathSegments after removing last: $pathSegments");
       }
       
       // Each remaining segment is a potential tag
       for (final segment in pathSegments) {
         final cleanedSegment = _cleanTagName(segment);
+        debugPrint("  cleaning '$segment' -> '$cleanedSegment'");
         if (cleanedSegment.isNotEmpty && cleanedSegment.length > 2) {
           potentialTags.add(cleanedSegment);
+          debugPrint("  added tag: '$cleanedSegment'");
+        } else {
+          debugPrint("  skipped tag (too short or empty): '$cleanedSegment'");
         }
       }
       
-      debugPrint("Extracted potential tags for $audiobookPath: $potentialTags");
+      debugPrint("Final extracted potential tags for $audiobookPath: $potentialTags");
       
     } catch (e) {
       debugPrint("Error extracting potential tags from $audiobookPath: $e");

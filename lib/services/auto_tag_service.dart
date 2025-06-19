@@ -21,12 +21,21 @@ class AutoTagService {
     
     try {
       debugPrint("Starting auto-tag creation for ${audiobookPaths.length} audiobooks");
+      debugPrint("Root path: $rootPath");
+      debugPrint("Audiobook paths: ${audiobookPaths.map((p) => p.split('/').last).join(', ')}");
       
       // Get suggested tags from metadata service
       final suggestedTags = _metadataService.suggestTagNames(audiobookPaths, rootPath);
       
+      debugPrint("Suggested tags: $suggestedTags");
+      
       if (suggestedTags.isEmpty) {
         debugPrint("No suitable tags found for auto-creation");
+        debugPrint("Checking individual books for potential tags:");
+        for (final path in audiobookPaths) {
+          final potentialTags = _metadataService.extractPotentialTags(path, rootPath);
+          debugPrint("  ${path.split('/').last}: $potentialTags");
+        }
         return result;
       }
       
@@ -38,6 +47,7 @@ class AutoTagService {
       
       // Create tags that don't exist yet
       if (createTags) {
+        debugPrint("Creating tags...");
         for (final tagName in suggestedTags) {
           try {
             await tagNotifier.createTag(tagName);
@@ -57,11 +67,16 @@ class AutoTagService {
       
       // Assign tags to audiobooks
       if (assignTags) {
+        debugPrint("Assigning tags to audiobooks...");
         final Map<String, int> assignmentCounts = {};
         
         for (final audiobookPath in audiobookPaths) {
           final audiobookId = audiobookPath;
           final potentialTags = _metadataService.extractPotentialTags(audiobookPath, rootPath);
+          
+          debugPrint("Processing audiobook: ${audiobookPath.split('/').last}");
+          debugPrint("  Potential tags: $potentialTags");
+          debugPrint("  Suggested tags: $suggestedTags");
           
           for (final tagName in potentialTags) {
             if (suggestedTags.contains(tagName)) {

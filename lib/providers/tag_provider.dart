@@ -1,12 +1,18 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 
 import '../models/tag.dart';
 
 // Provider for the current tag sort option
 final tagSortOptionProvider = StateProvider<TagSortOption>((ref) {
   return TagSortOption.alphabeticalAZ;
+});
+
+// Provider for the current library sort option
+final librarySortOptionProvider = StateProvider<LibrarySortOption>((ref) {
+  return LibrarySortOption.lastPlayedRecent;
 });
 
 // Provider for the current library mode (Library or Tags)
@@ -39,14 +45,30 @@ final syncedTagProvider = Provider<AsyncValue<List<Tag>>>((ref) {
         }
       }
       
-      // Update tag counts
+      // Update tag counts and check if any have changed
+      bool hasChanges = false;
       final updatedTags = tagList.map((tag) {
         final currentCount = tagCounts[tag.name] ?? 0;
         if (tag.bookCount != currentCount) {
+          hasChanges = true;
           return tag.copyWith(bookCount: currentCount);
         }
         return tag;
       }).toList();
+      
+      // If counts changed, persist them immediately (especially important for Favorites)
+      if (hasChanges) {
+        // Schedule the persistence for next tick to avoid recursive provider updates
+        Future.microtask(() async {
+          try {
+            final tagNotifier = ref.read(tagProvider.notifier);
+            await tagNotifier.saveTags(updatedTags);
+            debugPrint("Auto-synced tag counts: ${tagCounts.toString()}");
+          } catch (e) {
+            debugPrint("Error auto-syncing tag counts: $e");
+          }
+        });
+      }
       
       return AsyncValue.data(updatedTags);
     },
@@ -108,12 +130,12 @@ class TagNotifier extends StateNotifier<AsyncValue<List<Tag>>> {
       );
       state = AsyncValue.data([favoritesTag]);
       
-      // Try to save the default state
-      try {
-        await _saveTags([favoritesTag]);
-      } catch (saveError) {
-        // If we can't save, at least we have the in-memory state
-      }
+              // Try to save the default state
+        try {
+          await _saveTags([favoritesTag]);
+        } catch (saveError) {
+          // If we can't save, at least we have the in-memory state
+        }
     }
   }
 
@@ -163,6 +185,39 @@ class TagNotifier extends StateNotifier<AsyncValue<List<Tag>>> {
 
     await _saveTags(updatedTags);
     state = AsyncValue.data(updatedTags);
+  }
+
+  /// Cleans up orphaned tags (tags with 0 books) except Favorites
+  Future<void> cleanupOrphanedTags() async {
+    // DISABLED: User requested to keep orphaned tags
+    debugPrint("Orphaned tag cleanup is disabled - keeping all tags even with 0 books");
+    return;
+    
+    /* Original code - now disabled:
+    final currentTags = await _ensureTagsLoaded();
+    
+    // Remove tags with 0 book count, but preserve Favorites tag
+    final cleanedTags = currentTags.where((tag) {
+      return tag.isFavorites || tag.bookCount > 0;
+    }).toList();
+    
+    if (cleanedTags.length != currentTags.length) {
+      final removedCount = currentTags.length - cleanedTags.length;
+      await saveTags(cleanedTags);
+      state = AsyncValue.data(cleanedTags);
+      debugPrint("Cleaned up $removedCount orphaned tags");
+    }
+    */
+  }
+
+  /// Recalculates tag counts and optionally cleans up orphaned tags
+  Future<void> recalculateTagCountsWithCleanup(Map<String, Set<String>> audiobookTags, {bool cleanupOrphaned = false}) async {
+    await recalculateTagCounts(audiobookTags);
+    
+    // Note: cleanupOrphaned is ignored because user requested to keep orphaned tags
+    if (cleanupOrphaned) {
+      debugPrint("Orphaned tag cleanup was requested but is disabled per user preference");
+    }
   }
 
   /// Creates a new tag
@@ -313,11 +368,22 @@ class TagNotifier extends StateNotifier<AsyncValue<List<Tag>>> {
     return [...favorites, ...others];
   }
 
-  /// Saves tags to storage
+  /// Saves tags to storage (made public for syncedTagProvider)
+  Future<void> saveTags(List<Tag> tags) async {
+    await _saveTags(tags);
+  }
+
+  /// Private method to save tags to SharedPreferences
   Future<void> _saveTags(List<Tag> tags) async {
-    final prefs = await SharedPreferences.getInstance();
-    final tagsJson = json.encode(tags.map((tag) => tag.toJson()).toList());
-    await prefs.setString(_tagsKey, tagsJson);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final tagsJson = json.encode(tags.map((tag) => tag.toJson()).toList());
+      await prefs.setString(_tagsKey, tagsJson);
+      debugPrint("Saved ${tags.length} tags to storage");
+    } catch (error) {
+      debugPrint("Error saving tags: $error");
+      rethrow;
+    }
   }
 }
 
@@ -452,5 +518,27 @@ class AudiobookTagsNotifier extends StateNotifier<Map<String, Set<String>>> {
     
     final tagsJson = json.encode(serializableData);
     await prefs.setString(_audiobookTagsKey, tagsJson);
+  }
+
+  /// Removes all tags from an audiobook (used when book is deleted)
+  Future<void> removeAllTagsFromAudiobook(String audiobookId) async {
+    final currentTags = Map<String, Set<String>>.from(state);
+    if (currentTags.containsKey(audiobookId)) {
+      currentTags.remove(audiobookId);
+      state = currentTags;
+      await _saveAudiobookTags();
+    }
+  }
+
+  /// Updates an audiobook's ID when its path changes (renames/moves)
+  Future<void> updateAudiobookId(String oldId, String newId) async {
+    final currentTags = Map<String, Set<String>>.from(state);
+    if (currentTags.containsKey(oldId)) {
+      // Move tags from old ID to new ID
+      currentTags[newId] = currentTags[oldId]!;
+      currentTags.remove(oldId);
+      state = currentTags;
+      await _saveAudiobookTags();
+    }
   }
 } 

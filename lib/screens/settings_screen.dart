@@ -8,7 +8,7 @@ import '../utils/responsive_utils.dart';
 import '../theme.dart';
 import 'dart:io';
 import 'package:file_picker/file_picker.dart';
-import 'package:path_provider/path_provider.dart';
+
 import 'package:share_plus/share_plus.dart';
 import '../services/storage_service.dart';
 
@@ -1053,17 +1053,7 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
               onTap: () => _checkDataHealth(context),
             ),
             
-            // File recovery option 🐛
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: Icon(Icons.find_in_page, color: colorScheme.primary),
-              title: Text('Find Missing Audiobooks', style: textTheme.bodyMedium),
-              subtitle: Text(
-                'Recover audiobooks that may have been moved or renamed',
-                style: TextStyle(color: colorScheme.onSurfaceVariant),
-              ),
-              onTap: () => _showOrphanedAudiobooks(context),
-            ),
+
           ],
         ),
       ),
@@ -1418,201 +1408,7 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
     }
   }
 
-  /// Show orphaned audiobooks for recovery 🐛
-  Future<void> _showOrphanedAudiobooks(BuildContext context) async {
-    final storageService = StorageService();
-    
-    try {
-      // Show loading dialog
-      showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (context) => const AlertDialog(
-          title: Text('Searching for Missing Audiobooks'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              CircularProgressIndicator(),
-              SizedBox(height: 16),
-              Text('Checking for moved or renamed audiobooks...'),
-            ],
-          ),
-        ),
-      );
-      
-      final orphanedBooks = await storageService.getOrphanedAudiobooks();
-      
-      // Close loading dialog
-      if (context.mounted) Navigator.of(context).pop();
-      
-      if (orphanedBooks.isEmpty) {
-        // No orphaned books found
-        if (context.mounted) {
-          showDialog(
-            context: context,
-            builder: (context) => AlertDialog(
-              title: const Text('No Missing Audiobooks'),
-              content: const Text('All your audiobooks are accounted for! No missing files were detected.'),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  child: const Text('OK'),
-                ),
-              ],
-            ),
-          );
-        }
-      } else {
-        // Show orphaned books for recovery
-        if (context.mounted) {
-          showDialog(
-            context: context,
-            builder: (context) => Dialog(
-              child: Container(
-                width: MediaQuery.of(context).size.width * 0.9,
-                height: MediaQuery.of(context).size.height * 0.7,
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Icon(Icons.find_in_page, color: Theme.of(context).colorScheme.primary),
-                        const SizedBox(width: 8),
-                        Text(
-                          'Missing Audiobooks (${orphanedBooks.length})',
-                          style: Theme.of(context).textTheme.titleLarge,
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'These audiobooks were previously in your library but their folders could not be found:',
-                      style: Theme.of(context).textTheme.bodyMedium,
-                    ),
-                    const SizedBox(height: 16),
-                    Expanded(
-                      child: ListView.builder(
-                        itemCount: orphanedBooks.length,
-                        itemBuilder: (context, index) {
-                          final book = orphanedBooks[index];
-                          return Card(
-                            margin: const EdgeInsets.only(bottom: 8),
-                            child: ListTile(
-                              leading: Icon(
-                                Icons.audiotrack,
-                                color: Theme.of(context).colorScheme.primary,
-                              ),
-                              title: Text(book['title'] ?? 'Unknown Title'),
-                              subtitle: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  if (book['author'] != null) Text('by ${book['author']}'),
-                                  Text('Original path: ${book['originalPath']}'),
-                                  Text('${book['chapterCount']} chapters'),
-                                ],
-                              ),
-                              trailing: PopupMenuButton<String>(
-                                onSelected: (value) async {
-                                  if (value == 'remove') {
-                                    await _removeOrphanedData(context, book['originalPath']);
-                                    // Refresh the dialog
-                                    Navigator.of(context).pop();
-                                    _showOrphanedAudiobooks(context);
-                                  }
-                                },
-                                itemBuilder: (context) => [
-                                  const PopupMenuItem(
-                                    value: 'remove',
-                                    child: Row(
-                                      children: [
-                                        Icon(Icons.delete_outline),
-                                        SizedBox(width: 8),
-                                        Text('Remove from List'),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          );
-                        },
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.end,
-                      children: [
-                        TextButton(
-                          onPressed: () => Navigator.of(context).pop(),
-                          child: const Text('CLOSE'),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          );
-        }
-      }
-      
-    } catch (e) {
-      // Close loading dialog if still open
-      if (context.mounted) Navigator.of(context).pop();
-      
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error finding missing audiobooks: $e'),
-            backgroundColor: Theme.of(context).colorScheme.error,
-          ),
-        );
-      }
-    }
-  }
 
-  /// Remove orphaned data
-  Future<void> _removeOrphanedData(BuildContext context, String originalPath) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Remove from List'),
-        content: const Text('Are you sure you want to remove this audiobook from the missing list? This will not delete any files.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('CANCEL'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('REMOVE'),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmed == true) {
-      try {
-        final storageService = StorageService();
-        // Remove orphaned data entry
-        await storageService.removeOrphanedData(originalPath);
-        
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Removed from missing audiobooks list'),
-          ),
-        );
-      } catch (e) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error removing orphaned data: $e'),
-            backgroundColor: Theme.of(context).colorScheme.error,
-          ),
-        );
-      }
-    }
-  }
 }
 
 /// A fade transition sliver that works with CustomScrollView

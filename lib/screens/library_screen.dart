@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart' as provider;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/services.dart';
 
 import '../providers/audiobook_provider.dart';
@@ -16,6 +15,7 @@ import '../widgets/library_toggle.dart';
 import '../widgets/tags_view.dart';
 import '../widgets/tag_assignment_dialog.dart';
 import '../widgets/search_bar_widget.dart';
+import '../widgets/detailed_loading_widget.dart';
 import '../models/audiobook.dart';
 import '../models/tag.dart';
 import '../services/storage_service.dart';
@@ -216,23 +216,38 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
     );
 
     if (result == true) {
-      await provider.removeAudiobook(audiobook.id);
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Removed "$title" from library'),
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
+      try {
+        await provider.removeAudiobook(audiobook.id, ref);
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Removed "$title" from library'),
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+              action: SnackBarAction(
+                label: 'Dismiss',
+                onPressed: () {
+                  // Do nothing, just dismiss
+                },
+              ),
             ),
-            action: SnackBarAction(
-              label: 'Dismiss',
-              onPressed: () {
-                // Do nothing, just dismiss
-              },
+          );
+        }
+      } catch (e) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Error removing "$title": $e'),
+              backgroundColor: Theme.of(context).colorScheme.error,
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
             ),
-          ),
-        );
+          );
+        }
       }
     }
   }
@@ -450,8 +465,15 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
       final rootPath = provider.lastScannedRootPath;
       final addedPaths = provider.lastAddedPaths;
       
+      debugPrint("=== AUTO-TAG CREATION DEBUG ===");
+      debugPrint("Root path: $rootPath");
+      debugPrint("Added paths: $addedPaths");
+      debugPrint("Added paths length: ${addedPaths?.length ?? 0}");
+      
       if (rootPath != null && addedPaths != null && addedPaths.isNotEmpty) {
         debugPrint("Creating auto-tags for ${addedPaths.length} newly added audiobooks");
+        debugPrint("Root path for auto-tagging: $rootPath");
+        debugPrint("Books to process: ${addedPaths.map((path) => path.split('/').last).join(', ')}");
         
         // Show loading indicator (optional - could be a SnackBar)
         if (mounted) {
@@ -480,12 +502,14 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
         
         // Create auto-tags
         if (addedPaths.length == 1) {
+          debugPrint("Processing single book auto-tags");
           await provider.createAutoTagsForSingleBook(
             addedPaths.first,
             rootPath,
             ref,
           );
         } else {
+          debugPrint("Processing multiple books auto-tags");
           await provider.createAutoTagsForMultipleBooks(
             addedPaths,
             rootPath,
@@ -516,6 +540,9 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
         
       } else {
         debugPrint("No books available for auto-tagging");
+        debugPrint("  rootPath is null: ${rootPath == null}");
+        debugPrint("  addedPaths is null: ${addedPaths == null}");
+        debugPrint("  addedPaths is empty: ${addedPaths?.isEmpty ?? true}");
       }
     } catch (e) {
       debugPrint("Error in auto-tag creation: $e");
@@ -543,164 +570,193 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
     final isLandscape = ResponsiveUtils.isLandscape(context);
 
     return Scaffold(
-      body: NestedScrollView(
-        headerSliverBuilder: (context, innerBoxIsScrolled) {
-          return [
-            SliverAppBar(
-              floating: true, 
-              snap: true,
-              pinned: true, // Keep the app bar visible and pinned at the top
-              backgroundColor: colorScheme.surfaceContainerLow.withOpacity(0.95),
-              expandedHeight: 80,
-              systemOverlayStyle: SystemUiOverlayStyle(
-                statusBarColor: Colors.transparent,
-                statusBarIconBrightness: colorScheme.brightness == Brightness.dark
-                    ? Brightness.light
-                    : Brightness.dark,
-              ),
-              title: Row(
-                children: [
-                  SizedBox(
-                    width: 38,
-                    height: 38,
-                    child: const AppLogo(size: 38, showTitle: false),
+      body: Stack(
+        children: [
+          // Main app content
+          NestedScrollView(
+            headerSliverBuilder: (context, innerBoxIsScrolled) {
+              return [
+                SliverAppBar(
+                  floating: true, 
+                  snap: true,
+                  pinned: true, // Keep the app bar visible and pinned at the top
+                  backgroundColor: colorScheme.surfaceContainerLow.withOpacity(0.95),
+                  expandedHeight: 80,
+                  systemOverlayStyle: SystemUiOverlayStyle(
+                    statusBarColor: Colors.transparent,
+                    statusBarIconBrightness: colorScheme.brightness == Brightness.dark
+                        ? Brightness.light
+                        : Brightness.dark,
                   ),
-                  const SizedBox(width: 12),
-                  Flexible(
-                    child: FittedBox(
-                      fit: BoxFit.scaleDown,
-                      child: Text(
-                        "Widdle Reader",
-                        style: TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                          color: seedColor,
+                  title: Row(
+                    children: [
+                      SizedBox(
+                        width: 38,
+                        height: 38,
+                        child: const AppLogo(size: 38, showTitle: false),
+                      ),
+                      const SizedBox(width: 12),
+                      Flexible(
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Text(
+                            "Widdle Reader",
+                            style: TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                              color: seedColor,
+                            ),
+                          ),
                         ),
                       ),
+                    ],
+                  ),
+                  actions: [
+                    // Search button
+                    Consumer(
+                      builder: (context, widgetRef, child) {
+                        final searchState = ref.watch(searchProvider);
+                        return IconButton(
+                          icon: Icon(
+                            searchState.isActive ? Icons.search_off_rounded : Icons.search_rounded,
+                            size: 24,
+                          ),
+                          tooltip: searchState.isActive ? 'Close Search' : 'Search Library',
+                          onPressed: () {
+                            ref.read(searchProvider.notifier).toggleSearch();
+                          },
+                        );
+                      },
+                    ),
+                    
+                    // Sleep Timer button
+                    IconButton(
+                      icon: CountdownTimerWidget(
+                        size: 24.0,
+                        showIcon: true,
+                        onTap: null,
+                      ),
+                      tooltip: 'Sleep Timer',
+                      onPressed: _showSleepTimerDialog,
+                    ),
+                    
+                    // Settings button
+                    IconButton(
+                      icon: const Icon(
+                        Icons.settings_outlined,
+                        size: 24,
+                      ),
+                      tooltip: "Settings",
+                      onPressed: () async {
+                        await Navigator.pushNamed(context, '/settings');
+                        // Refresh when returning from settings
+                        _refreshLibrary();
+                      },
+                    ),
+                    const SizedBox(width: 8),
+                  ],
+                ),
+              ];
+            },
+            body: Container(
+              decoration: AppTheme.gradientBackground(context),
+              child: Column(
+                children: [
+                  // Search bar (only show when search is active)
+                  Consumer(
+                    builder: (context, widgetRef, child) {
+                      final searchState = ref.watch(searchProvider);
+                      return AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 300),
+                        child: searchState.isActive
+                            ? const SearchBarWidget()
+                            : const SizedBox.shrink(),
+                      );
+                    },
+                  ),
+                  
+                  // Toggle bar between Library and Tags (only show when search is not active)
+                  Consumer(
+                    builder: (context, widgetRef, child) {
+                      final searchState = ref.watch(searchProvider);
+                      return AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 300),
+                        child: searchState.isActive
+                            ? const SizedBox.shrink()
+                            : const LibraryToggle(),
+                      );
+                    },
+                  ),
+                  
+                  // Main content area
+                  Expanded(
+                    child: Stack(
+                      children: [
+                        // Main content with conditional view based on selected mode
+                        FadeTransition(
+                          opacity: _fadeAnimation,
+                          child: Consumer(
+                            builder: (context, widgetRef, child) {
+                              final libraryMode = ref.watch(libraryModeProvider);
+                              final searchState = ref.watch(searchProvider);
+                              
+                              // If search is active, show search results
+                              if (searchState.isActive) {
+                                return _buildSearchResults(context, provider, searchState, colorScheme);
+                              }
+                              
+                              if (libraryMode == LibraryMode.tags) {
+                                return const TagsView();
+                              } else {
+                                // Library mode - show audiobooks with sorting
+                                return Consumer(
+                                  builder: (context, widgetRef, child) {
+                                    final sortOption = ref.watch(librarySortOptionProvider);
+                                    
+                                    // Apply sorting (optimized to skip if sort option hasn't changed)
+                                    provider.sortAudiobooks(sortOption);
+                                    
+                                    return provider.audiobooks.isEmpty && !provider.isLoading
+                                        ? _buildEmptyLibraryView(context, provider, colorScheme)
+                                        : isLandscape
+                                            ? _buildGridView(context, provider)
+                                            : _buildListView(context, provider);
+                                  },
+                                );
+                              }
+                            },
+                          ),
+                        ),
+                        
+                        // Error/Info Message
+                        if (provider.errorMessage != null && !provider.isLoading)
+                          _buildErrorMessage(context, provider),
+                          
+                        // No loading overlays - seamless experience
+                      ],
                     ),
                   ),
                 ],
               ),
-              actions: [
-                // Search button
-                Consumer(
-                  builder: (context, widgetRef, child) {
-                    final searchState = ref.watch(searchProvider);
-                    return IconButton(
-                      icon: Icon(
-                        searchState.isActive ? Icons.search_off_rounded : Icons.search_rounded,
-                        size: 24,
-                      ),
-                      tooltip: searchState.isActive ? 'Close Search' : 'Search Library',
-                      onPressed: () {
-                        ref.read(searchProvider.notifier).toggleSearch();
-                      },
-                    );
-                  },
-                ),
-                
-                // Sleep Timer button
-                IconButton(
-                  icon: CountdownTimerWidget(
-                    size: 24.0,
-                    showIcon: true,
-                    onTap: null,
-                  ),
-                  tooltip: 'Sleep Timer',
-                  onPressed: _showSleepTimerDialog,
-                ),
-                
-                // Settings button
-                IconButton(
-                  icon: const Icon(
-                    Icons.settings_outlined,
-                    size: 24,
-                  ),
-                  tooltip: "Settings",
-                  onPressed: () async {
-                    await Navigator.pushNamed(context, '/settings');
-                    // Refresh when returning from settings
-                    _refreshLibrary();
-                  },
-                ),
-                const SizedBox(width: 8),
-              ],
             ),
-          ];
-        },
-        body: Container(
-          decoration: AppTheme.gradientBackground(context),
-          child: Column(
-            children: [
-              // Search bar (only show when search is active)
-              Consumer(
-                builder: (context, widgetRef, child) {
-                  final searchState = ref.watch(searchProvider);
-                  return AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 300),
-                    child: searchState.isActive
-                        ? const SearchBarWidget()
-                        : const SizedBox.shrink(),
-                  );
-                },
-              ),
-              
-              // Toggle bar between Library and Tags (only show when search is not active)
-              Consumer(
-                builder: (context, widgetRef, child) {
-                  final searchState = ref.watch(searchProvider);
-                  return AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 300),
-                    child: searchState.isActive
-                        ? const SizedBox.shrink()
-                        : const LibraryToggle(),
-                  );
-                },
-              ),
-              
-              // Main content area
-              Expanded(
-                child: Stack(
-                  children: [
-                    // Main content with conditional view based on selected mode
-                    FadeTransition(
-                      opacity: _fadeAnimation,
-                      child: Consumer(
-                        builder: (context, widgetRef, child) {
-                          final libraryMode = ref.watch(libraryModeProvider);
-                          final searchState = ref.watch(searchProvider);
-                          
-                          // If search is active, show search results
-                          if (searchState.isActive) {
-                            return _buildSearchResults(context, provider, searchState, colorScheme);
-                          }
-                          
-                          if (libraryMode == LibraryMode.tags) {
-                            return const TagsView();
-                          } else {
-                            // Library mode - show audiobooks
-                            return provider.audiobooks.isEmpty && !provider.isLoading
-                                ? _buildEmptyLibraryView(context, provider, colorScheme)
-                                : isLandscape
-                                    ? _buildGridView(context, provider)
-                                    : _buildListView(context, provider);
-                          }
-                        },
-                      ),
-                    ),
-                    
-                    // Error/Info Message
-                    if (provider.errorMessage != null && !provider.isLoading)
-                      _buildErrorMessage(context, provider),
-                      
-                    // No loading overlays - seamless experience
-                  ],
-                ),
-              ),
-            ],
           ),
-        ),
+          
+          // Detailed loading overlay (fullscreen)
+          Consumer(
+            builder: (context, widgetRef, child) {
+              final libraryMode = ref.watch(libraryModeProvider);
+              final searchState = ref.watch(searchProvider);
+              
+              // Only show in library mode when not searching
+              if (libraryMode == LibraryMode.library && !searchState.isActive) {
+                return const DetailedLoadingWidget();
+              }
+              return const SizedBox.shrink();
+            },
+          ),
+        ],
       ),
+      
       // Floating action button (only show in Library mode)
       floatingActionButton: Consumer(
         builder: (context, widgetRef, child) {
