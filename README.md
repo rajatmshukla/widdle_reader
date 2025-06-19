@@ -17,9 +17,11 @@ Widdle Reader is a feature-rich, modern audiobook player built with Flutter. The
 - **Sleep Timer**: Set a timer to automatically pause playback after a specified duration
 - **Bookmarks**: Add and manage bookmarks at specific points in your audiobooks
 - **Variable Playback Speed**: Adjust the playback speed from 0.5x to 2.0x
-- **Enhanced Metadata Support**: Automatic extraction of titles, authors, and cover art
-- **Data Management**: Reset progress and export/import user data
+- **Enhanced Metadata Support**: Automatic extraction of titles, authors, and cover art with priority system
+- **Advanced Tag System**: Create, rename, and organize custom tags with bulletproof Favorites protection
+- **Comprehensive Data Management**: Complete backup/restore with corruption detection and recovery
 - **Real-time Progress Display**: Visual indicators showing completion percentage
+- **Data Health Monitoring**: Tag statistics and integrity checking in Settings
 
 ## Audiobook Organization
 
@@ -108,14 +110,16 @@ Audiobooks/
 
 ### Cover Art Support
 
-The app automatically finds cover art from:
-- **Embedded metadata** in audio files
-- **Image files** in the audiobook folder:
-  - `cover.jpg/png/webp`
-  - `folder.jpg/png/webp`
-  - `albumart.jpg/png/webp`
-  - `front.jpg/png/webp`
-  - `artwork.jpg/png/webp`
+The app automatically finds cover art using an intelligent priority system:
+1. **Embedded metadata** in audio files (highest priority)
+2. **Image files** in the audiobook folder (fallback):
+   - `cover.jpg/png/webp`
+   - `folder.jpg/png/webp`
+   - `albumart.jpg/png/webp`
+   - `front.jpg/png/webp`
+   - `artwork.jpg/png/webp`
+
+This ensures the best possible cover art display by prioritizing embedded metadata first, then falling back to folder images.
 
 ## Tech Stack
 
@@ -151,6 +155,7 @@ lib/
 - **Audiobook**: Represents an audiobook with metadata, chapters, and author information
 - **Chapter**: Represents a chapter within an audiobook with playback info
 - **Bookmark**: Stores user-created bookmarks for specific points in audiobooks
+- **Tag**: Represents custom user tags with protection mechanisms for system tags
 
 #### Services
 
@@ -164,6 +169,7 @@ lib/
 - **AudiobookProvider**: Manages the audiobook library and playback state
 - **ThemeProvider**: Handles theme preferences and customization
 - **SleepTimerProvider**: Manages the sleep timer functionality
+- **TagProvider**: Handles tag creation, deletion, renaming, and system tag protection
 
 #### Screens
 
@@ -179,6 +185,8 @@ lib/
 - **AudiobookTile**: Card display for audiobooks in library
 - **CountdownTimerWidget**: Visual display for sleep timer countdown
 - **AddBookmarkDialog**: Interface for creating bookmarks
+- **TagAssignmentDialog**: Advanced tag management with rename/delete functionality
+- **TagsView**: Display and manage tags with visual indicators
 
 ## Key Features Implementation
 
@@ -195,9 +203,10 @@ The new recursive scanning system:
 ### Enhanced Metadata Extraction
 
 - **Author detection** from album artist or track artist metadata
-- **Improved cover art discovery** from multiple sources
+- **Priority-based cover art discovery** - embedded metadata takes precedence over folder images
 - **Better error handling** for corrupted files
 - **Fallback mechanisms** when metadata is unavailable
+- **Consistent visual experience** with intelligent cover art selection
 
 ### Media Notifications
 
@@ -223,9 +232,33 @@ Dynamic layout adaptation based on screen orientation with Material Design 3 pri
 
 Customizable accent colors with light/dark mode support and automatic system theme detection.
 
-### Data Management
+### Advanced Tag System
 
-Comprehensive data backup, recovery, and export/import functionality with health checks.
+Create and manage custom tags to organize your audiobook library:
+- **Create custom tags** with intuitive textbox-first interface
+- **Rename existing tags** while maintaining all assignments
+- **Delete unwanted tags** with confirmation dialogs
+- **Bulletproof Favorites** - special system tag that cannot be deleted or renamed
+- **Tag assignments** persist across app sessions and data operations
+
+### Enhanced Data Management
+
+Comprehensive backup and restore system with advanced protection:
+- **Complete data backup** - tags, favorites, progress, bookmarks, and preferences
+- **Corruption detection** - automatic validation of backup file integrity
+- **Recovery mechanisms** - fallback options when data issues are detected
+- **Version compatibility** - handles migration between app versions
+- **Manual export/import** - JSON format with timestamped filenames
+- **Automatic backups** - on app start and periodic persistence
+
+### Data Health Monitoring
+
+Built-in system to monitor and maintain data integrity:
+- **Tag statistics** - view count and usage of all tags
+- **Data validation** - automatic checks for consistency
+- **Health dashboard** - accessible through Settings menu
+- **Error reporting** - detailed feedback on any data issues
+- **Proactive maintenance** - prevents data corruption before it occurs
 
 ## Getting Started
 
