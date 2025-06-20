@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_colorpicker/flutter_colorpicker.dart';
-import 'package:provider/provider.dart';
+import 'package:provider/provider.dart' as provider;
 import '../providers/theme_provider.dart';
 import '../widgets/app_logo.dart';
 import '../utils/responsive_utils.dart';
@@ -11,15 +11,18 @@ import 'package:file_picker/file_picker.dart';
 
 import 'package:share_plus/share_plus.dart';
 import '../services/storage_service.dart';
+import '../providers/audiobook_provider.dart';
+import '../providers/tag_provider.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-class SettingsScreen extends StatefulWidget {
+class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
 
   @override
-  State<SettingsScreen> createState() => _SettingsScreenState();
+  ConsumerState<SettingsScreen> createState() => _SettingsScreenState();
 }
 
-class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProviderStateMixin {
+class _SettingsScreenState extends ConsumerState<SettingsScreen> with SingleTickerProviderStateMixin {
   Color _currentColor = Colors.blue;
   bool _showColorPicker = false;
   late AnimationController _animationController;
@@ -57,7 +60,7 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
     _animationController.forward();
     
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      final themeProvider = Provider.of<ThemeProvider>(context, listen: false);
+      final themeProvider = provider.Provider.of<ThemeProvider>(context, listen: false);
       setState(() {
         _currentColor = themeProvider.seedColor;
       });
@@ -81,7 +84,7 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
 
   @override
   Widget build(BuildContext context) {
-    final themeProvider = Provider.of<ThemeProvider>(context);
+    final themeProvider = provider.Provider.of<ThemeProvider>(context);
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
 
@@ -1053,6 +1056,18 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
               onTap: () => _checkDataHealth(context),
             ),
             
+            // Scan library for tags option
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(Icons.local_offer_outlined, color: colorScheme.secondary),
+              title: Text('Scan Library for Tags', style: textTheme.bodyMedium),
+              subtitle: Text(
+                'Create tags from existing books\' folder structure',
+                style: TextStyle(color: colorScheme.onSurfaceVariant),
+              ),
+              onTap: () => _scanLibraryForTags(context),
+            ),
+            
 
           ],
         ),
@@ -1408,6 +1423,109 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
     }
   }
 
+  // Scan existing library for auto-tags
+  Future<void> _scanLibraryForTags(BuildContext context) async {
+    try {
+      final audiobookProvider = provider.Provider.of<AudiobookProvider>(context, listen: false);
+      
+      // Check if there are books to scan
+      if (audiobookProvider.audiobooks.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No audiobooks in library to scan for tags'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        return;
+      }
+
+      // Show confirmation dialog
+      final confirmScan = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Scan Library for Tags'),
+          content: Text(
+            'This will analyze ${audiobookProvider.audiobooks.length} audiobooks in your library and create tags based on their folder structure.\n\n'
+            'This is useful for:\n'
+            '• Recovering deleted tags\n'
+            '• Creating series tags from folder names\n'
+            '• Organizing books by genre or author\n\n'
+            'Existing tags will not be duplicated.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('CANCEL'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('SCAN'),
+            ),
+          ],
+        ),
+      );
+
+      if (confirmScan != true) return;
+
+      // Show progress dialog
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const AlertDialog(
+          title: Text('Scanning Library'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(height: 16),
+              Text('Analyzing folder structure and creating tags...'),
+            ],
+          ),
+        ),
+      );
+
+      // Perform the scan
+      await audiobookProvider.scanExistingLibraryForTags(ref);
+
+      // Close progress dialog
+      if (context.mounted) Navigator.of(context).pop();
+
+      // Show success message
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('Library scan completed! Tags created from folder structure.'),
+            behavior: SnackBarBehavior.floating,
+            action: SnackBarAction(
+              label: 'VIEW TAGS',
+              onPressed: () {
+                // Navigate back and switch to tags view
+                Navigator.of(context).pop(); // Close settings
+                // Note: The navigation to tags view will be handled by the caller
+              },
+            ),
+          ),
+        );
+      }
+
+    } catch (e) {
+      // Close progress dialog if open
+      if (context.mounted && Navigator.of(context).canPop()) {
+        Navigator.of(context).pop();
+      }
+      
+      // Show error
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error scanning library: ${e.toString()}'),
+            behavior: SnackBarBehavior.floating,
+            backgroundColor: Theme.of(context).colorScheme.error,
+          ),
+        );
+      }
+    }
+  }
 
 }
 

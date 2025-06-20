@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
+import 'dart:math' as math;
 
 import '../models/tag.dart';
 
@@ -56,16 +57,20 @@ final syncedTagProvider = Provider<AsyncValue<List<Tag>>>((ref) {
         return tag;
       }).toList();
       
-      // If counts changed, persist them immediately (especially important for Favorites)
+      // Only persist if there are significant changes (reduce persistence frequency)
       if (hasChanges) {
         // Schedule the persistence for next tick to avoid recursive provider updates
         Future.microtask(() async {
           try {
             final tagNotifier = ref.read(tagProvider.notifier);
             await tagNotifier.saveTags(updatedTags);
-            debugPrint("Auto-synced tag counts: ${tagCounts.toString()}");
+            if (kDebugMode) {
+              debugPrint("Auto-synced tag counts: ${tagCounts.toString()}");
+            }
           } catch (e) {
-            debugPrint("Error auto-syncing tag counts: $e");
+            if (kDebugMode) {
+              debugPrint("Error auto-syncing tag counts: $e");
+            }
           }
         });
       }
@@ -190,7 +195,9 @@ class TagNotifier extends StateNotifier<AsyncValue<List<Tag>>> {
   /// Cleans up orphaned tags (tags with 0 books) except Favorites
   Future<void> cleanupOrphanedTags() async {
     // DISABLED: User requested to keep orphaned tags
-    debugPrint("Orphaned tag cleanup is disabled - keeping all tags even with 0 books");
+    if (kDebugMode) {
+      debugPrint("Orphaned tag cleanup is disabled - keeping all tags even with 0 books");
+    }
     return;
     
     /* Original code - now disabled:
@@ -215,20 +222,22 @@ class TagNotifier extends StateNotifier<AsyncValue<List<Tag>>> {
     await recalculateTagCounts(audiobookTags);
     
     // Note: cleanupOrphaned is ignored because user requested to keep orphaned tags
-    if (cleanupOrphaned) {
+    if (cleanupOrphaned && kDebugMode) {
       debugPrint("Orphaned tag cleanup was requested but is disabled per user preference");
     }
   }
 
-  /// Creates a new tag
+  /// Creates a new tag with enhanced duplicate prevention
   Future<void> createTag(String name) async {
     if (name.trim().isEmpty) return;
     
     final currentTags = await _ensureTagsLoaded();
+    final normalizedName = _normalizeTagName(name.trim());
     
-    // Check for duplicate names
-    if (currentTags.any((tag) => tag.name.toLowerCase() == name.trim().toLowerCase())) {
-      throw Exception('Tag with name "$name" already exists');
+    // Enhanced duplicate checking with similarity detection
+    final existingTag = _findSimilarTag(currentTags, normalizedName);
+    if (existingTag != null) {
+      throw Exception('Tag with similar name "$existingTag" already exists');
     }
 
     final newTag = Tag(
@@ -241,6 +250,100 @@ class TagNotifier extends StateNotifier<AsyncValue<List<Tag>>> {
     final updatedTags = [...currentTags, newTag];
     await _saveTags(updatedTags);
     state = AsyncValue.data(updatedTags);
+  }
+
+  /// Normalizes tag names for consistent comparison
+  String _normalizeTagName(String name) {
+    return name
+        .toLowerCase()
+        .replaceAll(RegExp(r'[^\w\s]'), '') // Remove special characters
+        .replaceAll(RegExp(r'\s+'), ' ')    // Normalize whitespace
+        .trim();
+  }
+
+  /// Finds similar existing tags to prevent near-duplicates
+  String? _findSimilarTag(List<Tag> existingTags, String normalizedName) {
+    for (final tag in existingTags) {
+      final existingNormalized = _normalizeTagName(tag.name);
+      
+      // Exact match (case-insensitive, normalized)
+      if (existingNormalized == normalizedName) {
+        return tag.name;
+      }
+      
+      // Series similarity detection
+      if (_areSeriesSimilar(normalizedName, existingNormalized)) {
+        return tag.name;
+      }
+    }
+    return null;
+  }
+
+  /// Determines if two tag names represent the same series
+  bool _areSeriesSimilar(String name1, String name2) {
+    // Remove common series indicators and numbers
+    final cleanName1 = _cleanSeriesName(name1);
+    final cleanName2 = _cleanSeriesName(name2);
+    
+    // If the core series names are identical, consider them similar
+    if (cleanName1 == cleanName2 && cleanName1.isNotEmpty) {
+      return true;
+    }
+    
+    // Check for very similar names (allowing for minor differences)
+    if (cleanName1.length > 3 && cleanName2.length > 3) {
+      final similarity = _calculateSimilarity(cleanName1, cleanName2);
+      if (similarity > 0.85) { // 85% similarity threshold
+        return true;
+      }
+    }
+    
+    return false;
+  }
+
+  /// Removes series indicators and numbers to get core series name
+  String _cleanSeriesName(String name) {
+    return name
+        .replaceAll(RegExp(r'\b(?:series|book|vol|volume|part|chapter)\s*\d*\b'), '')
+        .replaceAll(RegExp(r'\b\d+\b'), '') // Remove standalone numbers
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+  }
+
+  /// Calculates similarity between two strings using Levenshtein distance
+  double _calculateSimilarity(String s1, String s2) {
+    if (s1 == s2) return 1.0;
+    if (s1.isEmpty || s2.isEmpty) return 0.0;
+    
+    final distance = _levenshteinDistance(s1, s2);
+    final maxLength = math.max(s1.length, s2.length);
+    return 1.0 - (distance / maxLength);
+  }
+
+  /// Calculates Levenshtein distance between two strings
+  int _levenshteinDistance(String s1, String s2) {
+    final m = s1.length;
+    final n = s2.length;
+    
+    if (m == 0) return n;
+    if (n == 0) return m;
+    
+    final dp = List.generate(m + 1, (_) => List.filled(n + 1, 0));
+    
+    for (int i = 0; i <= m; i++) dp[i][0] = i;
+    for (int j = 0; j <= n; j++) dp[0][j] = j;
+    
+    for (int i = 1; i <= m; i++) {
+      for (int j = 1; j <= n; j++) {
+        final cost = s1[i - 1] == s2[j - 1] ? 0 : 1;
+        dp[i][j] = math.min(
+          math.min(dp[i - 1][j] + 1, dp[i][j - 1] + 1),
+          dp[i - 1][j - 1] + cost,
+        );
+      }
+    }
+    
+    return dp[m][n];
   }
 
   /// Ensures tags are loaded and Favorites exists
@@ -384,6 +487,45 @@ class TagNotifier extends StateNotifier<AsyncValue<List<Tag>>> {
       debugPrint("Error saving tags: $error");
       rethrow;
     }
+  }
+
+  /// Finds the most similar existing tag for a given name
+  String? findMostSimilarTag(String name) {
+    final currentState = state;
+    if (currentState is! AsyncData<List<Tag>>) return null;
+    
+    final currentTags = currentState.value;
+    final normalizedName = _normalizeTagName(name.trim());
+    
+    return _findSimilarTag(currentTags, normalizedName);
+  }
+
+  /// Suggests an available tag name based on the given name
+  String suggestAvailableTagName(String baseName) {
+    final currentState = state;
+    if (currentState is! AsyncData<List<Tag>>) return baseName;
+    
+    final currentTags = currentState.value;
+    final normalizedBase = _normalizeTagName(baseName.trim());
+    
+    // If no similar tag exists, return the original name
+    if (_findSimilarTag(currentTags, normalizedBase) == null) {
+      return baseName.trim();
+    }
+    
+    // Try variations with numbers
+    for (int i = 2; i <= 10; i++) {
+      final candidate = "${baseName.trim()} $i";
+      final normalizedCandidate = _normalizeTagName(candidate);
+      
+      if (_findSimilarTag(currentTags, normalizedCandidate) == null) {
+        return candidate;
+      }
+    }
+    
+    // Fallback: add timestamp
+    final timestamp = DateTime.now().millisecondsSinceEpoch.toString().substring(8);
+    return "${baseName.trim()} $timestamp";
   }
 }
 

@@ -27,9 +27,8 @@ import '../utils/responsive_utils.dart';
 void _logDebug(String message) {
   if (kDebugMode) {
     debugPrint(message);
-  } else {
-    print("[LibraryScreen] $message");
   }
+  // Removed release mode logging to improve performance
 }
 
 class LibraryScreen extends ConsumerStatefulWidget {
@@ -408,7 +407,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
     );
   }
 
-  // Show dialog to add single or multiple audiobooks
+  // Show dialog to add single or multiple audiobooks or scan existing library
   void _showAddBooksDialog(BuildContext context, AudiobookProvider provider) {
     // Clear any previous error messages when opening the dialog
     provider.clearErrorMessage();
@@ -419,7 +418,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
       context: context,
       builder: (context) => AlertDialog(
         title: Text(
-          'Add Audiobooks',
+          'Library Actions',
           style: TextStyle(
             color: colorScheme.primary,
             fontWeight: FontWeight.bold,
@@ -449,6 +448,19 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
                 await _handleAutoTagCreation(provider);
               },
             ),
+            // Add the new scan existing library option
+            if (provider.audiobooks.isNotEmpty) ...[
+              const Divider(),
+              ListTile(
+                leading: Icon(Icons.local_offer_outlined, color: colorScheme.secondary),
+                title: const Text('Scan Library for Tags'),
+                subtitle: const Text('Create tags from existing books\' folder structure'),
+                onTap: () async {
+                  Navigator.pop(context);
+                  await _scanExistingLibraryForTags(provider);
+                },
+              ),
+            ],
           ],
         ),
         actions: [
@@ -466,6 +478,92 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
         ),
       ),
     );
+  }
+
+  // Handle scanning existing library for auto-tags
+  Future<void> _scanExistingLibraryForTags(AudiobookProvider provider) async {
+    try {
+      // Show loading indicator
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    valueColor: AlwaysStoppedAnimation<Color>(
+                      Theme.of(context).colorScheme.onInverseSurface,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                const Text('Scanning library for tags...'),
+              ],
+            ),
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+
+      // Perform the scan
+      await provider.scanExistingLibraryForTags(ref);
+
+      // Show success message
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                Icon(
+                  Icons.check_circle_outline,
+                  color: Theme.of(context).colorScheme.onInverseSurface,
+                  size: 16,
+                ),
+                const SizedBox(width: 12),
+                const Text('Library scan completed! Tags created from folder structure.'),
+              ],
+            ),
+            backgroundColor: Theme.of(context).colorScheme.inverseSurface,
+            duration: const Duration(seconds: 4),
+            action: SnackBarAction(
+              label: 'View Tags',
+              textColor: Theme.of(context).colorScheme.primary,
+              onPressed: () {
+                // Switch to tags view
+                ref.read(libraryModeProvider.notifier).updateLibraryMode(LibraryMode.tags);
+              },
+            ),
+          ),
+        );
+      }
+
+    } catch (e) {
+      debugPrint("Error scanning existing library for tags: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                Icon(
+                  Icons.error_outline,
+                  color: Theme.of(context).colorScheme.onError,
+                  size: 16,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text('Error scanning library: ${e.toString()}'),
+                ),
+              ],
+            ),
+            backgroundColor: Theme.of(context).colorScheme.error,
+            duration: const Duration(seconds: 5),
+          ),
+        );
+      }
+    }
   }
 
   // Handle auto-tag creation after audiobooks are added
@@ -705,36 +803,57 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
                     // Main content with conditional view based on selected mode
                     FadeTransition(
                       opacity: _fadeAnimation,
-                      child: Consumer(
-                        builder: (context, widgetRef, child) {
-                          final libraryMode = ref.watch(libraryModeProvider);
+                      child: Column(
+                        children: [
+                          // Loading card at the top (only in library mode when not searching)
+                          Consumer(
+                            builder: (context, widgetRef, child) {
+                              final libraryMode = ref.watch(libraryModeProvider);
                               final searchState = ref.watch(searchProvider);
                               
-                              // If search is active, show search results
-                              if (searchState.isActive) {
-                                return _buildSearchResults(context, provider, searchState, colorScheme);
+                              // Only show loading card in library mode when not searching
+                              if (libraryMode == LibraryMode.library && !searchState.isActive) {
+                                return const DetailedLoadingWidget();
                               }
+                              return const SizedBox.shrink();
+                            },
+                          ),
                           
-                          if (libraryMode == LibraryMode.tags) {
-                            return const TagsView();
-                          } else {
-                                // Library mode - show audiobooks with sorting
-                                return Consumer(
-                                  builder: (context, widgetRef, child) {
-                                    final sortOption = ref.watch(librarySortOptionProvider);
+                          // Main content below loading card
+                          Expanded(
+                            child: Consumer(
+                              builder: (context, widgetRef, child) {
+                                final libraryMode = ref.watch(libraryModeProvider);
+                                    final searchState = ref.watch(searchProvider);
                                     
-                                    // Apply sorting (optimized to skip if sort option hasn't changed)
-                                    provider.sortAudiobooks(sortOption);
-                                    
-                            return provider.audiobooks.isEmpty && !provider.isLoading
-                                ? _buildEmptyLibraryView(context, provider, colorScheme)
-                                : isLandscape
-                                    ? _buildGridView(context, provider)
-                                    : _buildListView(context, provider);
-                                  },
-                                );
-                          }
-                        },
+                                    // If search is active, show search results
+                                    if (searchState.isActive) {
+                                      return _buildSearchResults(context, provider, searchState, colorScheme);
+                                    }
+                                
+                                if (libraryMode == LibraryMode.tags) {
+                                  return const TagsView();
+                                } else {
+                                      // Library mode - show audiobooks with sorting
+                                      return Consumer(
+                                        builder: (context, widgetRef, child) {
+                                          final sortOption = ref.watch(librarySortOptionProvider);
+                                          
+                                          // Apply sorting (optimized to skip if sort option hasn't changed)
+                                          provider.sortAudiobooks(sortOption);
+                                          
+                                  return provider.audiobooks.isEmpty && !provider.isLoading
+                                      ? _buildEmptyLibraryView(context, provider, colorScheme)
+                                      : isLandscape
+                                          ? _buildGridView(context, provider)
+                                          : _buildListView(context, provider);
+                                        },
+                                      );
+                                }
+                              },
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                     
@@ -750,20 +869,6 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
                               ),
                             ),
                           ),
-          
-          // Detailed loading overlay (fullscreen)
-          Consumer(
-            builder: (context, widgetRef, child) {
-              final libraryMode = ref.watch(libraryModeProvider);
-              final searchState = ref.watch(searchProvider);
-              
-              // Only show in library mode when not searching
-              if (libraryMode == LibraryMode.library && !searchState.isActive) {
-                return const DetailedLoadingWidget();
-              }
-              return const SizedBox.shrink();
-            },
-                      ),
                   ],
                 ),
       

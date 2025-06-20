@@ -396,7 +396,7 @@ class MetadataService {
     }).join(' ');
   }
 
-  /// Suggests tag names based on folder structure analysis
+  /// Suggests tag names based on folder structure analysis with smart series consolidation
   /// This method analyzes common patterns to suggest better tag names
   List<String> suggestTagNames(List<String> audiobookPaths, String rootPath) {
     final Map<String, int> tagCounts = {};
@@ -412,23 +412,149 @@ class MetadataService {
       }
     }
     
+    // Consolidate similar series tags before suggesting
+    final consolidatedTags = _consolidateSimilarTags(tagCounts, tagToBooks);
+    
     // Filter tags that apply to multiple books (likely series or genres)
     final suggestedTags = <String>[];
-    for (final entry in tagCounts.entries) {
+    for (final entry in consolidatedTags.entries) {
       final tagName = entry.key;
-      final count = entry.value;
+      final count = entry.value['count'] as int;
+      final books = entry.value['books'] as Set<String>;
       
       // Only suggest tags that apply to multiple books
       if (count > 1) {
         suggestedTags.add(tagName);
-        debugPrint("Suggested tag '$tagName' for $count books: ${tagToBooks[tagName]?.take(3).join(', ')}${count > 3 ? '...' : ''}");
+        debugPrint("Suggested consolidated tag '$tagName' for $count books: ${books.take(3).join(', ')}${count > 3 ? '...' : ''}");
       }
     }
     
     // Sort by frequency (most common first)
-    suggestedTags.sort((a, b) => (tagCounts[b] ?? 0).compareTo(tagCounts[a] ?? 0));
+    suggestedTags.sort((a, b) {
+      final aCount = consolidatedTags[a]?['count'] as int? ?? 0;
+      final bCount = consolidatedTags[b]?['count'] as int? ?? 0;
+      return bCount.compareTo(aCount);
+    });
     
     return suggestedTags;
+  }
+
+  /// Consolidates similar tags (especially series) into single representative tags
+  Map<String, Map<String, dynamic>> _consolidateSimilarTags(
+    Map<String, int> tagCounts,
+    Map<String, Set<String>> tagToBooks,
+  ) {
+    final consolidated = <String, Map<String, dynamic>>{};
+    final processed = <String>{};
+    
+    for (final entry in tagCounts.entries) {
+      final tagName = entry.key;
+      final count = entry.value;
+      
+      if (processed.contains(tagName)) continue;
+      
+      // Find all similar tags that should be consolidated
+      final similarTags = <String>[tagName];
+      final allBooks = Set<String>.from(tagToBooks[tagName] ?? {});
+      int totalCount = count;
+      
+      for (final otherTag in tagCounts.keys) {
+        if (otherTag != tagName && !processed.contains(otherTag)) {
+          if (_areTagsSimilarForConsolidation(tagName, otherTag)) {
+            similarTags.add(otherTag);
+            allBooks.addAll(tagToBooks[otherTag] ?? {});
+            totalCount += tagCounts[otherTag] ?? 0;
+            processed.add(otherTag);
+          }
+        }
+      }
+      
+      // Choose the best representative name from similar tags
+      final bestName = _chooseBestTagName(similarTags);
+      
+      consolidated[bestName] = {
+        'count': allBooks.length, // Use unique book count, not sum of counts
+        'books': allBooks,
+        'originalTags': similarTags,
+      };
+      
+      processed.add(tagName);
+      
+      if (similarTags.length > 1) {
+        debugPrint("Consolidated ${similarTags.length} similar tags into '$bestName': ${similarTags.join(', ')}");
+      }
+    }
+    
+    return consolidated;
+  }
+
+  /// Determines if two tags should be consolidated (stricter than similarity checking)
+  bool _areTagsSimilarForConsolidation(String tag1, String tag2) {
+    final clean1 = _cleanTagNameForConsolidation(tag1);
+    final clean2 = _cleanTagNameForConsolidation(tag2);
+    
+    // Must have the same core name to be consolidated
+    if (clean1 == clean2 && clean1.isNotEmpty) {
+      return true;
+    }
+    
+    // Check for very high similarity (95% for consolidation vs 85% for duplicate detection)
+    if (clean1.length > 2 && clean2.length > 2) {
+      final similarity = _calculateStringSimilarity(clean1, clean2);
+      return similarity > 0.95;
+    }
+    
+    return false;
+  }
+
+  /// Cleans tag names specifically for consolidation (more aggressive than normalization)
+  String _cleanTagNameForConsolidation(String name) {
+    return name
+        .toLowerCase()
+        .replaceAll(RegExp(r'\b(?:series|book|vol|volume|part|chapter|the)\s*\d*\b'), '')
+        .replaceAll(RegExp(r'\b\d+\b'), '') // Remove standalone numbers
+        .replaceAll(RegExp(r'[^\w\s]'), '') // Remove special characters
+        .replaceAll(RegExp(r'\s+'), ' ')    // Normalize whitespace
+        .trim();
+  }
+
+  /// Chooses the best representative name from similar tags
+  String _chooseBestTagName(List<String> similarTags) {
+    if (similarTags.length == 1) return similarTags.first;
+    
+    // Prefer shorter, cleaner names
+    similarTags.sort((a, b) {
+      // First, prefer tags without numbers
+      final aHasNumbers = RegExp(r'\d').hasMatch(a);
+      final bHasNumbers = RegExp(r'\d').hasMatch(b);
+      
+      if (aHasNumbers != bHasNumbers) {
+        return aHasNumbers ? 1 : -1; // Prefer tag without numbers
+      }
+      
+      // Then prefer shorter names
+      final lengthComparison = a.length.compareTo(b.length);
+      if (lengthComparison != 0) return lengthComparison;
+      
+      // Finally, alphabetical order
+      return a.compareTo(b);
+    });
+    
+    return similarTags.first;
+  }
+
+  /// Calculates string similarity using Jaccard coefficient
+  double _calculateStringSimilarity(String s1, String s2) {
+    if (s1 == s2) return 1.0;
+    if (s1.isEmpty || s2.isEmpty) return 0.0;
+    
+    final set1 = s1.split('').toSet();
+    final set2 = s2.split('').toSet();
+    
+    final intersection = set1.intersection(set2).length;
+    final union = set1.union(set2).length;
+    
+    return union > 0 ? intersection / union : 0.0;
   }
 
   /// ========================================

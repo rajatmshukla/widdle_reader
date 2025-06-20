@@ -1,5 +1,5 @@
 import 'dart:io'; // For Platform and Directory
-import 'dart:async'; // For unawaited
+import 'dart:async'; // For unawaited, Timer
 import 'dart:typed_data'; // For Uint8List
 import 'package:flutter/foundation.dart'; // For debugPrint and ChangeNotifier
 import 'package:flutter/widgets.dart'; // For WidgetsBinding
@@ -23,15 +23,15 @@ import '../providers/tag_provider.dart';
 void _logDebug(String message) {
   if (kDebugMode) {
     debugPrint(message);
-  } else {
-    // In release mode, we still want critical logs for state tracking
-    print("[AudiobookProvider] $message");
   }
+  // Removed release mode logging to improve performance
 }
 
 void _logCritical(String message) {
-  // Always log critical messages in both debug and release
-  print("[CRITICAL] $message");
+  // Only log critical messages in debug mode to avoid performance issues
+  if (kDebugMode) {
+    print("[CRITICAL] $message");
+  }
 }
 
 // LibrarySortOption moved to models/tag.dart to avoid duplication
@@ -157,40 +157,61 @@ class AudiobookProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Stop loading
+  /// Stop loading with guaranteed state clearing
   void _stopLoading() {
     _logDebug("CRITICAL: _stopLoading() called - forcing loading to stop");
+    
+    // Force loading state to false with multiple safety checks
     _isLoading = false;
     
-    // CRITICAL FIX: Aggressive notification to ensure UI updates
-    notifyListeners(); // Immediate notification
-    
-    // Force additional notifications to ensure UI updates in release
+    // Ensure UI update happens immediately on main thread
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!_isLoading) { // Double check loading is still false
+      if (_isLoading) {
+        _logCritical("CRITICAL BUG: Loading state still true after _stopLoading!");
+        _isLoading = false;
         notifyListeners();
-        _logDebug("CRITICAL: Post-frame loading stop notification sent");
       }
     });
     
-    // Micro-task notification
-    Future.microtask(() {
-      if (!_isLoading) { // Double check loading is still false
-        notifyListeners();
-        _logDebug("CRITICAL: Micro-task loading stop notification sent");
-      }
-    });
-    
-    // Delayed notification as final safety net
-    Future.delayed(const Duration(milliseconds: 100), () {
-      if (!_isLoading) { // Triple check loading is still false
-        notifyListeners();
-        _logDebug("CRITICAL: Delayed loading stop notification sent - final safety net");
-      }
-    });
+    // Primary notification
+    notifyListeners();
     
     _logDebug("CRITICAL: _stopLoading() completed - isLoading should be false: $_isLoading");
   }
+
+  /// Force stop loading with maximum safety measures for release builds
+  void _forceStopLoading() {
+    _logDebug("FORCE STOP: Multiple safety mechanisms to ensure loading stops");
+    
+    // 1. Set loading to false immediately
+    _isLoading = false;
+    
+    // 2. Schedule immediate UI update
+    notifyListeners();
+    
+    // 3. Double-check with delayed callback
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_isLoading) {
+        _logCritical("EMERGENCY: Loading state persisted, forcing clear!");
+        _isLoading = false;
+        notifyListeners();
+      }
+    });
+    
+    // 4. Add a backup timer for extreme cases (release build protection)
+    Timer(const Duration(milliseconds: 100), () {
+      if (_isLoading) {
+        _logCritical("BACKUP TIMER: Loading state still persisted, emergency clear!");
+        _isLoading = false;
+        if (mounted) notifyListeners();
+      }
+    });
+    
+    _logDebug("FORCE STOP: All safety mechanisms activated");
+  }
+
+  /// Check if the provider is still mounted (for safety)
+  bool get mounted => true; // ChangeNotifier is always considered mounted
 
   /// Loads the last played timestamps for all audiobooks
   Future<void> _loadLastPlayedTimestamps() async {
@@ -224,12 +245,13 @@ class AudiobookProvider extends ChangeNotifier {
 
   /// Sorts audiobooks based on the provided sort option
   void sortAudiobooks(LibrarySortOption sortOption) {
-    // Skip sorting if the option hasn't changed and we have books
-    if (_currentSortOption == sortOption && _audiobooks.isNotEmpty) {
-      return;
-    }
-    
+    // Update the current sort option regardless of whether we skip sorting
     _currentSortOption = sortOption;
+    
+    // Skip sorting if the option hasn't changed and we have books
+    if (_audiobooks.isEmpty) {
+      return; // No books to sort
+    }
     
     switch (sortOption) {
       case LibrarySortOption.alphabeticalAZ:
@@ -352,8 +374,22 @@ class AudiobookProvider extends ChangeNotifier {
         break;
     }
     
+    // Save the sorted order to storage
+    _saveSortedOrder();
+    
     // Notify listeners to update the UI
     notifyListeners();
+  }
+
+  /// Saves the current sorted order of audiobooks to storage
+  Future<void> _saveSortedOrder() async {
+    try {
+      final sortedPaths = _audiobooks.map((book) => book.id).toList();
+      await _storageService.saveAudiobookFolders(sortedPaths);
+      _logDebug("Saved sorted audiobook order: ${sortedPaths.length} books");
+    } catch (e) {
+      _logDebug("Error saving sorted order: $e");
+    }
   }
 
   /// Extract series information from a book title
@@ -386,8 +422,13 @@ class AudiobookProvider extends ChangeNotifier {
   /// Sorts audiobooks with completed books at the bottom and others by recently played (legacy method, now replaced by sortAudiobooks)
   void _sortAudiobooksByStatus() {
     // Use the current sort option if available, otherwise default to completion status
-    final sortOption = _currentSortOption ?? LibrarySortOption.completionStatus;
+    final sortOption = _currentSortOption ?? LibrarySortOption.lastPlayedRecent;
     sortAudiobooks(sortOption);
+  }
+
+  /// Sets the current sort option (called from UI when sort preference is loaded/changed)
+  void setCurrentSortOption(LibrarySortOption sortOption) {
+    _currentSortOption = sortOption;
   }
 
   /// Records when a book is played, updates its timestamp and moves it accordingly in the list
@@ -588,10 +629,14 @@ class AudiobookProvider extends ChangeNotifier {
         }
       }
       
-      // STEP 3: Update UI immediately with what we have
+      // STEP 3: Update UI with loaded books in the stored order initially
       _audiobooks = loadedBooks;
       await _loadLastPlayedTimestamps();
-      _sortAudiobooksByStatus();
+      
+      // The stored order represents the last sorted order, so we preserve it
+      // Sorting will be applied by the UI when the persistent sort preference is loaded
+      _logDebug("Loaded ${loadedBooks.length} books in saved order");
+      
       notifyListeners(); // Show UI immediately
       
       _logDebug("=== FAST STARTUP: UI displayed with ${loadedBooks.length} books ===");
@@ -1066,19 +1111,8 @@ class AudiobookProvider extends ChangeNotifier {
     _startLoading();
     _errorMessage = null;
     
-    // CRITICAL FIX: Force UI to render the loading screen before file picker opens
-    // This ensures the loading screen is visible before the native file picker takes over
-    notifyListeners(); // Force immediate notification
-    
-    // Force Flutter to render the current frame
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      // This ensures the loading screen is fully rendered
-    });
-    
-    // Wait for multiple frame renders to ensure loading screen is visible
-    await Future.delayed(const Duration(milliseconds: 16)); // 1 frame at 60fps
-    await WidgetsBinding.instance.endOfFrame;
-    await Future.delayed(const Duration(milliseconds: 200)); // Additional time for UI to settle
+    // Show loading screen immediately
+    notifyListeners();
     
     if (!await _requestPermissions()) {
       _stopLoading();
@@ -1172,8 +1206,7 @@ class AudiobookProvider extends ChangeNotifier {
             _completedBooks[newBook.id] = false;
 
             _audiobooks.add(newBook);
-            // Reset sort option to ensure new book gets sorted properly
-            _currentSortOption = null;
+            // Sort using current sort preference when adding new books
             _sortAudiobooksByStatus();
             newlyAddedPaths.add(folderPath);
             successCount++;
@@ -1208,19 +1241,15 @@ class AudiobookProvider extends ChangeNotifier {
 
       // CRITICAL FIX: Force stop loading before any additional processing
       _logDebug("CRITICAL: Force stopping loading after main processing complete");
-      _stopLoading();
-      _isLoading = false; // Double-ensure loading is stopped
-      notifyListeners(); // Force UI update
+      _forceStopLoading();
 
       _logDebug("Background processing complete: $successCount added, $skipCount skipped");
       
     } catch (e) {
       _logDebug("Error in background processing: $e");
       _logDebug("CRITICAL: Stopping loading due to error");
-      _stopLoading();
-      _isLoading = false; // Double-ensure loading is stopped
+      _forceStopLoading();
       _errorMessage = "Error processing audiobooks: $e";
-      notifyListeners();
     }
   }
 
@@ -1231,21 +1260,11 @@ class AudiobookProvider extends ChangeNotifier {
     }
 
     try {
-      // Start loading and force UI to render before file picker
+      // Start loading and show immediately
       _startLoading();
       
-      // CRITICAL FIX: Force UI to render the loading screen before file picker opens
-      notifyListeners(); // Force immediate notification
-      
-      // Force Flutter to render the current frame
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        // This ensures the loading screen is fully rendered
-      });
-      
-      // Wait for multiple frame renders to ensure loading screen is visible
-      await Future.delayed(const Duration(milliseconds: 16)); // 1 frame at 60fps
-      await WidgetsBinding.instance.endOfFrame;
-      await Future.delayed(const Duration(milliseconds: 200)); // Additional time for UI to settle
+      // Show loading screen immediately
+      notifyListeners();
       
       // Use FilePicker to select a single directory path
       String? selectedDirectoryPath = await FilePicker.platform.getDirectoryPath(
@@ -1304,8 +1323,7 @@ class AudiobookProvider extends ChangeNotifier {
         _completedBooks[newBook.id] = false;
 
         _audiobooks.add(newBook);
-        // Reset sort option to ensure new book gets sorted properly
-        _currentSortOption = null;
+        // Sort using current sort preference when adding new books
         _sortAudiobooksByStatus();
 
         // Cache the new book
@@ -1334,19 +1352,17 @@ class AudiobookProvider extends ChangeNotifier {
         _lastAddedPaths = [selectedDirectoryPath];
         _logDebug("Single audiobook added and ready for auto-tagging");
         
-        _stopLoading();
+        _forceStopLoading();
         _errorMessage = null;
-        notifyListeners();
         _logDebug("Successfully added audiobook: ${newBook.title} with ${newBook.chapters.length} chapters");
       }
     } catch (e, stackTrace) {
-      _stopLoading();
+      _forceStopLoading();
       
           _logDebug("Error processing single audiobook folder: $e\n$stackTrace");
           _errorMessage = 
               "Failed to process the selected folder. The folder may be corrupted "
               "or contain unsupported file formats.";
-      notifyListeners();
     }
   }
 
@@ -1579,6 +1595,133 @@ class AudiobookProvider extends ChangeNotifier {
       _errorMessage = "Error during library synchronization: $e";
       notifyListeners();
     }
+  }
+
+  /// Scans existing library books and creates auto-tags based on folder structure
+  /// This helps users who deleted tags or upgraded from previous versions
+  Future<void> scanExistingLibraryForTags(WidgetRef ref) async {
+    try {
+      _logDebug("Starting existing library scan for auto-tags...");
+      
+      if (_audiobooks.isEmpty) {
+        _logDebug("No audiobooks in library to scan for tags");
+        return;
+      }
+
+      // Get all existing audiobook paths
+      final existingPaths = _audiobooks.map((book) => book.id).toList();
+      _logDebug("Scanning ${existingPaths.length} existing audiobooks for potential tags");
+
+      // Find common root paths to use for tag suggestions
+      final rootPaths = _findCommonRootPaths(existingPaths);
+      _logDebug("Found ${rootPaths.length} common root paths: ${rootPaths.join(', ')}");
+
+      int totalTagsCreated = 0;
+      int totalAssignments = 0;
+      final Set<String> allCreatedTags = {};
+      final Set<String> allExistingTags = {};
+
+      // Process each root path separately for better tag organization
+      for (final rootPath in rootPaths) {
+        final booksInRoot = existingPaths.where((path) => path.startsWith(rootPath)).toList();
+        
+        if (booksInRoot.length < 2) {
+          _logDebug("Skipping root '$rootPath' - only ${booksInRoot.length} book(s)");
+          continue; // Need at least 2 books to create meaningful tags
+        }
+
+        _logDebug("Processing ${booksInRoot.length} books under root: $rootPath");
+
+        // Create auto-tags for this group of books
+        final autoTagService = AutoTagService(ref);
+        final result = await autoTagService.createAutoTagsForAudiobooks(
+          audiobookPaths: booksInRoot,
+          rootPath: rootPath,
+          createTags: true,
+          assignTags: true,
+        );
+
+        // Accumulate results
+        totalTagsCreated += result.createdTags.length;
+        totalAssignments += result.totalAssignments;
+        allCreatedTags.addAll(result.createdTags);
+        allExistingTags.addAll(result.existingTags);
+
+        _logDebug("Root '$rootPath' results: ${result.createdTags.length} new tags, ${result.totalAssignments} assignments");
+      }
+
+      // Final summary
+      _logDebug("🎯 Existing library scan completed:");
+      _logDebug("  ✅ Total new tags created: $totalTagsCreated");
+      _logDebug("  🔄 Total existing tags used: ${allExistingTags.length}");
+      _logDebug("  📚 Total tag assignments: $totalAssignments");
+      
+      if (allCreatedTags.isNotEmpty) {
+        _logDebug("  🏷️ New tags: ${allCreatedTags.join(', ')}");
+      }
+
+    } catch (e) {
+      _logDebug("Error scanning existing library for tags: $e");
+      rethrow;
+    }
+  }
+
+  /// Finds common root paths from a list of audiobook paths
+  /// This helps group books by their folder structure for better tag organization
+  List<String> _findCommonRootPaths(List<String> paths) {
+    if (paths.isEmpty) return [];
+    if (paths.length == 1) return [Directory(paths.first).parent.path];
+
+    final rootPaths = <String>{};
+
+    // For each path, try different levels of parent directories
+    for (final path in paths) {
+      Directory current = Directory(path);
+      final pathSegments = path.split(Platform.pathSeparator);
+      
+      // Try up to 3 levels up from the audiobook folder
+      for (int levelsUp = 1; levelsUp <= 3 && current.parent.path != current.path; levelsUp++) {
+        current = current.parent;
+        
+        // Count how many paths share this root
+        final booksUnderRoot = paths.where((p) => p.startsWith(current.path)).length;
+        
+        // If at least 2 books share this root, it's a candidate
+        if (booksUnderRoot >= 2) {
+          rootPaths.add(current.path);
+        }
+      }
+    }
+
+    // Sort by depth (deeper first) to prefer more specific groupings
+    final sortedRoots = rootPaths.toList();
+    sortedRoots.sort((a, b) {
+      final aDepth = a.split(Platform.pathSeparator).length;
+      final bDepth = b.split(Platform.pathSeparator).length;
+      return bDepth.compareTo(aDepth); // Deeper first
+    });
+
+    // Remove redundant roots (if a deeper root covers the same books as a shallower one)
+    final finalRoots = <String>[];
+    for (final root in sortedRoots) {
+      final booksInRoot = paths.where((p) => p.startsWith(root)).toSet();
+      
+      // Check if any existing final root already covers all these books
+      bool alreadyCovered = false;
+      for (final existingRoot in finalRoots) {
+        final booksInExisting = paths.where((p) => p.startsWith(existingRoot)).toSet();
+        if (booksInRoot.difference(booksInExisting).isEmpty) {
+          alreadyCovered = true;
+          break;
+        }
+      }
+      
+      if (!alreadyCovered) {
+        finalRoots.add(root);
+      }
+    }
+
+    return finalRoots.isNotEmpty ? finalRoots : [Directory(paths.first).parent.path];
   }
 }
 

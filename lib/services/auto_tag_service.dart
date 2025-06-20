@@ -45,20 +45,29 @@ class AutoTagService {
       final tagNotifier = ref.read(tagProvider.notifier);
       final audiobookTagsNotifier = ref.read(audiobookTagsProvider.notifier);
       
-      // Create tags that don't exist yet
+      // Create tags that don't exist yet with enhanced duplicate checking
       if (createTags) {
-        debugPrint("Creating tags...");
+        debugPrint("Creating tags with enhanced duplicate detection...");
         for (final tagName in suggestedTags) {
           try {
             await tagNotifier.createTag(tagName);
             result.createdTags.add(tagName);
-            debugPrint("Created tag: '$tagName'");
+            debugPrint("✅ Created new tag: '$tagName'");
           } catch (e) {
-            if (e.toString().contains('already exists')) {
-              debugPrint("Tag '$tagName' already exists, skipping creation");
-              result.existingTags.add(tagName);
+            if (e.toString().contains('already exists') || e.toString().contains('similar name')) {
+              // Extract the existing tag name from the error message
+              final existingTagMatch = RegExp(r'"([^"]+)" already exists').firstMatch(e.toString());
+              final existingTagName = existingTagMatch?.group(1) ?? tagName;
+              
+              debugPrint("🔄 Tag '$tagName' skipped - similar tag '$existingTagName' already exists");
+              result.existingTags.add(existingTagName);
+              
+              // Add the existing tag to suggested tags for assignment
+              if (!suggestedTags.contains(existingTagName)) {
+                suggestedTags.add(existingTagName);
+              }
             } else {
-              debugPrint("Error creating tag '$tagName': $e");
+              debugPrint("❌ Error creating tag '$tagName': $e");
               result.failedTags.add(tagName);
             }
           }
@@ -107,11 +116,20 @@ class AutoTagService {
         result.totalAssignments = assignmentCounts.values.fold(0, (sum, count) => sum + count);
       }
       
-      debugPrint("Auto-tag creation completed:");
-      debugPrint("  Created tags: ${result.createdTags.length}");
-      debugPrint("  Existing tags: ${result.existingTags.length}");
-      debugPrint("  Failed tags: ${result.failedTags.length}");
-      debugPrint("  Total assignments: ${result.totalAssignments}");
+      debugPrint("🎯 Auto-tag creation completed:");
+      debugPrint("  ✅ Created new tags: ${result.createdTags.length} ${result.createdTags.isNotEmpty ? '(${result.createdTags.join(', ')})' : ''}");
+      debugPrint("  🔄 Used existing tags: ${result.existingTags.length} ${result.existingTags.isNotEmpty ? '(${result.existingTags.join(', ')})' : ''}");
+      debugPrint("  ❌ Failed to create: ${result.failedTags.length} ${result.failedTags.isNotEmpty ? '(${result.failedTags.join(', ')})' : ''}");
+      debugPrint("  📚 Total tag assignments: ${result.totalAssignments}");
+      
+      if (result.tagAssignments.isNotEmpty) {
+        debugPrint("  📋 Assignment details:");
+        for (final entry in result.tagAssignments.entries) {
+          final tagName = entry.key;
+          final books = entry.value;
+          debugPrint("    • '$tagName' → ${books.length} book${books.length == 1 ? '' : 's'}");
+        }
+      }
       
     } catch (e) {
       debugPrint("Error in auto-tag creation process: $e");
