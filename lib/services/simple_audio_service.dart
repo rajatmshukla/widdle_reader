@@ -337,13 +337,13 @@ class SimpleAudioService {
       // CRITICAL FIX: Better error handling for audio source loading
       try {
         debugPrint("Setting audio source for: ${audioFile.path}");
-        await _player.setAudioSource(
-          AudioSource.uri(
+      await _player.setAudioSource(
+        AudioSource.uri(
             Uri.file(audioFile.path),
-            tag: mediaItem,
-          ),
-          initialPosition: startPosition,
-        );
+          tag: mediaItem,
+        ),
+        initialPosition: startPosition,
+      );
         debugPrint("Audio source set successfully");
       } catch (audioSourceError) {
         // More specific error handling for common audio issues

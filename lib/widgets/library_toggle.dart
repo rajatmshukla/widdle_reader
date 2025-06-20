@@ -118,7 +118,7 @@ class LibraryToggle extends ConsumerWidget {
             borderRadius: BorderRadius.circular(16),
             onTap: () {
               if (!isSelected) {
-                ref.read(libraryModeProvider.notifier).state = mode;
+                ref.read(libraryModeProvider.notifier).updateLibraryMode(mode);
               }
             },
             onLongPress: mode == LibraryMode.library ? () => _handleLibraryLongPress(context, ref) : null,
@@ -211,7 +211,7 @@ class LibraryToggle extends ConsumerWidget {
       }).toList(),
     ).then((selectedOption) {
       if (selectedOption != null) {
-        ref.read(librarySortOptionProvider.notifier).state = selectedOption;
+        ref.read(librarySortOptionProvider.notifier).updateSortOption(selectedOption);
       }
     });
   }
@@ -260,7 +260,7 @@ class LibraryToggle extends ConsumerWidget {
       }).toList(),
     ).then((selectedOption) {
       if (selectedOption != null) {
-        ref.read(tagSortOptionProvider.notifier).state = selectedOption;
+        ref.read(tagSortOptionProvider.notifier).updateSortOption(selectedOption);
       }
     });
   }

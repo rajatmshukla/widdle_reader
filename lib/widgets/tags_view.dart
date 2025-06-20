@@ -599,7 +599,7 @@ class _TagsViewState extends ConsumerState<TagsView> {
             const SizedBox(height: 24),
             FilledButton.icon(
               onPressed: () {
-                ref.read(libraryModeProvider.notifier).state = LibraryMode.library;
+                ref.read(libraryModeProvider.notifier).updateLibraryMode(LibraryMode.library);
               },
               icon: const Icon(Icons.library_books),
               label: const Text('Browse Library'),
@@ -651,7 +651,7 @@ class _TagsViewState extends ConsumerState<TagsView> {
                 setState(() {
                   _selectedTag = null;
                 });
-                ref.read(libraryModeProvider.notifier).state = LibraryMode.library;
+                ref.read(libraryModeProvider.notifier).updateLibraryMode(LibraryMode.library);
               },
               icon: const Icon(Icons.library_books),
               label: const Text('Browse Library'),

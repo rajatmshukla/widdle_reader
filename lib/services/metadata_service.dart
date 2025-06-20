@@ -10,6 +10,15 @@ import 'package:flutter_media_metadata/flutter_media_metadata.dart';
 import '../models/audiobook.dart';
 import '../models/chapter.dart';
 
+// CRITICAL FIX: Add release-safe logging for metadata service
+void _logDebug(String message) {
+  if (kDebugMode) {
+    debugPrint(message);
+  } else {
+    print("[MetadataService] $message");
+  }
+}
+
 class MetadataService {
   final List<String> _supportedFormats = const [
     // Make const
@@ -23,7 +32,7 @@ class MetadataService {
   /// Recursively scans a root directory for audiobook folders.
   /// Returns a list of discovered audiobook folder paths.
   Future<List<String>> scanForAudiobookFolders(String rootPath) async {
-    debugPrint("Starting recursive scan for audiobooks in: $rootPath");
+    _logDebug("Starting recursive scan for audiobooks in: $rootPath");
     
     final List<String> audiobookFolders = [];
     final rootDirectory = Directory(rootPath);
@@ -35,7 +44,7 @@ class MetadataService {
 
     try {
       await _scanDirectoryRecursively(rootDirectory, audiobookFolders);
-      debugPrint("Scan completed. Found ${audiobookFolders.length} audiobook folders");
+      _logDebug("Scan completed. Found ${audiobookFolders.length} audiobook folders");
       
       // Sort the folders for consistent ordering
       audiobookFolders.sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));

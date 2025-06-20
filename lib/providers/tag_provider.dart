@@ -5,19 +5,19 @@ import 'package:flutter/foundation.dart';
 
 import '../models/tag.dart';
 
-// Provider for the current tag sort option
-final tagSortOptionProvider = StateProvider<TagSortOption>((ref) {
-  return TagSortOption.alphabeticalAZ;
+// Provider for the current tag sort option with persistence
+final tagSortOptionProvider = StateNotifierProvider<TagSortOptionNotifier, TagSortOption>((ref) {
+  return TagSortOptionNotifier();
 });
 
-// Provider for the current library sort option
-final librarySortOptionProvider = StateProvider<LibrarySortOption>((ref) {
-  return LibrarySortOption.lastPlayedRecent;
+// Provider for the current library sort option with persistence
+final librarySortOptionProvider = StateNotifierProvider<LibrarySortOptionNotifier, LibrarySortOption>((ref) {
+  return LibrarySortOptionNotifier();
 });
 
-// Provider for the current library mode (Library or Tags)
-final libraryModeProvider = StateProvider<LibraryMode>((ref) {
-  return LibraryMode.library;
+// Provider for the current library mode (Library or Tags) with persistence
+final libraryModeProvider = StateNotifierProvider<LibraryModeNotifier, LibraryMode>((ref) {
+  return LibraryModeNotifier();
 });
 
 // Tag provider using StateNotifier
@@ -539,6 +539,120 @@ class AudiobookTagsNotifier extends StateNotifier<Map<String, Set<String>>> {
       currentTags.remove(oldId);
       state = currentTags;
       await _saveAudiobookTags();
+    }
+  }
+}
+
+/// StateNotifier for persistent tag sort option
+class TagSortOptionNotifier extends StateNotifier<TagSortOption> {
+  static const String _tagSortKey = 'tag_sort_option';
+  
+  TagSortOptionNotifier() : super(TagSortOption.alphabeticalAZ) {
+    _loadSortOption();
+  }
+
+  Future<void> _loadSortOption() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final savedOption = prefs.getString(_tagSortKey);
+      if (savedOption != null) {
+        // Find the matching enum value
+        for (final option in TagSortOption.values) {
+          if (option.toString() == savedOption) {
+            state = option;
+            break;
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint("Error loading tag sort option: $e");
+    }
+  }
+
+  Future<void> updateSortOption(TagSortOption newOption) async {
+    state = newOption;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_tagSortKey, newOption.toString());
+      debugPrint("Saved tag sort option: ${newOption.displayName}");
+    } catch (e) {
+      debugPrint("Error saving tag sort option: $e");
+    }
+  }
+}
+
+/// StateNotifier for persistent library sort option
+class LibrarySortOptionNotifier extends StateNotifier<LibrarySortOption> {
+  static const String _librarySortKey = 'library_sort_option';
+  
+  LibrarySortOptionNotifier() : super(LibrarySortOption.lastPlayedRecent) {
+    _loadSortOption();
+  }
+
+  Future<void> _loadSortOption() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final savedOption = prefs.getString(_librarySortKey);
+      if (savedOption != null) {
+        // Find the matching enum value
+        for (final option in LibrarySortOption.values) {
+          if (option.toString() == savedOption) {
+            state = option;
+            break;
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint("Error loading library sort option: $e");
+    }
+  }
+
+  Future<void> updateSortOption(LibrarySortOption newOption) async {
+    state = newOption;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_librarySortKey, newOption.toString());
+      debugPrint("Saved library sort option: ${newOption.displayName}");
+    } catch (e) {
+      debugPrint("Error saving library sort option: $e");
+    }
+  }
+}
+
+/// StateNotifier for persistent library mode
+class LibraryModeNotifier extends StateNotifier<LibraryMode> {
+  static const String _libraryModeKey = 'library_mode';
+  
+  LibraryModeNotifier() : super(LibraryMode.library) {
+    _loadLibraryMode();
+  }
+
+  Future<void> _loadLibraryMode() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final savedMode = prefs.getString(_libraryModeKey);
+      if (savedMode != null) {
+        // Find the matching enum value
+        for (final mode in LibraryMode.values) {
+          if (mode.toString() == savedMode) {
+            state = mode;
+            break;
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint("Error loading library mode: $e");
+    }
+  }
+
+  Future<void> updateLibraryMode(LibraryMode newMode) async {
+    state = newMode;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_libraryModeKey, newMode.toString());
+      debugPrint("Saved library mode: ${newMode.displayName}");
+    } catch (e) {
+      debugPrint("Error saving library mode: $e");
     }
   }
 } 

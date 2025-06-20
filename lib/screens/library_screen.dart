@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart'; // For kDebugMode
 import 'package:provider/provider.dart' as provider;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
@@ -21,6 +22,15 @@ import '../models/tag.dart';
 import '../services/storage_service.dart';
 import '../theme.dart';
 import '../utils/responsive_utils.dart';
+
+// CRITICAL FIX: Add release-safe logging for library screen
+void _logDebug(String message) {
+  if (kDebugMode) {
+    debugPrint(message);
+  } else {
+    print("[LibraryScreen] $message");
+  }
+}
 
 class LibraryScreen extends ConsumerStatefulWidget {
   const LibraryScreen({super.key});
@@ -218,22 +228,22 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
     if (result == true) {
       try {
         await provider.removeAudiobook(audiobook.id, ref);
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Removed "$title" from library'),
-              behavior: SnackBarBehavior.floating,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-              ),
-              action: SnackBarAction(
-                label: 'Dismiss',
-                onPressed: () {
-                  // Do nothing, just dismiss
-                },
-              ),
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Removed "$title" from library'),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
             ),
-          );
+            action: SnackBarAction(
+              label: 'Dismiss',
+              onPressed: () {
+                // Do nothing, just dismiss
+              },
+            ),
+          ),
+        );
         }
       } catch (e) {
         if (context.mounted) {
@@ -574,44 +584,44 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
         children: [
           // Main app content
           NestedScrollView(
-            headerSliverBuilder: (context, innerBoxIsScrolled) {
-              return [
-                SliverAppBar(
-                  floating: true, 
-                  snap: true,
-                  pinned: true, // Keep the app bar visible and pinned at the top
-                  backgroundColor: colorScheme.surfaceContainerLow.withOpacity(0.95),
-                  expandedHeight: 80,
-                  systemOverlayStyle: SystemUiOverlayStyle(
-                    statusBarColor: Colors.transparent,
-                    statusBarIconBrightness: colorScheme.brightness == Brightness.dark
-                        ? Brightness.light
-                        : Brightness.dark,
+        headerSliverBuilder: (context, innerBoxIsScrolled) {
+          return [
+            SliverAppBar(
+              floating: true, 
+              snap: true,
+              pinned: true, // Keep the app bar visible and pinned at the top
+              backgroundColor: colorScheme.surfaceContainerLow.withOpacity(0.95),
+              expandedHeight: 80,
+              systemOverlayStyle: SystemUiOverlayStyle(
+                statusBarColor: Colors.transparent,
+                statusBarIconBrightness: colorScheme.brightness == Brightness.dark
+                    ? Brightness.light
+                    : Brightness.dark,
+              ),
+              title: Row(
+                children: [
+                  SizedBox(
+                    width: 38,
+                    height: 38,
+                    child: const AppLogo(size: 38, showTitle: false),
                   ),
-                  title: Row(
-                    children: [
-                      SizedBox(
-                        width: 38,
-                        height: 38,
-                        child: const AppLogo(size: 38, showTitle: false),
-                      ),
-                      const SizedBox(width: 12),
-                      Flexible(
-                        child: FittedBox(
-                          fit: BoxFit.scaleDown,
-                          child: Text(
-                            "Widdle Reader",
-                            style: TextStyle(
-                              fontSize: 20,
-                              fontWeight: FontWeight.bold,
-                              color: seedColor,
-                            ),
-                          ),
+                  const SizedBox(width: 12),
+                  Flexible(
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        "Widdle Reader",
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          color: seedColor,
                         ),
                       ),
-                    ],
+                    ),
                   ),
-                  actions: [
+                ],
+              ),
+              actions: [
                     // Search button
                     Consumer(
                       builder: (context, widgetRef, child) {
@@ -629,39 +639,39 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
                       },
                     ),
                     
-                    // Sleep Timer button
-                    IconButton(
-                      icon: CountdownTimerWidget(
-                        size: 24.0,
-                        showIcon: true,
-                        onTap: null,
-                      ),
-                      tooltip: 'Sleep Timer',
-                      onPressed: _showSleepTimerDialog,
-                    ),
-                    
-                    // Settings button
-                    IconButton(
-                      icon: const Icon(
-                        Icons.settings_outlined,
-                        size: 24,
-                      ),
-                      tooltip: "Settings",
-                      onPressed: () async {
-                        await Navigator.pushNamed(context, '/settings');
-                        // Refresh when returning from settings
-                        _refreshLibrary();
-                      },
-                    ),
-                    const SizedBox(width: 8),
-                  ],
+                // Sleep Timer button
+                IconButton(
+                  icon: CountdownTimerWidget(
+                    size: 24.0,
+                    showIcon: true,
+                    onTap: null,
+                  ),
+                  tooltip: 'Sleep Timer',
+                  onPressed: _showSleepTimerDialog,
                 ),
-              ];
-            },
-            body: Container(
-              decoration: AppTheme.gradientBackground(context),
-              child: Column(
-                children: [
+                
+                // Settings button
+                IconButton(
+                  icon: const Icon(
+                    Icons.settings_outlined,
+                    size: 24,
+                  ),
+                  tooltip: "Settings",
+                  onPressed: () async {
+                    await Navigator.pushNamed(context, '/settings');
+                    // Refresh when returning from settings
+                    _refreshLibrary();
+                  },
+                ),
+                const SizedBox(width: 8),
+              ],
+            ),
+          ];
+        },
+        body: Container(
+          decoration: AppTheme.gradientBackground(context),
+          child: Column(
+            children: [
                   // Search bar (only show when search is active)
                   Consumer(
                     builder: (context, widgetRef, child) {
@@ -687,27 +697,27 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
                       );
                     },
                   ),
-                  
-                  // Main content area
-                  Expanded(
-                    child: Stack(
-                      children: [
-                        // Main content with conditional view based on selected mode
-                        FadeTransition(
-                          opacity: _fadeAnimation,
-                          child: Consumer(
-                            builder: (context, widgetRef, child) {
-                              final libraryMode = ref.watch(libraryModeProvider);
+              
+              // Main content area
+              Expanded(
+                child: Stack(
+                  children: [
+                    // Main content with conditional view based on selected mode
+                    FadeTransition(
+                      opacity: _fadeAnimation,
+                      child: Consumer(
+                        builder: (context, widgetRef, child) {
+                          final libraryMode = ref.watch(libraryModeProvider);
                               final searchState = ref.watch(searchProvider);
                               
                               // If search is active, show search results
                               if (searchState.isActive) {
                                 return _buildSearchResults(context, provider, searchState, colorScheme);
                               }
-                              
-                              if (libraryMode == LibraryMode.tags) {
-                                return const TagsView();
-                              } else {
+                          
+                          if (libraryMode == LibraryMode.tags) {
+                            return const TagsView();
+                          } else {
                                 // Library mode - show audiobooks with sorting
                                 return Consumer(
                                   builder: (context, widgetRef, child) {
@@ -716,30 +726,30 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
                                     // Apply sorting (optimized to skip if sort option hasn't changed)
                                     provider.sortAudiobooks(sortOption);
                                     
-                                    return provider.audiobooks.isEmpty && !provider.isLoading
-                                        ? _buildEmptyLibraryView(context, provider, colorScheme)
-                                        : isLandscape
-                                            ? _buildGridView(context, provider)
-                                            : _buildListView(context, provider);
+                            return provider.audiobooks.isEmpty && !provider.isLoading
+                                ? _buildEmptyLibraryView(context, provider, colorScheme)
+                                : isLandscape
+                                    ? _buildGridView(context, provider)
+                                    : _buildListView(context, provider);
                                   },
                                 );
-                              }
-                            },
-                          ),
-                        ),
-                        
-                        // Error/Info Message
-                        if (provider.errorMessage != null && !provider.isLoading)
-                          _buildErrorMessage(context, provider),
-                          
+                          }
+                        },
+                      ),
+                    ),
+                    
+                    // Error/Info Message
+                    if (provider.errorMessage != null && !provider.isLoading)
+                      _buildErrorMessage(context, provider),
+                      
                         // No loading overlays - seamless experience
                       ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
           
           // Detailed loading overlay (fullscreen)
           Consumer(
@@ -753,9 +763,9 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
               }
               return const SizedBox.shrink();
             },
-          ),
-        ],
-      ),
+                      ),
+                  ],
+                ),
       
       // Floating action button (only show in Library mode)
       floatingActionButton: Consumer(

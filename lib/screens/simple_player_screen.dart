@@ -64,7 +64,7 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
           try {
             final targetIndex = index.clamp(0, (_audiobook?.chapters.length ?? 1) - 1);
             debugPrint("Scrolling to chapter index: $targetIndex");
-            _itemScrollController.scrollTo(
+          _itemScrollController.scrollTo(
               index: targetIndex,
               duration: const Duration(milliseconds: 300),
               curve: Curves.easeInOut,
@@ -133,7 +133,7 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
         if (startChapterIndex == -1) {
           debugPrint("Warning: Start chapter not found, using first chapter");
           startChapterIndex = 0;
-        }
+      }
       }
 
       debugPrint("Loading audiobook: ${_audiobook!.title} with ${_audiobook!.chapters.length} chapters");
@@ -141,12 +141,12 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
 
       // Load the audiobook with better error context
       try {
-        await _audioService.loadAudiobook(
-          _audiobook!,
-          startChapter: startChapterIndex,
-          startPosition: startPosition,
-          autoPlay: false,
-        );
+      await _audioService.loadAudiobook(
+        _audiobook!,
+        startChapter: startChapterIndex,
+        startPosition: startPosition,
+        autoPlay: false,
+      );
       } catch (audioError) {
         // Handle specific audio loading errors
         String errorMessage = "Failed to load audiobook";
@@ -168,7 +168,7 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
 
       // Enable notifications
       try {
-        await _audioService.enableNotifications();
+      await _audioService.enableNotifications();
       } catch (notificationError) {
         debugPrint("Warning: Could not enable notifications: $notificationError");
         // Don't fail the entire load for notification issues
@@ -701,63 +701,63 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
               maxWidth: 400,
               maxHeight: 600, // Prevent overflow on small screens
             ),
-            child: Card(
-              elevation: 8,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(24),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.all(24.0),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: colorScheme.errorContainer.withAlpha(
-                          (0.2 * 255).round(),
-                        ),
-                        borderRadius: BorderRadius.circular(50),
+          child: Card(
+            elevation: 8,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(24),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(24.0),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: colorScheme.errorContainer.withAlpha(
+                        (0.2 * 255).round(),
                       ),
-                      child: Icon(
-                        Icons.error_outline_rounded,
-                        size: 48,
-                        color: colorScheme.error,
-                      ),
+                      borderRadius: BorderRadius.circular(50),
                     ),
-                    const SizedBox(height: 20),
+                    child: Icon(
+                      Icons.error_outline_rounded,
+                      size: 48,
+                      color: colorScheme.error,
+                    ),
+                  ),
+                  const SizedBox(height: 20),
                     Flexible(
                       child: Text(
-                        _errorMessage ?? "An error occurred",
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontSize: 16,
-                          color: colorScheme.onSurface,
+                    _errorMessage ?? "An error occurred",
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 16,
+                      color: colorScheme.onSurface,
                         ),
                         maxLines: 6, // Limit lines to prevent overflow
                         overflow: TextOverflow.ellipsis,
-                      ),
                     ),
-                    const SizedBox(height: 24),
+                  ),
+                  const SizedBox(height: 24),
                     Wrap(
                       alignment: WrapAlignment.center,
                       spacing: 12,
                       runSpacing: 8,
                       children: [
-                        ElevatedButton.icon(
-                          icon: const Icon(Icons.refresh_rounded),
-                          label: const Text("Try Again"),
-                          style: ElevatedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(
+                  ElevatedButton.icon(
+                    icon: const Icon(Icons.refresh_rounded),
+                    label: const Text("Try Again"),
+                    style: ElevatedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(
                               horizontal: 20,
-                              vertical: 12,
-                            ),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(16),
-                            ),
-                          ),
-                          onPressed: _canRetry ? _retryInitialization : null,
-                        ),
+                        vertical: 12,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                    ),
+                    onPressed: _canRetry ? _retryInitialization : null,
+                  ),
                         OutlinedButton.icon(
                           icon: const Icon(Icons.info_outline),
                           label: const Text("Details"),
@@ -775,13 +775,13 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
                       ],
                     ),
                     const SizedBox(height: 16),
-                    TextButton(
-                      child: const Text("Go Back"),
-                      onPressed: () {
-                        Navigator.of(context).pop(true); // Return with result
-                      },
-                    ),
-                  ],
+                  TextButton(
+                    child: const Text("Go Back"),
+                    onPressed: () {
+                      Navigator.of(context).pop(true); // Return with result
+                    },
+                  ),
+                ],
                 ),
               ),
             ),

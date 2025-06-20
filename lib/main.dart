@@ -1,5 +1,6 @@
 // lib/main.dart
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart'; // For kDebugMode
 import 'package:provider/provider.dart' as provider;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
@@ -20,16 +21,25 @@ import 'theme.dart';
 import 'providers/sleep_timer_provider.dart';
 import 'providers/tag_provider.dart';
 
+// CRITICAL FIX: Add release-safe logging for main
+void _logDebug(String message) {
+  if (kDebugMode) {
+    debugPrint(message);
+  } else {
+    print("[Main] $message");
+  }
+}
+
 // Global flag for audio service initialization
 bool _audioServiceInitialized = false;
 bool _isInitializing = false;
 
 Future<void> main() async {
-  debugPrint("===== main() started =====");
+  _logDebug("===== main() started =====");
 
   // Ensure Flutter bindings are initialized
   WidgetsFlutterBinding.ensureInitialized();
-  debugPrint("WidgetsFlutterBinding initialized.");
+  _logDebug("WidgetsFlutterBinding initialized.");
 
   // Enable all orientations
   await SystemChrome.setPreferredOrientations([
@@ -59,12 +69,12 @@ Future<void> main() async {
 // Initialize data integrity system
 Future<void> _initializeDataIntegrity() async {
   try {
-    debugPrint("Initializing data integrity system...");
+    _logDebug("Initializing data integrity system...");
     final storageService = StorageService();
     
     // Check data health and attempt recovery if needed
     final healthCheck = await storageService.checkDataHealth();
-    debugPrint("Data health check results: $healthCheck");
+    _logDebug("Data health check results: $healthCheck");
     
     // Create a data backup on app start
     await storageService.createDataBackup();
@@ -72,9 +82,9 @@ Future<void> _initializeDataIntegrity() async {
     // Force persist any cached data from previous sessions
     await storageService.forcePersistCaches();
     
-    debugPrint("Data integrity system initialized successfully");
+    _logDebug("Data integrity system initialized successfully");
   } catch (e) {
-    debugPrint("Error initializing data integrity system: $e");
+    _logDebug("Error initializing data integrity system: $e");
   }
 }
 
@@ -103,7 +113,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    debugPrint("App lifecycle state changed to: $state");
+    _logDebug("App lifecycle state changed to: $state");
     if (state == AppLifecycleState.paused) {
       // App is in background, persist cached data
       _storageService.forcePersistCaches();
