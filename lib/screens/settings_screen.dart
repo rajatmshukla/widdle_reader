@@ -651,7 +651,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> with SingleTick
 
             // Version
             Text(
-              'Version 1.0.5a',
+              'Version 1.0.5-alpha',
               style: textTheme.bodyMedium?.copyWith(
                 color: colorScheme.onSurfaceVariant,
               ),

@@ -1,7 +1,7 @@
-# Widdle Reader v1.0.5a Release Notes
+# Widdle Reader v1.0.5-alpha Release Notes
 
 **Release Date**: January 2025  
-**Version**: 1.0.5a+7  
+**Version**: 1.0.5-alpha+7  
 **Build Type**: Alpha Release
 
 ## 🐛 Bug Fixes
