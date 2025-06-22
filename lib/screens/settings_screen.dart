@@ -651,7 +651,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> with SingleTick
 
             // Version
             Text(
-              'Version 1.0.5',
+              'Version 1.0.5a',
               style: textTheme.bodyMedium?.copyWith(
                 color: colorScheme.onSurfaceVariant,
               ),
@@ -1187,8 +1187,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> with SingleTick
       
       // Pick a backup file
       final result = await FilePicker.platform.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: ['json'],
+        type: FileType.any,
         allowMultiple: false,
       );
       

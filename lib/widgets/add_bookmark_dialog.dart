@@ -26,6 +26,7 @@ class _AddBookmarkDialogState extends State<AddBookmarkDialog> {
   final _nameController = TextEditingController();
   final StorageService _storageService = StorageService();
   bool _isLoading = false;
+  late String _defaultBookmarkName;
 
   @override
   void initState() {
@@ -40,8 +41,18 @@ class _AddBookmarkDialogState extends State<AddBookmarkDialog> {
       ),
     );
     
-    // Leave the text field empty to prompt user input
-    // The timestamp info will be displayed separately
+    // Create comprehensive default bookmark name: Book name + Chapter + Position
+    final timeString = formatDetailedDuration(widget.currentPosition);
+    
+    // Include chapter info if there are multiple chapters
+    if (widget.audiobook.chapters.length > 1) {
+      _defaultBookmarkName = '${widget.audiobook.title} - ${chapter.title} - $timeString';
+    } else {
+      // For single chapter audiobooks, just use book name + position
+      _defaultBookmarkName = '${widget.audiobook.title} - $timeString';
+    }
+    
+    // Leave the text field empty so the default name shows as placeholder
     _nameController.text = '';
   }
 
@@ -52,23 +63,26 @@ class _AddBookmarkDialogState extends State<AddBookmarkDialog> {
   }
 
   Future<void> _saveBookmark() async {
-    if (_formKey.currentState!.validate()) {
-      setState(() {
-        _isLoading = true;
-      });
+    setState(() {
+      _isLoading = true;
+    });
 
-      final bookmark = Bookmark.create(
-        audiobookId: widget.audiobook.id,
-        chapterId: widget.currentChapterId,
-        position: widget.currentPosition,
-        name: _nameController.text.trim(),
-      );
+    // Use custom name if provided, otherwise use default name
+    final bookmarkName = _nameController.text.trim().isEmpty 
+        ? _defaultBookmarkName 
+        : _nameController.text.trim();
 
-      await _storageService.saveBookmark(bookmark);
-      
-      if (mounted) {
-        Navigator.pop(context, true);
-      }
+    final bookmark = Bookmark.create(
+      audiobookId: widget.audiobook.id,
+      chapterId: widget.currentChapterId,
+      position: widget.currentPosition,
+      name: bookmarkName,
+    );
+
+    await _storageService.saveBookmark(bookmark);
+    
+    if (mounted) {
+      Navigator.pop(context, true);
     }
   }
 
@@ -112,18 +126,13 @@ class _AddBookmarkDialogState extends State<AddBookmarkDialog> {
             TextFormField(
               controller: _nameController,
               decoration: InputDecoration(
-                labelText: 'Bookmark Note',
-                hintText: 'Add a note to help you remember this spot',
+                labelText: 'Bookmark Name',
+                hintText: _defaultBookmarkName,
                 border: OutlineInputBorder(),
+                helperText: 'Leave empty to use: Book - Chapter - Position',
               ),
               autofocus: true,
               textInputAction: TextInputAction.done,
-              validator: (value) {
-                if (value == null || value.trim().isEmpty) {
-                  return 'Please add a note for this bookmark';
-                }
-                return null;
-              },
               onFieldSubmitted: (_) => _saveBookmark(),
             ),
           ],
