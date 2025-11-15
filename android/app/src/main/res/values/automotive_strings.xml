@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Voice command query patterns for Widdle Reader -->
+    
+    <!-- Play audiobook queries -->
+    <string-array name="play_audiobook_queries">
+        <item>play %1$s</item>
+        <item>start %1$s</item>
+        <item>listen to %1$s</item>
+        <item>play the audiobook %1$s</item>
+        <item>play audiobook %1$s</item>
+        <item>start listening to %1$s</item>
+    </string-array>
+    
+    <!-- Resume playback queries -->
+    <string-array name="resume_queries">
+        <item>resume</item>
+        <item>continue</item>
+        <item>resume playback</item>
+        <item>continue listening</item>
+        <item>keep playing</item>
+        <item>resume audiobook</item>
+    </string-array>
+    
+    <!-- Next chapter queries -->
+    <string-array name="next_chapter_queries">
+        <item>next chapter</item>
+        <item>skip chapter</item>
+        <item>go to next chapter</item>
+        <item>skip to next chapter</item>
+        <item>next</item>
+    </string-array>
+    
+    <!-- Previous chapter queries -->
+    <string-array name="previous_chapter_queries">
+        <item>previous chapter</item>
+        <item>go back</item>
+        <item>last chapter</item>
+        <item>go to previous chapter</item>
+        <item>back</item>
+    </string-array>
+    
+    <!-- Browse categories (Material 3-inspired labels) -->
+    <string name="browse_recent">Recently Played</string>
+    <string name="browse_recent_desc">Your recently listened audiobooks</string>
+    <string name="browse_favorites">Favorites</string>
+    <string name="browse_favorites_desc">Your favorite audiobooks</string>
+    <string name="browse_continue">Continue Listening</string>
+    <string name="browse_continue_desc">Pick up where you left off</string>
+    <string name="browse_authors">Browse by Author</string>
+    <string name="browse_authors_desc">Explore audiobooks by author</string>
+    <string name="browse_tags">Browse by Tags</string>
+    <string name="browse_tags_desc">Find audiobooks by category</string>
+    <string name="browse_all">All Audiobooks</string>
+    <string name="browse_all_desc">Your complete audiobook library</string>
+    
+    <!-- Playback notifications -->
+    <string name="notification_channel_name">Audiobook Playback</string>
+    <string name="notification_channel_desc">Controls for audiobook playback</string>
+</resources>
+
+
