@@ -4,7 +4,11 @@ import 'dart:typed_data'; // For Uint8List
 import 'package:flutter/foundation.dart'; // For debugPrint
 import 'package:path/path.dart' as p;
 import 'package:just_audio/just_audio.dart';
-// Ensure flutter_media_metadata is correctly imported if used
+
+// NEW: FFmpegMetadataService for enhanced metadata extraction
+import 'ffmpeg_metadata_service.dart';
+
+// DEPRECATED: Will be removed after migration is complete
 import 'package:flutter_media_metadata/flutter_media_metadata.dart';
 
 import '../models/audiobook.dart';
@@ -178,71 +182,47 @@ class MetadataService {
           String chapterTitle = p.basenameWithoutExtension(fileName); // Default title
               Duration? chapterDuration; // Make it explicitly nullable
 
-              // --- Metadata Extraction ---
+              // --- Metadata Extraction with FFmpegKit ---
               try {
-                debugPrint("Attempting metadata extraction for: $fileName");
-            final metadata = await MetadataRetriever.fromFile(audioFile);
-            
-                // Use metadata title if available, otherwise keep filename
-            chapterTitle = metadata.trackName?.isNotEmpty == true
-                        ? metadata.trackName!
-                        : chapterTitle;
+                debugPrint("Attempting FFmpeg metadata extraction for: $fileName");
+                // REMOVED: Using class-level _ffmpegService instance
+                final ffmpegMetadata = await _ffmpegService.extractMetadata(filePath);
                 
-            // Extract author from first audio file if not set yet
-            if (author == null && metadata.albumArtistName?.isNotEmpty == true) {
-              author = metadata.albumArtistName;
-            } else if (author == null && metadata.trackArtistNames?.isNotEmpty == true) {
-              // Use the first artist name from the list
-              author = metadata.trackArtistNames!.first;
-            }
-            
-                // Metadata duration might be null or 0
-            chapterDuration = (metadata.trackDuration != null &&
-                            metadata.trackDuration! > 0)
-                        ? Duration(milliseconds: metadata.trackDuration!)
-                        : null; // Keep it null if metadata duration is invalid
+                if (ffmpegMetadata != null) {
+                  // Use metadata title if available, otherwise keep filename
+                  chapterTitle = ffmpegMetadata.title?.isNotEmpty == true
+                      ? ffmpegMetadata.title!
+                      : chapterTitle;
+                  
+                  // Extract author from first audio file if not set yet
+                  // FFmpeg's 'author' property prefers albumArtist over artist
+                  if (author == null && ffmpegMetadata.author?.isNotEmpty == true) {
+                    author = ffmpegMetadata.author;
+                  }
+                  
+                  // FFmpeg always provides accurate duration (no fallback needed!)
+                  chapterDuration = ffmpegMetadata.duration;
 
-            // Priority 1: Try to get cover art from embedded metadata
-                if (coverArt == null &&
-                    metadata.albumArt != null &&
-                    metadata.albumArt!.isNotEmpty) {
-                  coverArt = metadata.albumArt;
-                  debugPrint("Found embedded cover art in: $fileName");
+                  // Priority 1: Try to get cover art from embedded metadata
+                  if (coverArt == null) {
+                    coverArt = await _ffmpegService.extractCoverArt(filePath);
+                    if (coverArt != null) {
+                      debugPrint("Found embedded cover art in: $fileName (${coverArt.length} bytes)");
+                    }
+                  }
+                  
+                  debugPrint(
+                    "FFmpeg metadata for $fileName: Title='$chapterTitle', Duration=$chapterDuration, Author='$author'",
+                  );
+                } else {
+                  debugPrint("FFmpeg metadata extraction returned null for $fileName");
+                  // chapterDuration remains null, will skip chapter
                 }
-                debugPrint(
-              "Metadata for $fileName: Title='$chapterTitle', Duration=$chapterDuration, Author='$author'",
-                );
               } catch (e) {
                 debugPrint(
-                  "MetadataRetriever failed for $fileName: $e. Will try just_audio for duration.",
+                  "FFmpeg metadata extraction failed for $fileName: $e",
                 );
-                // chapterDuration remains null here
-              }
-
-              // --- Fallback/Primary Duration Check with just_audio ---
-              // If metadata didn't provide a valid duration, use just_audio
-              if (chapterDuration == null || chapterDuration == Duration.zero) {
-                try {
-                  debugPrint("Using just_audio to get duration for: $fileName");
-                  // setFilePath returns the duration
-              final durationOrNull = await audioPlayer.setFilePath(filePath);
-              if (durationOrNull != null && durationOrNull > Duration.zero) {
-                    chapterDuration = durationOrNull;
-                    debugPrint(
-                      "just_audio duration for $fileName: $chapterDuration",
-                    );
-                  } else {
-                    debugPrint(
-                      "just_audio returned zero/null duration for $fileName. Skipping chapter.",
-                    );
-                    // chapterDuration remains null or zero, chapter will be skipped below
-                  }
-                } catch (audioError) {
-                  debugPrint(
-                    "Could not get duration for $fileName using just_audio: $audioError",
-                  );
-                  // chapterDuration remains null, chapter will be skipped below
-                }
+                // chapterDuration remains null, will skip chapter
               }
 
               // --- Add Chapter ---
@@ -843,3 +823,4 @@ class MetadataService {
     }
   }
 }
+
