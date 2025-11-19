@@ -1,10 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
-<<<<<<< HEAD
 import 'package:flutter/cupertino.dart' as cupertino;
-=======
->>>>>>> 16e7a08f5ff6bb2ddf29ab6d8db9190501053324
 import 'package:provider/provider.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart'; // Import the package
 import '../providers/audiobook_provider.dart';
