@@ -63,6 +63,21 @@ String formatProgressPercentage(double percentage) {
   return '${(percentage * 100).round()}%';
 }
 
+// Standard format HH:MM:SS or MM:SS
+String formatDurationStandard(Duration d) {
+  if (d.inMilliseconds < 0) return '00:00';
+  
+  final int hours = d.inHours;
+  final int minutes = (d.inMinutes % 60);
+  final int seconds = (d.inSeconds % 60);
+  
+  if (hours > 0) {
+    return '${hours.toString().padLeft(2, '0')}:${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
+  } else {
+    return '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
+  }
+}
+
 // Enhanced cover widget with user's seed color and theme awareness
 // Removed progress indicators from the cover as requested
 Widget buildCoverWidget(

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart' as cupertino;
 import 'package:provider/provider.dart';
@@ -1252,25 +1253,84 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
                     child: Container(
                       padding: EdgeInsets.symmetric(
                         horizontal: 12,
-                        vertical: compactLayout ? 4 : 6,
+                        vertical: compactLayout ? 4 : 8,
                       ),
                       decoration: BoxDecoration(
                         color: colorScheme.surfaceContainerHighest.withOpacity(
-                          0.7,
+                          0.5,
                         ),
-                        borderRadius: BorderRadius.circular(20),
+                        borderRadius: BorderRadius.circular(12),
                       ),
-                      child: Text(
-                        formatProgressFraction(
-                          cumulativePosition,
-                          totalDuration,
-                        ),
-                        style: TextStyle(
-                          fontSize: compactLayout ? 10 : 12,
-                          fontWeight: FontWeight.w500,
-                          color: colorScheme.primary,
-                        ),
-                        textAlign: TextAlign.center,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          // Time Listened
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                "Listened",
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  color: colorScheme.onSurfaceVariant,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                              Text(
+                                formatDurationStandard(cumulativePosition),
+                                style: TextStyle(
+                                  fontSize: compactLayout ? 12 : 14,
+                                  fontWeight: FontWeight.bold,
+                                  color: colorScheme.primary,
+                                  fontFeatures: const [FontFeature.tabularFigures()],
+                                ),
+                              ),
+                            ],
+                          ),
+                          
+                          // Percentage
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: colorScheme.primary.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              formatProgressPercentage(
+                                cumulativePosition.inMilliseconds / totalDuration.inMilliseconds,
+                              ),
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                                color: colorScheme.primary,
+                              ),
+                            ),
+                          ),
+
+                          // Time Remaining
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              Text(
+                                "Remaining",
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  color: colorScheme.onSurfaceVariant,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                              Text(
+                                "-${formatDurationStandard(totalDuration - cumulativePosition)}",
+                                style: TextStyle(
+                                  fontSize: compactLayout ? 12 : 14,
+                                  fontWeight: FontWeight.bold,
+                                  color: colorScheme.primary,
+                                  fontFeatures: const [FontFeature.tabularFigures()],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
                       ),
                     ),
                   ),
