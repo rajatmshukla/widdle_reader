@@ -769,4 +769,11 @@ class SimpleAudioService {
       _updateMediaSessionMetadata();
     }
   }
+
+  // Public method to force sync state to native (e.g. for Android Auto connection)
+  Future<void> forceSyncStateToNative() async {
+    debugPrint("Forcing full state sync to native...");
+    await _updateMediaSessionMetadata();
+    await _updateMediaSessionPlaybackState();
+  }
 }

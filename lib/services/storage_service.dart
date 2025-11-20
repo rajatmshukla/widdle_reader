@@ -662,7 +662,7 @@ class StorageService {
   /// Check if file is an audio file
   bool _isAudioFile(String filePath) {
     final extension = path.extension(filePath).toLowerCase();
-    return ['.mp3', '.m4a', '.m4b', '.wav', '.ogg', '.aac', '.flac'].contains(extension);
+    return ['.mp3', '.m4a', '.m4b', '.wav', '.ogg', '.aac', '.flac', '.opus'].contains(extension);
   }
 
   /// Register a new audiobook with robust tracking

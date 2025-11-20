@@ -23,7 +23,7 @@ void _logDebug(String message) {
 class MetadataService {
   final List<String> _supportedFormats = const [
     // Make const
-    '.mp3', '.m4a', '.m4b', '.wav', '.ogg', '.aac', '.flac', // Added flac
+    '.mp3', '.m4a', '.m4b', '.wav', '.ogg', '.aac', '.flac', '.opus', // Added opus
   ];
 
   final List<String> _coverArtFormats = const [

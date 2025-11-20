@@ -113,6 +113,11 @@ class AndroidAutoManager {
       // Sync tags
       await _syncTags();
       
+      // Force MediaSession sync via MethodChannel
+      if (_audioService != null) {
+        await _audioService!.forceSyncStateToNative();
+      }
+      
       _logDebug('Data synced to native successfully');
     } catch (e) {
       _logDebug('Error syncing data: $e');
