@@ -587,9 +587,6 @@ class SimpleAudioService {
         await _player.play();
         debugPrint('Playback started successfully');
         _notifyPlaybackChanged(nativeUpdate: true);
-        if (propagateToNative) {
-          _invokeMediaSessionCommand('play');
-        }
       } catch (error) {
         debugPrint('Error starting playback: $error');
       }
@@ -608,9 +605,6 @@ class SimpleAudioService {
     debugPrint('Playback paused');
     _userPaused = true;
     _notifyPlaybackChanged(nativeUpdate: true);
-    if (propagateToNative) {
-      _invokeMediaSessionCommand('pause');
-    }
   }
 
   Future<void> stop() async {
@@ -627,11 +621,6 @@ class SimpleAudioService {
     await _player.seek(position);
     debugPrint('Seek to ${position.inMilliseconds} ms');
     _notifyPlaybackChanged(nativeUpdate: true);
-    if (propagateToNative) {
-      _invokeMediaSessionCommand('seekTo', {
-        'position': position.inMilliseconds,
-      });
-    }
   }
 
   // Chapter navigation
@@ -649,9 +638,6 @@ class SimpleAudioService {
 
     await loadChapter(nextIndex);
     _notifyPlaybackChanged(nativeUpdate: true);
-    if (propagateToNative) {
-      _invokeMediaSessionCommand('skipToNext');
-    }
   }
 
   Future<void> skipToPrevious({bool propagateToNative = true}) async {
@@ -708,11 +694,6 @@ class SimpleAudioService {
       propagateToNative: propagateToNative,
     );
     await _updateMediaSessionPlaybackState();
-    if (propagateToNative) {
-      _invokeMediaSessionCommand('seekTo', {
-        'position': _player.position.inMilliseconds,
-      });
-    }
   }
 
   Future<void> rewind({bool propagateToNative = true}) async {
@@ -722,11 +703,6 @@ class SimpleAudioService {
       propagateToNative: propagateToNative,
     );
     await _updateMediaSessionPlaybackState();
-    if (propagateToNative) {
-      _invokeMediaSessionCommand('seekTo', {
-        'position': _player.position.inMilliseconds,
-      });
-    }
   }
 
   // Save the current position for later resuming
