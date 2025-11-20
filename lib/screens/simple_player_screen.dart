@@ -35,6 +35,7 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
   String? _errorMessage;
   bool _isSpeedControlExpanded = false;
   bool _canRetry = true;
+  bool _isCarMode = false; // Add Car Mode state
 
   // Add ItemScrollController and ItemPositionsListener
   final ItemScrollController _itemScrollController = ItemScrollController();
@@ -645,6 +646,29 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
             onPressed: _showSleepTimerDialog,
           ),
           
+          // Car Mode button
+          IconButton(
+            icon: Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: _isCarMode 
+                    ? colorScheme.primary 
+                    : colorScheme.surfaceContainerHighest.withAlpha((0.7 * 255).round()),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(
+                Icons.directions_car_filled_rounded,
+                color: _isCarMode ? colorScheme.onPrimary : colorScheme.onSurfaceVariant,
+              ),
+            ),
+            tooltip: 'Car Mode',
+            onPressed: () {
+              setState(() {
+                _isCarMode = !_isCarMode;
+              });
+            },
+          ),
+
           // Add padding at the end
           const SizedBox(width: 8),
         ],
@@ -653,7 +677,9 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
           ? _buildLoadingWidget(colorScheme)
           : (_errorMessage != null
               ? _buildErrorWidget(colorScheme)
-              : _buildPlayerContent(colorScheme, screenSize, isLandscape)),
+              : (_isCarMode 
+                  ? _buildCarModeLayout(colorScheme, screenSize) 
+                  : _buildPlayerContent(colorScheme, screenSize, isLandscape))),
     );
   }
 
@@ -900,6 +926,7 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
                   // Chapter list container - with fixed height
                   Container(
                     height: screenSize.height * 0.35, // Fixed height - 35% of screen height
+                    clipBehavior: Clip.hardEdge, // Fix: Clip content to container
                     decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(16),
                       color: colorScheme.surfaceContainerLowest.withOpacity(0.3),
@@ -1038,6 +1065,7 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
                   // Chapter list container styled like portrait mode
                   Expanded(
                     child: Container(
+                      clipBehavior: Clip.hardEdge,
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(16),
                         color: colorScheme.surfaceContainerLowest.withOpacity(
@@ -1687,6 +1715,260 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
           padding: const EdgeInsets.all(8.0), // Standard padding
           child: Icon(icon, size: size, color: color),
         ),
+      ),
+    );
+  }
+
+  // Car Mode Layout
+  Widget _buildCarModeLayout(ColorScheme colorScheme, Size screenSize) {
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.all(24.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+          children: [
+            // Top Section: Title and Cover
+            Expanded(
+              flex: 3,
+              child: Row(
+                children: [
+                  // Cover Art
+                  Container(
+                    width: screenSize.height * 0.15,
+                    height: screenSize.height * 0.15,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withAlpha((0.3 * 255).round()),
+                          blurRadius: 8,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(16),
+                      child: buildCoverWidget(
+                        context,
+                        _audiobook!,
+                        size: screenSize.height * 0.15,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 24),
+                  // Title Info
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        StreamBuilder<int>(
+                          stream: _audioService.currentChapterStream,
+                          builder: (context, snapshot) {
+                            final index = snapshot.data ?? _audioService.currentChapterIndex;
+                            final title = (_audiobook != null && index >= 0 && index < _audiobook!.chapters.length)
+                                ? _audiobook!.chapters[index].title
+                                : "Loading...";
+                            return Text(
+                              title,
+                              style: TextStyle(
+                                fontSize: 24,
+                                fontWeight: FontWeight.bold,
+                                color: colorScheme.onSurface,
+                              ),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            );
+                          },
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          _audiobook?.title ?? "Audiobook",
+                          style: TextStyle(
+                            fontSize: 18,
+                            color: colorScheme.onSurface.withOpacity(0.7),
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            // Progress Bar (Simplified)
+            Expanded(
+              flex: 1,
+              child: StreamBuilder<Duration>(
+                stream: _audioService.positionStream,
+                builder: (context, positionSnapshot) {
+                  return StreamBuilder<Duration>(
+                    stream: _audioService.durationStream,
+                    builder: (context, durationSnapshot) {
+                      final position = positionSnapshot.data ?? Duration.zero;
+                      final duration = durationSnapshot.data ?? Duration.zero;
+                      
+                      return Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          LinearProgressIndicator(
+                            value: duration.inMilliseconds > 0
+                                ? (position.inMilliseconds / duration.inMilliseconds).clamp(0.0, 1.0)
+                                : 0.0,
+                            backgroundColor: colorScheme.surfaceContainerHighest,
+                            valueColor: AlwaysStoppedAnimation<Color>(colorScheme.primary),
+                            minHeight: 12,
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          const SizedBox(height: 8),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                formatDetailedDuration(position),
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                  color: colorScheme.primary,
+                                ),
+                              ),
+                              Text(
+                                formatDetailedDuration(duration),
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                  color: colorScheme.onSurfaceVariant,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      );
+                    },
+                  );
+                },
+              ),
+            ),
+
+            // Large Controls
+            Expanded(
+              flex: 4,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  // Rewind
+                  _buildLargeControlButton(
+                    icon: cupertino.CupertinoIcons.gobackward_15,
+                    color: colorScheme.onSurface,
+                    onPressed: () => _audioService.rewind(),
+                    size: 64,
+                  ),
+                  
+                  // Play/Pause
+                  StreamBuilder<bool>(
+                    stream: _audioService.playingStream,
+                    builder: (context, snapshot) {
+                      final isPlaying = snapshot.data ?? _audioService.isPlaying;
+                      return Container(
+                        width: 120,
+                        height: 120,
+                        decoration: BoxDecoration(
+                          color: colorScheme.primary,
+                          shape: BoxShape.circle,
+                          boxShadow: [
+                            BoxShadow(
+                              color: colorScheme.primary.withOpacity(0.4),
+                              blurRadius: 16,
+                              offset: const Offset(0, 8),
+                            ),
+                          ],
+                        ),
+                        child: IconButton(
+                          icon: Icon(
+                            isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                            size: 64,
+                            color: colorScheme.onPrimary,
+                          ),
+                          onPressed: () {
+                            isPlaying ? _audioService.pause() : _audioService.play();
+                            _audioService.saveCurrentPosition();
+                          },
+                        ),
+                      );
+                    },
+                  ),
+
+                  // Fast Forward
+                  _buildLargeControlButton(
+                    icon: cupertino.CupertinoIcons.goforward_15,
+                    color: colorScheme.onSurface,
+                    onPressed: () => _audioService.fastForward(),
+                    size: 64,
+                  ),
+                ],
+              ),
+            ),
+            
+            // Bottom Row: Previous/Next Chapter
+            Expanded(
+              flex: 2,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  ElevatedButton.icon(
+                    onPressed: () {
+                      _audioService.skipToPrevious();
+                      _audioService.saveCurrentPosition();
+                    },
+                    icon: const Icon(Icons.skip_previous_rounded, size: 32),
+                    label: const Text("Prev Chapter", style: TextStyle(fontSize: 18)),
+                    style: ElevatedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                      backgroundColor: colorScheme.surfaceContainerHighest,
+                      foregroundColor: colorScheme.onSurface,
+                    ),
+                  ),
+                  ElevatedButton.icon(
+                    onPressed: () {
+                      _audioService.skipToNext();
+                      _audioService.saveCurrentPosition();
+                    },
+                    icon: const Icon(Icons.skip_next_rounded, size: 32),
+                    label: const Text("Next Chapter", style: TextStyle(fontSize: 18)),
+                    style: ElevatedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                      backgroundColor: colorScheme.surfaceContainerHighest,
+                      foregroundColor: colorScheme.onSurface,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLargeControlButton({
+    required IconData icon,
+    required Color color,
+    required VoidCallback onPressed,
+    required double size,
+  }) {
+    return Container(
+      width: size + 32,
+      height: size + 32,
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest.withOpacity(0.5),
+        shape: BoxShape.circle,
+      ),
+      child: IconButton(
+        icon: Icon(icon, size: size),
+        color: color,
+        onPressed: onPressed,
       ),
     );
   }
