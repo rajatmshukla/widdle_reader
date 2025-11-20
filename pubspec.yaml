@@ -58,6 +58,7 @@ dependencies:
   # For Google Play License Verification
   flutter_secure_storage: ^9.0.0  # For secure storage of license info
   crypto: ^3.0.3  # For cryptographic operations
+  ffmpeg_kit_flutter_new_audio: ^2.0.0
 
 # Add this section at the root level of your pubspec.yaml
 flutter_launcher_icons:

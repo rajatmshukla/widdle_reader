@@ -304,7 +304,7 @@ class SimpleAudioService {
 
     try {
       final chapter = _currentAudiobook!.chapters[index];
-      final audioFilePath = chapter.id;
+      final audioFilePath = chapter.sourcePath;
       
       // CRITICAL FIX: Validate audio file exists and is accessible
       final audioFile = File(audioFilePath);
@@ -358,13 +358,33 @@ class SimpleAudioService {
       // CRITICAL FIX: Better error handling for audio source loading
       try {
         debugPrint("Setting audio source for: ${audioFile.path}");
-      await _player.setAudioSource(
-        AudioSource.uri(
-            Uri.file(audioFile.path),
-          tag: mediaItem,
-        ),
-        initialPosition: startPosition,
-      );
+        
+        AudioSource audioSource;
+        
+        // Check if this is a segment (embedded chapter) or a full file
+        if (chapter.end != null && chapter.end! > Duration.zero && chapter.end! > chapter.start) {
+          debugPrint("Loading chapter segment: ${chapter.start} to ${chapter.end}");
+          audioSource = ClippingAudioSource(
+            child: AudioSource.uri(
+              Uri.file(chapter.sourcePath),
+              tag: mediaItem,
+            ),
+            start: chapter.start,
+            end: chapter.end,
+            tag: mediaItem,
+          );
+        } else {
+          debugPrint("Loading full file chapter");
+          audioSource = AudioSource.uri(
+            Uri.file(chapter.sourcePath),
+            tag: mediaItem,
+          );
+        }
+
+        await _player.setAudioSource(
+          audioSource,
+          initialPosition: startPosition,
+        );
         debugPrint("Audio source set successfully");
       } catch (audioSourceError) {
         // More specific error handling for common audio issues

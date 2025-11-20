@@ -116,6 +116,7 @@ class _BookmarksScreenState extends State<BookmarksScreen> {
             id: bookmark.chapterId,
             title: 'Unknown Chapter',
             audiobookId: widget.audiobook.id,
+            sourcePath: bookmark.chapterId, // Fallback
           ),
         );
         

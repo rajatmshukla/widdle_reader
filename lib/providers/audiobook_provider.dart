@@ -838,7 +838,10 @@ class AudiobookProvider extends ChangeNotifier {
           id: chapter.id.replaceFirst(oldPath, newPath),
           title: chapter.title,
           audiobookId: newPath,
+          sourcePath: chapter.sourcePath.replaceFirst(oldPath, newPath),
           duration: chapter.duration,
+          start: chapter.start,
+          end: chapter.end,
         )).toList(),
         totalDuration: book.totalDuration,
         coverArt: book.coverArt,
@@ -939,7 +942,10 @@ class AudiobookProvider extends ChangeNotifier {
           id: data['id'] as String,
           title: data['title'] as String,
           audiobookId: path,
+          sourcePath: data['sourcePath'] as String? ?? data['id'] as String,
           duration: Duration(milliseconds: data['durationMs'] as int? ?? 0),
+          start: Duration(milliseconds: data['startMs'] as int? ?? 0),
+          end: data['endMs'] != null ? Duration(milliseconds: data['endMs'] as int) : null,
         );
       }).toList().cast<Chapter>();
 
@@ -973,7 +979,10 @@ class AudiobookProvider extends ChangeNotifier {
           id: data['id'] as String,
           title: data['title'] as String,
           audiobookId: path,
+          sourcePath: data['sourcePath'] as String? ?? data['id'] as String,
           duration: Duration(milliseconds: data['durationMs'] as int? ?? 0),
+          start: Duration(milliseconds: data['startMs'] as int? ?? 0),
+          end: data['endMs'] != null ? Duration(milliseconds: data['endMs'] as int) : null,
         );
       }).toList().cast<Chapter>();
 
@@ -1012,7 +1021,10 @@ class AudiobookProvider extends ChangeNotifier {
         'chapters': book.chapters.map((chapter) => {
           'id': chapter.id,
           'title': chapter.title,
+          'sourcePath': chapter.sourcePath,
           'durationMs': chapter.duration?.inMilliseconds ?? 0,
+          'startMs': chapter.start.inMilliseconds,
+          'endMs': chapter.end?.inMilliseconds,
         }).toList(),
       };
 
@@ -1032,7 +1044,10 @@ class AudiobookProvider extends ChangeNotifier {
         'chapters': book.chapters.map((chapter) => {
           'id': chapter.id,
           'title': chapter.title,
+          'sourcePath': chapter.sourcePath,
           'durationMs': chapter.duration?.inMilliseconds ?? 0,
+          'startMs': chapter.start.inMilliseconds,
+          'endMs': chapter.end?.inMilliseconds,
         }).toList(),
       };
 

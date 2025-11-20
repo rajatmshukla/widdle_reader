@@ -4,13 +4,19 @@ class Chapter {
   final String id; // Use file path as unique ID
   final String title;
   final String audiobookId; // Folder path
+  final String sourcePath; // Path to the actual audio file
   Duration? duration; // To be loaded
+  final Duration start;
+  final Duration? end;
 
   Chapter({
     required this.id,
     required this.title,
     required this.audiobookId,
+    required this.sourcePath,
     this.duration,
+    this.start = Duration.zero,
+    this.end,
   });
 
   MediaItem toMediaItem({String? audiobookTitle, String? audiobookAuthor, Uri? artUri}) {
@@ -25,6 +31,9 @@ class Chapter {
       displaySubtitle: audiobookTitle ?? audiobookId,
       extras: {
         'audiobookId': audiobookId,
+        'sourcePath': sourcePath,
+        'startMs': start.inMilliseconds,
+        'endMs': end?.inMilliseconds,
         'audiobookTitle': audiobookTitle,
         'audiobookAuthor': audiobookAuthor,
       },
@@ -39,7 +48,12 @@ class Chapter {
           mediaItem.album ??
           mediaItem.extras?['audiobookId'] ??
           'Unknown Audiobook',
+      sourcePath: mediaItem.extras?['sourcePath'] ?? mediaItem.id,
       duration: mediaItem.duration,
+      start: Duration(milliseconds: mediaItem.extras?['startMs'] ?? 0),
+      end: mediaItem.extras?['endMs'] != null 
+          ? Duration(milliseconds: mediaItem.extras!['endMs']) 
+          : null,
     );
   }
 }

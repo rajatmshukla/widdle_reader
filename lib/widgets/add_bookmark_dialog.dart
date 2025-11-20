@@ -38,6 +38,7 @@ class _AddBookmarkDialogState extends State<AddBookmarkDialog> {
         id: widget.currentChapterId,
         title: 'Unknown Chapter',
         audiobookId: widget.audiobook.id,
+        sourcePath: widget.currentChapterId, // Fallback
       ),
     );
     
@@ -97,6 +98,7 @@ class _AddBookmarkDialogState extends State<AddBookmarkDialog> {
         id: widget.currentChapterId,
         title: 'Unknown Chapter',
         audiobookId: widget.audiobook.id,
+        sourcePath: widget.currentChapterId, // Fallback
       ),
     );
     

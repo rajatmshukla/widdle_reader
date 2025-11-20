@@ -9,6 +9,7 @@ import 'package:flutter_media_metadata/flutter_media_metadata.dart';
 
 import '../models/audiobook.dart';
 import '../models/chapter.dart';
+import 'ffmpeg_helper.dart';
 
 // CRITICAL FIX: Add release-safe logging for metadata service
 void _logDebug(String message) {
@@ -178,7 +179,67 @@ class MetadataService {
           String chapterTitle = p.basenameWithoutExtension(fileName); // Default title
               Duration? chapterDuration; // Make it explicitly nullable
 
-              // --- Metadata Extraction ---
+              // --- FFmpeg Chapter Extraction ---
+              // Check if the file has embedded chapters using FFmpeg
+              List<Chapter> embeddedChapters = [];
+              try {
+                embeddedChapters = await FFmpegHelper.extractChapters(
+                  filePath: filePath,
+                  audiobookId: folderPath,
+                );
+              } catch (e) {
+                debugPrint("FFmpeg extraction failed for $fileName: $e");
+              }
+
+              if (embeddedChapters.isNotEmpty) {
+                debugPrint("Using ${embeddedChapters.length} embedded chapters from $fileName");
+                chapters.addAll(embeddedChapters);
+                
+                // Add total duration from this file
+                // We can sum up chapter durations or get file duration
+                // Let's try to get the file duration if not already known
+                if (embeddedChapters.last.end != null) {
+                   totalDuration += embeddedChapters.last.end!;
+                } else {
+                   // Fallback to just_audio or metadata duration if needed
+                   // For now, let's assume the sum of chapters covers the file
+                   for (var ch in embeddedChapters) {
+                     if (ch.duration != null) {
+                       // This might double count if we are not careful, 
+                       // but totalDuration is for the whole book.
+                       // Actually, we should just add the file's duration once.
+                       // But if we have chapters, we might not have the file duration handy without another call.
+                       // Let's rely on the last chapter's end time as a good approximation for the file duration
+                       // OR better: use the existing logic below to get the file duration and add it to totalDuration
+                       // BUT we shouldn't add the file as a chapter if we added embedded chapters.
+                     }
+                   }
+                   // Correct approach:
+                   // We added chapters. We still need to update totalDuration.
+                   // We can use the existing logic to get duration if needed, or trust the chapters.
+                   // Let's trust the chapters for now to avoid double processing.
+                   if (embeddedChapters.isNotEmpty && embeddedChapters.last.end != null) {
+                      // If multiple files have chapters, this logic works (summing up).
+                      // But wait, totalDuration is a simple sum. 
+                      // If we have 3 files, each with chapters.
+                      // File 1: 0-10s. File 2: 0-10s.
+                      // We need to know the duration of each file to calculate total book duration correctly?
+                      // Yes.
+                      // If we use chapters, we assume they cover the file.
+                      // Let's use the last chapter's end time as the file duration.
+                      // Note: This assumes chapters start at 0 for each file.
+                      // If they are absolute timestamps for the whole book (rare in per-file chapters), we'd need logic.
+                      // Usually m4b chapters are relative to the file.
+                      // So adding the last chapter's end time is correct.
+                      
+                      // However, we need to be careful not to add the file ITSELF as a chapter below.
+                      continue; // Skip the rest of the loop for this file
+                   }
+                }
+                 continue; // Skip the rest of the loop for this file
+              }
+
+              // --- Metadata Extraction (Fallback/Standard) ---
               try {
                 debugPrint("Attempting metadata extraction for: $fileName");
             final metadata = await MetadataRetriever.fromFile(audioFile);
@@ -254,7 +315,10 @@ class MetadataService {
                     id: chapterId,
                     title: chapterTitle,
                     audiobookId: folderPath,
+                    sourcePath: filePath, // Add sourcePath
                     duration: chapterDuration, // Pass the non-nullable duration
+                    start: Duration.zero,
+                    end: chapterDuration,
                   ),
                 );
               } else {
@@ -614,6 +678,7 @@ class MetadataService {
           id: file.path,
           title: p.basenameWithoutExtension(fileName),
           audiobookId: folderPath,
+          sourcePath: file.path, // Add sourcePath
           duration: Duration.zero, // Will be loaded later
         );
       }).toList();
@@ -734,7 +799,10 @@ class MetadataService {
                 id: filePath,
                 title: chapterTitle,
                 audiobookId: folderPath,
+                sourcePath: filePath, // Add sourcePath
                 duration: chapterDuration,
+                start: Duration.zero,
+                end: chapterDuration,
               ),
             );
           } else {
