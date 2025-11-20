@@ -1913,34 +1913,40 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
             
             // Bottom Row: Previous/Next Chapter
             Expanded(
-              flex: 2,
-              child: Row(
+              flex: 3, // Increased flex to accommodate vertical stacking
+              child: Column( // Changed from Row to Column
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [
-                  ElevatedButton.icon(
-                    onPressed: () {
-                      _audioService.skipToPrevious();
-                      _audioService.saveCurrentPosition();
-                    },
-                    icon: const Icon(Icons.skip_previous_rounded, size: 32),
-                    label: const Text("Prev Chapter", style: TextStyle(fontSize: 18)),
-                    style: ElevatedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-                      backgroundColor: colorScheme.surfaceContainerHighest,
-                      foregroundColor: colorScheme.onSurface,
+                  SizedBox(
+                    width: double.infinity, // Full width
+                    child: ElevatedButton.icon(
+                      onPressed: () {
+                        _audioService.skipToPrevious();
+                        _audioService.saveCurrentPosition();
+                      },
+                      icon: const Icon(Icons.skip_previous_rounded, size: 32),
+                      label: const Text("Prev Chapter", style: TextStyle(fontSize: 18)),
+                      style: ElevatedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        backgroundColor: colorScheme.surfaceContainerHighest,
+                        foregroundColor: colorScheme.onSurface,
+                      ),
                     ),
                   ),
-                  ElevatedButton.icon(
-                    onPressed: () {
-                      _audioService.skipToNext();
-                      _audioService.saveCurrentPosition();
-                    },
-                    icon: const Icon(Icons.skip_next_rounded, size: 32),
-                    label: const Text("Next Chapter", style: TextStyle(fontSize: 18)),
-                    style: ElevatedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-                      backgroundColor: colorScheme.surfaceContainerHighest,
-                      foregroundColor: colorScheme.onSurface,
+                  SizedBox(
+                    width: double.infinity, // Full width
+                    child: ElevatedButton.icon(
+                      onPressed: () {
+                        _audioService.skipToNext();
+                        _audioService.saveCurrentPosition();
+                      },
+                      icon: const Icon(Icons.skip_next_rounded, size: 32),
+                      label: const Text("Next Chapter", style: TextStyle(fontSize: 18)),
+                      style: ElevatedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        backgroundColor: colorScheme.surfaceContainerHighest,
+                        foregroundColor: colorScheme.onSurface,
+                      ),
                     ),
                   ),
                 ],

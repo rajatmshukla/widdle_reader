@@ -65,6 +65,8 @@ Future<void> main() async {
     notificationColor: Colors.deepPurple.shade900,
       androidShowNotificationBadge: true,
     preloadArtwork: true,
+    fastForwardInterval: const Duration(seconds: 15),
+    rewindInterval: const Duration(seconds: 15),
   );
 
   runApp(const ProviderScope(child: MyApp()));
