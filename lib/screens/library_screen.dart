@@ -995,15 +995,6 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
                 color: colorScheme.onSurfaceVariant,
               ),
             ),
-            const SizedBox(height: 32),
-            FilledButton.icon(
-              onPressed: () => _showAddBooksDialog(context, audiobookProvider),
-              icon: const Icon(Icons.add_rounded),
-              label: const Text('Add Books'),
-              style: FilledButton.styleFrom(
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-              ),
-            ),
           ],
         ),
       ),

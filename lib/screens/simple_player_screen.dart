@@ -1088,82 +1088,84 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
   Widget _buildChapterList(ColorScheme colorScheme) {
     final int totalChapters = _audiobook?.chapters.length ?? 0;
 
-    // Use ScrollablePositionedList.builder
-    return ScrollablePositionedList.builder(
-      itemCount: totalChapters,
-      itemScrollController: _itemScrollController, // Assign controller
-      itemPositionsListener: _itemPositionsListener, // Assign listener
-      physics: const BouncingScrollPhysics(),
-      padding: const EdgeInsets.only(top: 8, bottom: 80),
-      itemBuilder: (context, index) {
-        // Get chapter data safely
-        if (_audiobook == null || index >= _audiobook!.chapters.length) {
-          return const SizedBox.shrink(); // Handle edge case
-        }
-        
-        final chapter = _audiobook!.chapters[index];
-        final isLandscape = context.isLandscape;
-        
-        // Use a StreamBuilder just for the 'isPlaying' status to react immediately
-        return StreamBuilder<int>(
-          stream: _audioService.currentChapterStream,
-          initialData: _audioService.currentChapterIndex,
-          builder: (context, snapshot) {
-            final currentPlayingIndex = snapshot.data ?? _audioService.currentChapterIndex;
-            final isPlaying = index == currentPlayingIndex;
+    // Wrap with ClipRect to prevent overflow during scrolling
+    return ClipRect(
+      child: ScrollablePositionedList.builder(
+        itemCount: totalChapters,
+        itemScrollController: _itemScrollController, // Assign controller
+        itemPositionsListener: _itemPositionsListener, // Assign listener
+        physics: const BouncingScrollPhysics(),
+        padding: const EdgeInsets.only(top: 8, bottom: 80),
+        itemBuilder: (context, index) {
+          // Get chapter data safely
+          if (_audiobook == null || index >= _audiobook!.chapters.length) {
+            return const SizedBox.shrink(); // Handle edge case
+          }
+          
+          final chapter = _audiobook!.chapters[index];
+          final isLandscape = context.isLandscape;
+          
+          // Use a StreamBuilder just for the 'isPlaying' status to react immediately
+          return StreamBuilder<int>(
+            stream: _audioService.currentChapterStream,
+            initialData: _audioService.currentChapterIndex,
+            builder: (context, snapshot) {
+              final currentPlayingIndex = snapshot.data ?? _audioService.currentChapterIndex;
+              final isPlaying = index == currentPlayingIndex;
 
-            return ListTile(
-              dense: isLandscape,
-              contentPadding: EdgeInsets.symmetric(
-                horizontal: 16,
-                vertical: isLandscape ? 0 : 2,
-              ),
-              leading: Container(
-                width: 32,
-                height: 32,
-                decoration: BoxDecoration(
-                  color: isPlaying
-                      ? colorScheme.primary
-                      : colorScheme.surfaceContainerHighest.withAlpha(150),
-                  shape: BoxShape.circle,
+              return ListTile(
+                dense: isLandscape,
+                contentPadding: EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: isLandscape ? 0 : 2,
                 ),
-                child: Center(
-                  child: Icon(
-                    isPlaying
-                        ? Icons.play_arrow_rounded
-                        : Icons.my_library_books_rounded,
-                    size: 16,
+                leading: Container(
+                  width: 32,
+                  height: 32,
+                  decoration: BoxDecoration(
                     color: isPlaying
-                        ? colorScheme.onPrimary
-                        : colorScheme.onSurfaceVariant,
+                        ? colorScheme.primary
+                        : colorScheme.surfaceContainerHighest.withAlpha(150),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Center(
+                    child: Icon(
+                      isPlaying
+                          ? Icons.play_arrow_rounded
+                          : Icons.my_library_books_rounded,
+                      size: 16,
+                      color: isPlaying
+                          ? colorScheme.onPrimary
+                          : colorScheme.onSurfaceVariant,
+                    ),
                   ),
                 ),
-              ),
-              title: Text(
-                chapter.title,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontWeight: isPlaying ? FontWeight.bold : FontWeight.normal,
-                  color: isPlaying ? colorScheme.primary : colorScheme.onSurface,
+                title: Text(
+                  chapter.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontWeight: isPlaying ? FontWeight.bold : FontWeight.normal,
+                    color: isPlaying ? colorScheme.primary : colorScheme.onSurface,
+                  ),
                 ),
-              ),
-              trailing: Text(
-                formatDuration(chapter.duration ?? Duration.zero),
-                style: TextStyle(
-                  fontSize: 12,
-                  color: colorScheme.onSurfaceVariant,
+                trailing: Text(
+                  formatDuration(chapter.duration ?? Duration.zero),
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: colorScheme.onSurfaceVariant,
+                  ),
                 ),
-              ),
-              selected: isPlaying,
-              selectedTileColor: colorScheme.primaryContainer.withAlpha(80),
-              onTap: () {
-                _audioService.skipToChapter(index);
-              },
-            );
-          },
-        );
-      },
+                selected: isPlaying,
+                selectedTileColor: colorScheme.primaryContainer.withAlpha(80),
+                onTap: () {
+                  _audioService.skipToChapter(index);
+                },
+              );
+            },
+          );
+        },
+      ),
     );
   }
 
