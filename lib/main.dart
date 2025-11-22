@@ -1,4 +1,4 @@
-// lib/main.dart
+import 'dart:async'; // For runZonedGuarded
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart'; // For kDebugMode
 import 'package:provider/provider.dart' as provider;
@@ -8,68 +8,87 @@ import 'package:just_audio_background/just_audio_background.dart';
 
 import 'providers/audiobook_provider.dart';
 import 'providers/theme_provider.dart';
+import 'providers/sleep_timer_provider.dart';
 import 'screens/splash_screen.dart';
 import 'screens/library_screen.dart';
 import 'screens/simple_player_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/license_check_screen.dart';
-
-
-import 'services/storage_service.dart';
-import 'services/simple_audio_service.dart';
-import 'services/android_auto_manager.dart';
 import 'theme.dart';
-import 'providers/sleep_timer_provider.dart';
-import 'providers/tag_provider.dart';
+import 'services/storage_service.dart';
+import 'services/android_auto_manager.dart';
+import 'services/simple_audio_service.dart';
+
+// Define a global navigator key to access context from anywhere
+final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 // CRITICAL FIX: Add release-safe logging for main
 void _logDebug(String message) {
   if (kDebugMode) {
     debugPrint(message);
   } else {
-    print("[Main] $message");
+    // In release mode, we might want to log critical events to a file or analytics
+    // For now, just suppress to avoid performance impact
+    // print("[Main] $message"); // Uncomment if console logs are needed in release
   }
 }
 
-// Global flag for audio service initialization
-bool _audioServiceInitialized = false;
-bool _isInitializing = false;
+void main() {
+  // Wrap the entire app in a zone to catch unhandled errors
+  runZonedGuarded(() async {
+    _logDebug("===== main() started =====");
 
-Future<void> main() async {
-  _logDebug("===== main() started =====");
+    WidgetsFlutterBinding.ensureInitialized();
+    
+    // Enable all orientations
+    try {
+      await SystemChrome.setPreferredOrientations([
+        DeviceOrientation.portraitUp,
+        DeviceOrientation.portraitDown,
+        DeviceOrientation.landscapeLeft,
+        DeviceOrientation.landscapeRight,
+      ]);
+    } catch (e) {
+      _logDebug("Error setting orientations: $e");
+    }
 
-  // Ensure Flutter bindings are initialized
-  WidgetsFlutterBinding.ensureInitialized();
-  _logDebug("WidgetsFlutterBinding initialized.");
+    // Initialize data integrity system (Safe-guarded internally)
+    await _initializeDataIntegrity();
 
-  // Enable all orientations
-  await SystemChrome.setPreferredOrientations([
-    DeviceOrientation.portraitUp,
-    DeviceOrientation.portraitDown,
-    DeviceOrientation.landscapeLeft,
-    DeviceOrientation.landscapeRight,
-  ]);
+    // Initialize JustAudioBackground with safety check
+    try {
+      await JustAudioBackground.init(
+        androidNotificationChannelId: 'com.ryanheise.bg_demo.channel.audio',
+        androidNotificationChannelName: 'Audio playback',
+        androidNotificationOngoing: true,
+        // Enable standard media controls
+        fastForwardInterval: const Duration(seconds: 15),
+        rewindInterval: const Duration(seconds: 15),
+      );
+      _logDebug("JustAudioBackground initialized successfully");
+    } catch (e) {
+      _logDebug("CRITICAL ERROR: Failed to initialize JustAudioBackground: $e");
+      // We continue anyway - the app should open even if background audio fails
+    }
 
-  // Initialize data integrity system
-  await _initializeDataIntegrity();
-  
-  // Initialize Android Auto support (will only activate on Android)
-  await _initializeAndroidAuto();
-
-  // Initialize audio background service
-    await JustAudioBackground.init(
-    androidNotificationChannelId: 'com.widdlereader.app.channel.audio',
-      androidNotificationChannelName: 'Audiobook Playback',
-      androidNotificationOngoing: true,
-      androidStopForegroundOnPause: true,
-    notificationColor: Colors.deepPurple.shade900,
-      androidShowNotificationBadge: true,
-    preloadArtwork: true,
-    fastForwardInterval: const Duration(seconds: 15),
-    rewindInterval: const Duration(seconds: 15),
-  );
-
-  runApp(const ProviderScope(child: MyApp()));
+    runApp(
+      ProviderScope(
+        child: provider.MultiProvider(
+          providers: [
+            provider.ChangeNotifierProvider(create: (_) => AudiobookProvider()),
+            provider.ChangeNotifierProvider(create: (_) => ThemeProvider()),
+            provider.ChangeNotifierProvider(create: (_) => SleepTimerProvider()),
+          ],
+          child: const MyApp(),
+        ),
+      ),
+    );
+  }, (error, stack) {
+    // Global error handler
+    _logDebug("UNCAUGHT ERROR IN MAIN ZONE: $error");
+    _logDebug("Stack trace: $stack");
+    // In a real production app, report this to Crashlytics/Sentry
+  });
 }
 
 // Initialize data integrity system
@@ -94,23 +113,6 @@ Future<void> _initializeDataIntegrity() async {
   }
 }
 
-// Initialize Android Auto integration
-Future<void> _initializeAndroidAuto() async {
-  try {
-    _logDebug("Initializing Android Auto support...");
-    
-    // Android Auto manager will check platform and only initialize on Android
-    final androidAutoManager = AndroidAutoManager();
-    
-    // Note: Full initialization happens after providers are available
-    // This is just a pre-initialization to set up the service
-    
-    _logDebug("Android Auto support prepared successfully");
-  } catch (e) {
-    _logDebug("Error initializing Android Auto: $e (this is normal on non-Android platforms)");
-  }
-}
-
 class MyApp extends StatefulWidget {
   const MyApp({super.key});
 
@@ -121,7 +123,6 @@ class MyApp extends StatefulWidget {
 class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   final StorageService _storageService = StorageService();
   final SimpleAudioService _audioService = SimpleAudioService();
-  bool _androidAutoInitialized = false;
   
   @override
   void initState() {
@@ -130,44 +131,13 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     
     // Initialize audio service
     _audioService.init();
-    
-    // Initialize Android Auto after build to ensure providers are ready
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
-        _initializeAndroidAutoFully();
-      }
-    });
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    _storageService.dispose();
-    
-    // Dispose Android Auto manager
-    if (_androidAutoInitialized) {
-      AndroidAutoManager().dispose();
-    }
-    
+    // We don't dispose storage service here as it's a singleton used elsewhere
     super.dispose();
-  }
-  
-  /// Full initialization of Android Auto with provider access
-  /// NOTE: This runs BEFORE providers are mounted, so it will fail
-  /// The actual initialization happens in LibraryScreen where providers are available
-  Future<void> _initializeAndroidAutoFully() async {
-    if (_androidAutoInitialized || !mounted) return;
-    
-    try {
-      _logDebug("🔧 Early Android Auto init skipped - waiting for LibraryScreen");
-      _logDebug("📌 Providers are not yet available at this level");
-      
-      // Don't try to initialize here - let LibraryScreen do it
-      // where providers are guaranteed to be available
-      _androidAutoInitialized = true;
-    } catch (e) {
-      _logDebug("❌ Error in early Android Auto check: $e");
-    }
   }
   
   @override
@@ -181,39 +151,32 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       _storageService.checkDataHealth();
     } else if (state == AppLifecycleState.detached) {
       // App is terminated, ensure we clean up properly
-      _storageService.dispose();
+      // Note: This might not always be called by the OS
+      _storageService.forcePersistCaches();
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    return provider.MultiProvider(
-      providers: [
-        provider.ChangeNotifierProvider(create: (_) => AudiobookProvider()),
-        provider.ChangeNotifierProvider(create: (_) => ThemeProvider()),
-        provider.ChangeNotifierProvider(create: (_) => SleepTimerProvider()),
-      ],
-      child: provider.Consumer<ThemeProvider>(
-        builder: (context, themeProvider, _) {
-          return MaterialApp(
-            title: 'Widdle Reader',
-            debugShowCheckedModeBanner: false,
-            theme: AppTheme.lightTheme(themeProvider.seedColor),
-            darkTheme: AppTheme.darkTheme(themeProvider.seedColor),
-            themeMode: themeProvider.themeMode,
-            initialRoute: '/license',
-            routes: {
-              '/license': (context) => const LicenseCheckScreen(),
-              '/splash': (context) => const SplashScreen(),
-              '/library': (context) => const LibraryScreen(),
-              '/player': (context) => const SimplePlayerScreen(),
-              '/settings': (context) => const SettingsScreen(),
-              // BookmarksScreen is not registered here since it requires parameters
-              // and is opened using Navigator.push with MaterialPageRoute
-            },
-          );
-        },
-      ),
+    return provider.Consumer<ThemeProvider>(
+      builder: (context, themeProvider, _) {
+        return MaterialApp(
+          navigatorKey: navigatorKey,
+          title: 'Widdle Reader',
+          debugShowCheckedModeBanner: false,
+          theme: AppTheme.lightTheme(themeProvider.seedColor),
+          darkTheme: AppTheme.darkTheme(themeProvider.seedColor),
+          themeMode: themeProvider.themeMode,
+          initialRoute: '/license', // Start with license check
+          routes: {
+            '/license': (context) => const LicenseCheckScreen(),
+            '/splash': (context) => const SplashScreen(),
+            '/library': (context) => const LibraryScreen(),
+            '/player': (context) => const SimplePlayerScreen(),
+            '/settings': (context) => const SettingsScreen(),
+          },
+        );
+      },
     );
   }
 }

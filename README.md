@@ -1,305 +1,340 @@
-# Widdle Reader - Audiobook Player App
+# Widdle Reader - Modern Audiobook Player
 
-Widdle Reader is a feature-rich, modern audiobook player built with Flutter. The app provides a clean, intuitive interface for listening to audiobooks with support for background playback, media notifications, and progress tracking.
+<div align="center">
 
-**Current Version: 1.0.4** (See [Changelog](./CHANGELOG.md) for details)
+**A beautiful, feature-rich audiobook player built with Flutter**
 
-## Features
+[![Version](https://img.shields.io/badge/version-1.0.7-blue.svg)](https://github.com/rajatmshukla/widdle_reader)
+[![Flutter](https://img.shields.io/badge/Flutter-3.7.2+-02569B.svg?logo=flutter)](https://flutter.dev)
+[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-- **Robust Audiobook Library Management**: Advanced recursive folder scanning for any audiobook organization structure
-- **Flexible Folder Structure Support**: Works with single books, series, and nested folder hierarchies
-- **Background Playback**: Continue listening when the app is in the background
-- **Media Controls**: Control playback from notifications and lockscreen
-- **Progress Tracking**: Automatically saves your position in each audiobook
-- **Theme Customization**: Light/dark mode with customizable seed colors
-- **Responsive Design**: Optimized for both portrait and landscape orientations
-- **Chapter Navigation**: Easy navigation between audiobook chapters
-- **Sleep Timer**: Set a timer to automatically pause playback after a specified duration
-- **Bookmarks**: Add and manage bookmarks at specific points in your audiobooks
-- **Variable Playback Speed**: Adjust the playback speed from 0.5x to 2.0x
-- **Enhanced Metadata Support**: Automatic extraction of titles, authors, and cover art with priority system
-- **Advanced Tag System**: Create, rename, and organize custom tags with bulletproof Favorites protection
-- **Comprehensive Data Management**: Complete backup/restore with corruption detection and recovery
-- **Real-time Progress Display**: Visual indicators showing completion percentage
-- **Data Health Monitoring**: Tag statistics and integrity checking in Settings
+[Features](#features) • [Installation](#installation) • [Usage](#usage) • [Architecture](#architecture) • [Contributing](#contributing)
 
-## Audiobook Organization
+</div>
+
+---
+
+## 🎯 Overview
+
+Widdle Reader is a modern, intuitive audiobook player designed for audiobook enthusiasts. Built with Flutter, it offers a seamless listening experience with powerful features including Android Auto integration, customizable themes, intelligent library management, and robust playback controls.
+
+**Current Version: 1.0.7** | [Release Notes](./RELEASE_NOTES_v1.0.7.md) | [Changelog](./CHANGELOG.md)
+
+## ✨ Features
+
+### 🎵 Playback & Audio
+- **Advanced Audio Engine**: Powered by `just_audio` with background playback support
+- **Variable Speed Control**: Adjust playback speed from 0.5x to 3.0x
+- **15-Second Skip Controls**: Quick navigation with rewind and fast-forward
+- **Chapter Navigation**: Seamless chapter-to-chapter playback with auto-progression
+- **Sleep Timer**: Set timers with real-time countdown display
+- **Position Memory**: Automatically resumes from last played position
+
+### 📚 Library Management
+- **Intelligent Folder Scanning**: Recursive scanning supports any folder organization
+- **Multiple Audio Formats**: MP3, M4A, M4B, WAV, OGG, AAC, FLAC, OPUS
+- **Embedded Chapter Support**: Automatic extraction of chapters from M4B files using FFmpeg
+- **Smart Cover Art**: Priority-based extraction (embedded metadata → folder images)
+- **Metadata Extraction**: Automatic detection of title, author, and album information
+- **Tag System**: Create custom tags and organize your library (with bulletproof Favorites)
+- **Bookmarks**: Create named bookmarks at any point in your audiobooks
+
+### 🚗 Android Auto Integration
+- **Full Android Auto Support**: Native integration with car interfaces
+- **Resume Playback**: Continue from last position directly from Android Auto
+- **Browse Library**: Access "Continue Listening", "Recent", "Favorites", and "All Books"
+- **Voice Search**: Find audiobooks with voice commands
+- **Rich Metadata Display**: Shows cover art, progress, and chapter information
+
+### 🎨 User Interface
+- **Material Design 3**: Modern, clean interface following latest design principles
+- **Theme Customization**: Light/dark mode with customizable seed colors (43 color options)
+- **Responsive Layouts**: Optimized for portrait, landscape, and tablets
+- **Car/Bike Mode**: Simplified fullscreen controls for distraction-free listening
+- **Smooth Animations**: Polished transitions and staggered entry animations
+- **Gradient Progress Indicators**: Visual feedback for playback and library progress
+
+### 🔧 Advanced Features
+- **Data Backup & Restore**: Export/import all app data including progress and bookmarks
+- **Corruption Detection**: Automatic validation and recovery mechanisms
+- **Progress Tracking**: Visual completion indicators and detailed time displays
+- **Media Notifications**: Full lockscreen and notification controls
+- **Audio Session Management**: Handles interruptions (calls, other media) intelligently
+- **In-Memory Caching**: Improved performance for large libraries
+
+## 📱 Screenshots
+
+> *Add screenshots here showcasing the app's key features*
+
+## 🚀 Installation
+
+### For Users
+
+**Coming Soon**: Download from Google Play Store
+
+### For Developers
+
+#### Prerequisites
+- Flutter SDK 3.7.2 or higher
+- Dart SDK 3.7.2 or higher
+- Android Studio / VS Code with Flutter extensions
+- Android SDK (API 29+) for Android development
+
+#### Clone and Run
+
+```bash
+# Clone the repository
+git clone https://github.com/rajatmshukla/widdle_reader.git
+cd widdle_reader
+
+# Install dependencies
+flutter pub get
+
+# Run on connected device
+flutter run
+
+# Build release APK
+flutter build apk --release
+
+# Build App Bundle for Play Store
+flutter build appbundle --release
+```
+
+#### Signing Configuration (Required for Release Builds)
+
+1. Create keystore properties file:
+   ```bash
+   cp android/keystore.properties.template android/keystore.properties
+   ```
+
+2. Generate or use existing keystore:
+   ```bash
+   keytool -genkey -v -keystore widdle_reader.keystore \
+     -alias widdle_reader -keyalg RSA -keysize 2048 -validity 10000
+   ```
+
+3. Update `android/keystore.properties` with your credentials
+
+## 📖 Usage
+
+### Adding Audiobooks
+
+#### Method 1: Batch Scan (Recommended for Large Libraries)
+1. Tap the **"+"** button in the library
+2. Select **"Scan for Books"**
+3. Choose your root audiobooks folder
+4. The app recursively scans all subfolders and imports audiobooks
+
+#### Method 2: Single Book
+1. Tap the **"+"** button
+2. Select **"Add Single Book"**
+3. Choose the specific audiobook folder
 
 ### Supported Folder Structures
 
-Widdle Reader now supports **any folder structure** for your audiobooks! The app uses advanced recursive scanning to find audiobooks regardless of how they're organized.
-
-#### Examples of Supported Structures:
+Widdle Reader works with **any folder organization**:
 
 **Single Books:**
 ```
-My Audiobooks/
+Audiobooks/
 └── The Great Gatsby/
     ├── chapter1.m4a
     ├── chapter2.m4a
-    ├── chapter3.m4a
     └── cover.jpg
 ```
 
-**Book Series:**
+**Series:**
 ```
-My Audiobooks/
-├── Harry Potter Series/
-│   ├── Book 1 - Philosopher's Stone/
-│   │   ├── chapter1.m4a
-│   │   ├── chapter2.m4a
-│   │   └── cover.jpg
-│   ├── Book 2 - Chamber of Secrets/
-│   │   ├── chapter1.m4a
-│   │   ├── chapter2.m4a
-│   │   └── cover.jpg
-│   └── Book 3 - Prisoner of Azkaban/
-│       ├── chapter1.m4a
-│       └── cover.jpg
-└── Lord of the Rings/
-    ├── Fellowship of the Ring/
-    │   ├── part1.m4b
-    │   └── part2.m4b
-    └── Two Towers/
-        └── full_book.m4a
+Audiobooks/
+└── Harry Potter/
+    ├── Book 1 - Philosopher's Stone/
+    │   ├── 01.mp3
+    │   └── 02.mp3
+    └── Book 2 - Chamber of Secrets/
+        ├── 01.mp3
+        └── cover.jpg
 ```
 
 **Mixed Structure:**
 ```
 Audiobooks/
-├── Single Books/
+├── Fiction/
 │   ├── 1984/
-│   │   └── 1984_full.m4b
+│   │   └── full.m4b
 │   └── Dune/
 │       ├── part1.m4a
 │       └── part2.m4a
-├── Science Fiction Series/
-│   └── Foundation Series/
-│       ├── Foundation/
-│       │   ├── ch1.mp3
-│       │   └── ch2.mp3
-│       └── Foundation and Empire/
-│           └── full.m4a
-└── Classics/
-    └── Pride and Prejudice/
-        ├── chapter1.mp3
+└── Non-Fiction/
+    └── Sapiens/
+        ├── ch1.mp3
         └── cover.png
 ```
 
-### How to Add Audiobooks
-
-1. **Scan for Books (Recommended)**: 
-   - Select your root audiobooks folder
-   - The app will recursively scan all subfolders
-   - Automatically finds all audiobooks regardless of nesting level
-   - Perfect for large, organized libraries
-
-2. **Add Single Book**: 
-   - Select a specific folder containing one audiobook
-   - Useful for adding individual books
-
-### Supported Audio Formats
-
-- **MP3** (.mp3)
-- **M4A** (.m4a) 
-- **M4B** (.m4b) - Audiobook format
-- **WAV** (.wav)
-- **OGG** (.ogg)
-- **AAC** (.aac)
-- **FLAC** (.flac)
-
-### Cover Art Support
-
-The app automatically finds cover art using an intelligent priority system:
+### Cover Art Priority
 1. **Embedded metadata** in audio files (highest priority)
-2. **Image files** in the audiobook folder (fallback):
+2. **Image files** in audiobook folder:
    - `cover.jpg/png/webp`
    - `folder.jpg/png/webp`
    - `albumart.jpg/png/webp`
    - `front.jpg/png/webp`
    - `artwork.jpg/png/webp`
 
-This ensures the best possible cover art display by prioritizing embedded metadata first, then falling back to folder images.
+### Android Auto Usage
+1. Connect your phone to Android Auto
+2. Open Widdle Reader audio section
+3. Browse or resume your audiobooks
+4. Control playback with steering wheel or touchscreen controls
 
-## Tech Stack
+## 🏗️ Architecture
 
-- **Flutter**: Cross-platform UI framework
-- **Provider**: State management (migrating to Riverpod)
-- **just_audio/just_audio_background**: Audio playback and background services
-- **Path Provider/File Picker**: File system interaction
-- **Shared Preferences**: Local data storage
-- **flutter_media_metadata**: Advanced metadata extraction
+### Tech Stack
+- **Framework**: Flutter 3.7.2+
+- **State Management**: Provider + Riverpod (hybrid)
+- **Audio Playback**: 
+  - `just_audio` (v0.9.46)
+  - `just_audio_background` (v0.0.1-beta.10)
+  - `audio_session` (v0.1.25)
+- **Metadata**: 
+  - `flutter_media_metadata` (v1.0.0)
+  - `ffmpeg_kit_flutter_new_audio` (v2.0.0)
+- **Storage**: `shared_preferences`, `sqflite`
+- **File System**: `path_provider`, `file_picker`
+- **UI**: Material Design 3, `flutter_colorpicker`
 
-## Architecture
-
-The app follows a clean architecture pattern with separation of concerns:
-
-### Directory Structure
+### Project Structure
 
 ```
 lib/
-├── main.dart          # App entry point
-├── theme.dart         # Theme definitions
-├── models/           # Data models
-├── providers/        # State management
-├── screens/          # UI screens
-├── services/         # Business logic
-├── utils/            # Utility functions
-└── widgets/          # Reusable UI components
+├── main.dart                    # App entry point
+├── theme.dart                   # Material Design 3 theme
+├── models/                      # Data models
+│   ├── audiobook.dart          # Audiobook model
+│   ├── chapter.dart            # Chapter model with embedded support
+│   ├── bookmark.dart           # Bookmark model
+│   └── tag.dart                # Tag model
+├── providers/                   # State management
+│   ├── audiobook_provider.dart # Library & playback state
+│   ├── theme_provider.dart     # Theme preferences
+│   ├── sleep_timer_provider.dart
+│   └── tag_provider.dart       # Tag management
+├── screens/                     # UI screens
+│   ├── splash_screen.dart
+│   ├── library_screen.dart     # Main library view
+│   ├── simple_player_screen.dart # Playback interface
+│   ├── settings_screen.dart
+│   └── bookmarks_screen.dart
+├── services/                    # Business logic
+│   ├── simple_audio_service.dart # Core audio playback
+│   ├── storage_service.dart    # Data persistence
+│   ├── metadata_service.dart   # Metadata extraction
+│   ├── android_auto_manager.dart # Android Auto bridge
+│   └── ffmpeg_helper.dart      # Chapter extraction
+├── widgets/                     # Reusable components
+│   ├── app_logo.dart
+│   ├── audiobook_tile.dart
+│   ├── add_bookmark_dialog.dart
+│   └── tag_assignment_dialog.dart
+└── utils/                       # Utility functions
+    ├── helpers.dart
+    └── responsive_utils.dart
+
+android/app/src/main/kotlin/com/widdlereader/app/
+├── MainActivity.kt              # Android entry point
+├── auto/
+│   ├── WiddleReaderMediaService.kt  # Android Auto service
+│   └── AudioSessionBridge.kt    # Flutter ↔ Native bridge
 ```
 
-### Core Components
+### Key Design Patterns
 
-#### Models
+#### Clean Architecture
+- Separation of concerns (Models, Services, UI)
+- Dependency injection via Provider
+- Single responsibility principle
 
-- **Audiobook**: Represents an audiobook with metadata, chapters, and author information
-- **Chapter**: Represents a chapter within an audiobook with playback info
-- **Bookmark**: Stores user-created bookmarks for specific points in audiobooks
-- **Tag**: Represents custom user tags with protection mechanisms for system tags
+#### State Management
+- **Provider**: Global app state (theme, audiobooks)
+- **Riverpod**: Feature-specific state (tags, sleep timer)
+- **StreamBuilder**: Reactive playback state updates
 
-#### Services
+#### Android Auto Bridge
+- **Dual-layer architecture**:
+  1. Flutter layer: `AndroidAutoManager` (Dart)
+  2. Native layer: `AudioSessionBridge` (Kotlin)
+- **Synchronization**: SharedPreferences + MethodChannel
+- **Resume Logic**: Automatic position restoration from storage
 
-- **SimpleAudioService**: Core audio playback functionality
-- **AudioHandler**: Manages media session interactions and notifications
-- **StorageService**: Handles saving/loading progress and preferences with in-memory caching
-- **MetadataService**: Enhanced metadata extraction with recursive folder scanning
+## 🔄 Recent Updates (v1.0.7)
 
-#### Providers (State Management)
+### Bug Fixes
+- ✅ Fixed chapter list gradient clipping during scrolling
+- ✅ Resolved Car Mode visibility issues in portrait orientation
+- ✅ Enhanced Android Auto resume functionality
 
-- **AudiobookProvider**: Manages the audiobook library and playback state
-- **ThemeProvider**: Handles theme preferences and customization
-- **SleepTimerProvider**: Manages the sleep timer functionality
-- **TagProvider**: Handles tag creation, deletion, renaming, and system tag protection
+### Improvements
+- 📱 Responsive Car Mode layout with orientation detection
+- 🎨 Proper Material widget clipping for gradients
+- 🚗 Verified state synchronization for Android Auto
 
-#### Screens
+See [RELEASE_NOTES_v1.0.7.md](./RELEASE_NOTES_v1.0.7.md) for full details.
 
-- **SplashScreen**: Initial loading screen
-- **LibraryScreen**: Main audiobook collection view
-- **SimplePlayerScreen**: Audiobook playback interface
-- **SettingsScreen**: App configuration options
-- **BookmarksScreen**: View and manage audiobook bookmarks
+## 🛣️ Roadmap
 
-#### Widgets
+### Planned Features
+- [ ] Cloud synchronization across devices
+- [ ] Playlist support
+- [ ] Audio equalizer
+- [ ] Statistics dashboard (listening time, progress graphs)
+- [ ] Enhanced metadata editing
+- [ ] Smart recommendations
+- [ ] Integration with audiobook services (Audible, Librivox)
+- [ ] Offline-first architecture improvements
 
-- **AppLogo**: Custom app logo with theme-aware colors
-- **AudiobookTile**: Card display for audiobooks in library
-- **CountdownTimerWidget**: Visual display for sleep timer countdown
-- **AddBookmarkDialog**: Interface for creating bookmarks
-- **TagAssignmentDialog**: Advanced tag management with rename/delete functionality
-- **TagsView**: Display and manage tags with visual indicators
+### Under Consideration
+- [ ] Text-to-speech for eBooks (ePub support)
+- [ ] Multi-language support
+- [ ] Chromecast integration
+- [ ] Widget for home screen
 
-## Key Features Implementation
+## 🤝 Contributing
 
-### Advanced Folder Scanning
+Contributions are welcome! Please follow these guidelines:
 
-The new recursive scanning system:
-- **Traverses any folder depth** to find audiobooks
-- **Identifies audiobook folders** by presence of audio files
-- **Handles series and single books** automatically
-- **Prevents duplicate chapter detection** by stopping at first audio file level
-- **Provides detailed feedback** on scan results
-- **Supports progress indication** for large libraries
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/AmazingFeature`)
+3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
+4. Push to the branch (`git push origin feature/AmazingFeature`)
+5. Open a Pull Request
 
-### Enhanced Metadata Extraction
+### Development Guidelines
+- Follow Flutter/Dart style guide
+- Write tests for new features
+- Update documentation as needed
+- Ensure backward compatibility
 
-- **Author detection** from album artist or track artist metadata
-- **Priority-based cover art discovery** - embedded metadata takes precedence over folder images
-- **Better error handling** for corrupted files
-- **Fallback mechanisms** when metadata is unavailable
-- **Consistent visual experience** with intelligent cover art selection
+## 📄 License
 
-### Media Notifications
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-The app implements media notifications using the just_audio_background plugin, allowing users to control playback from the notification area or lock screen.
+## 🙏 Acknowledgments
 
-### Progress Tracking
+- **just_audio** team for the excellent audio playback library
+- **Flutter** team for the amazing framework
+- **Material Design** team for design guidelines
+- All open-source contributors whose libraries made this possible
 
-The app automatically saves and restores listening progress with in-memory caching for improved performance.
+## 📧 Contact
 
-### Sleep Timer
+**Developer**: Rajat Shukla  
+**Repository**: [github.com/rajatmshukla/widdle_reader](https://github.com/rajatmshukla/widdle_reader)  
+**Issues**: [Report bugs or request features](https://github.com/rajatmshukla/widdle_reader/issues)
 
-Set timers with real-time countdown display, accessible from any screen during playback.
+---
 
-### Bookmarks
+<div align="center">
 
-Create named bookmarks at specific points and jump directly to bookmarked positions.
+**Made with ❤️ using Flutter**
 
-### Responsive UI
+⭐ Star this repo if you find it useful!
 
-Dynamic layout adaptation based on screen orientation with Material Design 3 principles.
-
-### Theme Customization
-
-Customizable accent colors with light/dark mode support and automatic system theme detection.
-
-### Advanced Tag System
-
-Create and manage custom tags to organize your audiobook library:
-- **Create custom tags** with intuitive textbox-first interface
-- **Rename existing tags** while maintaining all assignments
-- **Delete unwanted tags** with confirmation dialogs
-- **Bulletproof Favorites** - special system tag that cannot be deleted or renamed
-- **Tag assignments** persist across app sessions and data operations
-
-### Enhanced Data Management
-
-Comprehensive backup and restore system with advanced protection:
-- **Complete data backup** - tags, favorites, progress, bookmarks, and preferences
-- **Corruption detection** - automatic validation of backup file integrity
-- **Recovery mechanisms** - fallback options when data issues are detected
-- **Version compatibility** - handles migration between app versions
-- **Manual export/import** - JSON format with timestamped filenames
-- **Automatic backups** - on app start and periodic persistence
-
-### Data Health Monitoring
-
-Built-in system to monitor and maintain data integrity:
-- **Tag statistics** - view count and usage of all tags
-- **Data validation** - automatic checks for consistency
-- **Health dashboard** - accessible through Settings menu
-- **Error reporting** - detailed feedback on any data issues
-- **Proactive maintenance** - prevents data corruption before it occurs
-
-## Getting Started
-
-### Prerequisites
-
-- Flutter SDK (3.7.2 or higher)
-- Android Studio / VS Code with Flutter extensions
-- Android/iOS development setup
-
-### Installation
-
-1. Clone the repository
-2. Run `flutter pub get` to install dependencies
-3. Run `flutter run` to launch the app on a connected device/emulator
-
-## Usage Tips
-
-### For Large Libraries
-- Use "Scan for Books" to add your entire audiobook collection at once
-- The app will handle any folder organization structure
-- Progress is shown for large scanning operations
-
-### For Organized Collections
-- Keep series in separate folders for better organization
-- Use descriptive folder names as they become the audiobook titles
-- Place cover art files in each audiobook folder for best results
-
-### Troubleshooting
-- If books aren't found, check file permissions
-- Ensure audio files are in supported formats
-- Check debug logs for detailed scanning information
-- Try scanning smaller folders if issues persist
-
-## Future Roadmap
-
-- Migration to Riverpod for state management
-- Cloud synchronization
-- Enhanced metadata editing
-- Audio effects and equalization
-- Audiobook categorization and tagging
-- Playlist support
-- Statistics dashboard for listening habits
-- Text-to-speech support for eBooks
-- Improved offline capability
+</div>

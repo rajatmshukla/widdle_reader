@@ -24,15 +24,14 @@
     <!-- Declare Android Auto support (phone projection only) -->
     <!-- Note: android.software.leanback is for TV/Auto browsing support -->
     <uses-feature android:name="android.software.leanback" android:required="false"/>
-    
-    <!-- Note: We do NOT declare android.hardware.type.automotive feature -->
-    <!-- That would conflict with Android Auto metadata below -->
 
     <application
         android:name="${applicationName}"
         android:label="Widdle Reader"
         android:icon="@mipmap/ic_launcher"
         android:supportsRtl="true"
+        android:allowBackup="true"
+        android:appCategory="audio"
         tools:targetApi="31">
 
         <activity

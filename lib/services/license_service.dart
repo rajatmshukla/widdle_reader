@@ -26,15 +26,23 @@ class LicenseService {
     
     try {
       // Check if we can use the native platform channel
+      // Add timeout to prevent hanging on startup
       final result = await platform.invokeMethod('initLicensing', {
         'publicKey': _appPublicKey
-      });
+      }).timeout(
+        const Duration(seconds: 2),
+        onTimeout: () {
+          debugPrint('License service init timed out');
+          return 'timeout';
+        },
+      );
       
       _isInitialized = result == 'success';
       debugPrint('License service initialized: $_isInitialized');
     } catch (e) {
       debugPrint('Error initializing license service: $e');
       // Consider initialization successful even if failed to allow for testing
+      // This prevents the app from being blocked if licensing service is down
       _isInitialized = true;
     }
   }
@@ -43,9 +51,18 @@ class LicenseService {
   static Future<bool> isLicenseValid() async {
     try {
       // Check if we have stored license data
-      final storedLicense = await _secureStorage.read(key: _licenseKey);
-      final storedTimestamp = await _secureStorage.read(key: _validityTimestampKey);
-      final storedDeviceId = await _secureStorage.read(key: _deviceIdKey);
+      String? storedLicense;
+      String? storedTimestamp;
+      String? storedDeviceId;
+      
+      try {
+        storedLicense = await _secureStorage.read(key: _licenseKey);
+        storedTimestamp = await _secureStorage.read(key: _validityTimestampKey);
+        storedDeviceId = await _secureStorage.read(key: _deviceIdKey);
+      } catch (e) {
+        debugPrint('Error reading secure storage: $e');
+        // If secure storage fails, we can't use cached license
+      }
       
       // Get current device ID
       final currentDeviceId = await _getDeviceId();
@@ -57,13 +74,17 @@ class LicenseService {
           storedDeviceId == currentDeviceId) {
         
         // Check if stored license is still valid (less than 1 day old)
-        final timestamp = int.parse(storedTimestamp);
-        final now = DateTime.now().millisecondsSinceEpoch;
-        final oneDay = 24 * 60 * 60 * 1000; // 1 day in milliseconds
-        
-        if (now - timestamp < oneDay) {
-          debugPrint('Using cached license - still valid');
-          return storedLicense == 'LICENSED';
+        try {
+          final timestamp = int.parse(storedTimestamp);
+          final now = DateTime.now().millisecondsSinceEpoch;
+          final oneDay = 24 * 60 * 60 * 1000; // 1 day in milliseconds
+          
+          if (now - timestamp < oneDay) {
+            debugPrint('Using cached license - still valid');
+            return storedLicense == 'LICENSED';
+          }
+        } catch (e) {
+          debugPrint('Error parsing timestamp: $e');
         }
       }
       
@@ -74,14 +95,24 @@ class LicenseService {
 
       // Use platform channel to check the license
       try {
-        final licenseStatus = await platform.invokeMethod('checkLicense');
+        // Add timeout to prevent hanging
+        final licenseStatus = await platform.invokeMethod('checkLicense').timeout(
+          const Duration(seconds: 5),
+          onTimeout: () {
+            debugPrint('License check timed out');
+            return 'TIMEOUT';
+          },
+        );
+        
         final isLicensed = licenseStatus == 'LICENSED';
         
-        // Store the license result
-        await _storeLicenseResult(
-          isLicensed ? 'LICENSED' : 'NOT_LICENSED',
-          currentDeviceId
-        );
+        // Store the license result if successful
+        if (licenseStatus != 'TIMEOUT' && licenseStatus != 'ERROR') {
+          await _storeLicenseResult(
+            isLicensed ? 'LICENSED' : 'NOT_LICENSED',
+            currentDeviceId
+          );
+        }
         
         debugPrint('License check result: $licenseStatus');
         return isLicensed;
@@ -94,17 +125,24 @@ class LicenseService {
           debugPrint('DEBUG MODE: Allowing access for development');
           return true;
         }
+        
+        // If we can't verify, we should probably default to FALSE for paid apps
+        // But if it's a crash/timeout issue, maybe we want to be lenient?
+        // For now, strictly enforce license check failure on error
         return false;
       }
     } catch (e) {
       debugPrint('Error checking license: $e');
       
-      // On error, check if we have a previously valid license
-      final storedLicense = await _secureStorage.read(key: _licenseKey);
-      if (storedLicense == 'LICENSED') {
-        debugPrint('Error occurred, but using previously verified license');
-        return true;
-      }
+      // On critical error, check if we have a previously valid license
+      // This is a fallback to prevent locking out valid users due to bugs
+      try {
+        final storedLicense = await _secureStorage.read(key: _licenseKey);
+        if (storedLicense == 'LICENSED') {
+          debugPrint('Error occurred, but using previously verified license');
+          return true;
+        }
+      } catch (_) {}
       
       return false;
     }
@@ -112,10 +150,14 @@ class LicenseService {
   
   // Store license result securely
   static Future<void> _storeLicenseResult(String licenseStatus, String deviceId) async {
-    final now = DateTime.now().millisecondsSinceEpoch.toString();
-    await _secureStorage.write(key: _licenseKey, value: licenseStatus);
-    await _secureStorage.write(key: _validityTimestampKey, value: now);
-    await _secureStorage.write(key: _deviceIdKey, value: deviceId);
+    try {
+      final now = DateTime.now().millisecondsSinceEpoch.toString();
+      await _secureStorage.write(key: _licenseKey, value: licenseStatus);
+      await _secureStorage.write(key: _validityTimestampKey, value: now);
+      await _secureStorage.write(key: _deviceIdKey, value: deviceId);
+    } catch (e) {
+      debugPrint('Error storing license result: $e');
+    }
   }
   
   // Get device ID (hashed for privacy)
@@ -145,9 +187,13 @@ class LicenseService {
   
   // Clear license data (for testing or logout)
   static Future<void> clearLicenseData() async {
-    await _secureStorage.delete(key: _licenseKey);
-    await _secureStorage.delete(key: _validityTimestampKey);
-    await _secureStorage.delete(key: _deviceIdKey);
-    await _secureStorage.delete(key: _purchaseTokenKey);
+    try {
+      await _secureStorage.delete(key: _licenseKey);
+      await _secureStorage.delete(key: _validityTimestampKey);
+      await _secureStorage.delete(key: _deviceIdKey);
+      await _secureStorage.delete(key: _purchaseTokenKey);
+    } catch (e) {
+      debugPrint('Error clearing license data: $e');
+    }
   }
 } 
