@@ -414,36 +414,64 @@ class AudioSessionBridge(private val context: Context) {
     /**
      * Load artwork from file URI
      */
+    /**
+     * Load artwork from file URI with resizing to prevent TransactionTooLargeException
+     */
     private fun loadArtwork(artUri: String): Bitmap? {
         return try {
-            when {
-                artUri.startsWith("file://") -> {
-                    val file = File(Uri.parse(artUri).path ?: return null)
-                    if (file.exists()) {
-                        BitmapFactory.decodeFile(file.absolutePath)
-                    } else {
-                        Log.w(TAG, "Cover art file not found: ${file.absolutePath}")
-                        null
-                    }
-                }
-                artUri.startsWith("/") -> {
-                    val file = File(artUri)
-                    if (file.exists()) {
-                        BitmapFactory.decodeFile(file.absolutePath)
-                    } else {
-                        Log.w(TAG, "Cover art file not found: $artUri")
-                        null
-                    }
-                }
-                else -> {
-                    Log.w(TAG, "Unsupported artwork URI format: $artUri")
-                    null
-                }
+            val filePath = when {
+                artUri.startsWith("file://") -> Uri.parse(artUri).path
+                artUri.startsWith("/") -> artUri
+                else -> null
             }
+            
+            if (filePath == null) {
+                Log.w(TAG, "Unsupported artwork URI format: $artUri")
+                return null
+            }
+            
+            val file = File(filePath)
+            if (!file.exists()) {
+                Log.w(TAG, "Cover art file not found: $filePath")
+                return null
+            }
+            
+            // First decode with inJustDecodeBounds=true to check dimensions
+            val options = BitmapFactory.Options().apply {
+                inJustDecodeBounds = true
+            }
+            BitmapFactory.decodeFile(file.absolutePath, options)
+            
+            // Calculate inSampleSize for 320x320 (standard for Android Auto icons/metadata)
+            options.inSampleSize = calculateInSampleSize(options, 320, 320)
+            
+            // Decode bitmap with inSampleSize set
+            options.inJustDecodeBounds = false
+            BitmapFactory.decodeFile(file.absolutePath, options)
+            
         } catch (e: Exception) {
             Log.e(TAG, "Error loading artwork from $artUri", e)
             null
         }
+    }
+    
+    private fun calculateInSampleSize(options: BitmapFactory.Options, reqWidth: Int, reqHeight: Int): Int {
+        // Raw height and width of image
+        val (height: Int, width: Int) = options.run { outHeight to outWidth }
+        var inSampleSize = 1
+
+        if (height > reqHeight || width > reqWidth) {
+            val halfHeight: Int = height / 2
+            val halfWidth: Int = width / 2
+
+            // Calculate the largest inSampleSize value that is a power of 2 and keeps both
+            // height and width larger than the requested height and width.
+            while (halfHeight / inSampleSize >= reqHeight && halfWidth / inSampleSize >= reqWidth) {
+                inSampleSize *= 2
+            }
+        }
+
+        return inSampleSize
     }
     
     /**

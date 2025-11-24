@@ -308,16 +308,16 @@ class WiddleReaderMediaService : MediaBrowserServiceCompat() {
         id: String, 
         title: String, 
         subtitle: String,
-        coverArtBase64: String?
+        coverArtSource: String?
     ): MediaBrowserCompat.MediaItem {
         val descriptionBuilder = MediaDescriptionCompat.Builder()
             .setMediaId(id)
             .setTitle(truncate(title, 40))
             .setSubtitle(truncate(subtitle, 60))
         
-        // Add cover art if available
-        coverArtBase64?.let {
-            decodeBase64ToBitmap(it)?.let { bitmap -> 
+        // Add cover art if available - use larger size for single items (like Resume)
+        coverArtSource?.let {
+            loadBitmap(it, 200, 200)?.let { bitmap -> 
                 descriptionBuilder.setIconBitmap(bitmap) 
             }
         }
@@ -350,8 +350,9 @@ class WiddleReaderMediaService : MediaBrowserServiceCompat() {
             .setTitle(truncate(title, 40))
             .setSubtitle(truncate(author, 60))
         
+        // Use small thumbnail for lists to avoid TransactionTooLargeException
         (audiobook["coverArt"] as? String)?.let {
-            decodeBase64ToBitmap(it)?.let { bitmap -> descriptionBuilder.setIconBitmap(bitmap) }
+            loadBitmap(it, 80, 80)?.let { bitmap -> descriptionBuilder.setIconBitmap(bitmap) }
         }
         
         return MediaBrowserCompat.MediaItem(
@@ -375,8 +376,9 @@ class WiddleReaderMediaService : MediaBrowserServiceCompat() {
             .setSubtitle(truncate(bookTitle, 60))
             .setMediaUri(Uri.parse(chapterId))
         
+        // Use small thumbnail for lists
         (audiobook["coverArt"] as? String)?.let {
-            decodeBase64ToBitmap(it)?.let { bitmap -> descriptionBuilder.setIconBitmap(bitmap) }
+            loadBitmap(it, 80, 80)?.let { bitmap -> descriptionBuilder.setIconBitmap(bitmap) }
         }
         
         return MediaBrowserCompat.MediaItem(
@@ -385,13 +387,60 @@ class WiddleReaderMediaService : MediaBrowserServiceCompat() {
         )
     }
     
-    private fun decodeBase64ToBitmap(base64: String): Bitmap? {
+    private fun loadBitmap(source: String, reqWidth: Int, reqHeight: Int): Bitmap? {
         return try {
-            val bytes = Base64.decode(base64, Base64.DEFAULT)
-            BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+            // Check if it's a file path
+            if (source.startsWith("/") || source.startsWith("file://")) {
+                val filePath = if (source.startsWith("file://")) Uri.parse(source).path else source
+                val options = BitmapFactory.Options().apply {
+                    inJustDecodeBounds = true
+                }
+                BitmapFactory.decodeFile(filePath, options)
+                
+                options.inSampleSize = calculateInSampleSize(options, reqWidth, reqHeight)
+                options.inJustDecodeBounds = false
+                
+                return BitmapFactory.decodeFile(filePath, options)
+            }
+            
+            // Fallback to Base64
+            val bytes = Base64.decode(source, Base64.DEFAULT)
+            
+            // First decode with inJustDecodeBounds=true to check dimensions
+            val options = BitmapFactory.Options().apply {
+                inJustDecodeBounds = true
+            }
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
+            
+            // Calculate inSampleSize
+            options.inSampleSize = calculateInSampleSize(options, reqWidth, reqHeight)
+            
+            // Decode bitmap with inSampleSize set
+            options.inJustDecodeBounds = false
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
         } catch (e: Exception) {
+            Log.e(TAG, "Error loading bitmap: ${e.message}")
             null
         }
+    }
+    
+    private fun calculateInSampleSize(options: BitmapFactory.Options, reqWidth: Int, reqHeight: Int): Int {
+        // Raw height and width of image
+        val (height: Int, width: Int) = options.run { outHeight to outWidth }
+        var inSampleSize = 1
+
+        if (height > reqHeight || width > reqWidth) {
+            val halfHeight: Int = height / 2
+            val halfWidth: Int = width / 2
+
+            // Calculate the largest inSampleSize value that is a power of 2 and keeps both
+            // height and width larger than the requested height and width.
+            while (halfHeight / inSampleSize >= reqHeight && halfWidth / inSampleSize >= reqWidth) {
+                inSampleSize *= 2
+            }
+        }
+
+        return inSampleSize
     }
     
     private fun truncate(text: String, maxLength: Int): String {

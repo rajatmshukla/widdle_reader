@@ -322,15 +322,18 @@ class SimpleAudioService {
 
       // Prepare artUri from cover art if available
       Uri? artUri;
-      if (_currentAudiobook!.coverArt != null) {
-        try {
-          // Create a temporary file for cover art for better notification support
+      try {
+        final coverPath = await _storageService.getCachedCoverArtPath(_currentAudiobook!.id);
+        if (coverPath != null) {
+          artUri = Uri.file(coverPath);
+          debugPrint("Cover art URI from storage: $artUri");
+        } else if (_currentAudiobook!.coverArt != null) {
+          // Fallback to temp file if not in storage (rare)
           final sanitizedId = _currentAudiobook!.id.replaceAll(RegExp(r'[^\w]'), '_');
           artUri = await _getCoverArtUri(_currentAudiobook!.coverArt!, sanitizedId);
-          debugPrint("Cover art URI created: $artUri");
-        } catch (e) {
-          debugPrint("Error creating artUri: $e");
         }
+      } catch (e) {
+        debugPrint("Error getting cover art URI: $e");
       }
       
       // Create a MediaItem for the chapter - ALWAYS create this for just_audio_background
@@ -448,16 +451,8 @@ class SimpleAudioService {
       final chapter = _currentAudiobook!.chapters[_currentChapterIndex];
       final duration = chapter.duration ?? _player.duration ?? Duration.zero;
       
-      // Get cover art URI if available
-      String? artUri;
-      if (_currentAudiobook!.coverArt != null) {
-        final tempDir = await getTemporaryDirectory();
-        final sanitizedId = _currentAudiobook!.id.replaceAll(RegExp(r'[\W]'), '_');
-        final coverFile = File('${tempDir.path}/cover_$sanitizedId.jpg');
-        if (await coverFile.exists()) {
-          artUri = coverFile.path;
-        }
-      }
+      // Get cover art URI from storage service (consistent with Android Auto Manager)
+      String? artUri = await _storageService.getCachedCoverArtPath(_currentAudiobook!.id);
       
       await _audioBridgeChannel.invokeMethod('updateMetadata', {
         'mediaId': _currentAudiobook!.id,
@@ -604,6 +599,7 @@ class SimpleAudioService {
     await _player.pause();
     debugPrint('Playback paused');
     _userPaused = true;
+    await saveCurrentPosition(); // Save position immediately on pause
     _notifyPlaybackChanged(nativeUpdate: true);
   }
 

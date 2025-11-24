@@ -1736,6 +1736,20 @@ class StorageService {
     }
   }
 
+  /// Get the file path for cached cover art
+  Future<String?> getCachedCoverArtPath(String audiobookId) async {
+    try {
+      final directory = await getApplicationDocumentsDirectory();
+      final file = File('${directory.path}/cover_${audiobookId.hashCode}.jpg');
+      if (await file.exists()) {
+        return file.path;
+      }
+    } catch (e) {
+      debugPrint("Error getting cached cover art path for $audiobookId: $e");
+    }
+    return null;
+  }
+
   /// Load cached cover art
   Future<Uint8List?> loadCachedCoverArt(String audiobookId) async {
     try {

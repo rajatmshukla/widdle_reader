@@ -159,9 +159,15 @@ class AndroidAutoManager {
         }).toList(),
       };
       
-      // Add cover art if available (encode as base64)
-      if (book.coverArt != null) {
-        bookData['coverArt'] = base64Encode(book.coverArt!);
+      // Add cover art path if available (avoid base64 to prevent OOM)
+      final coverPath = await _storageService?.getCachedCoverArtPath(book.id);
+      if (coverPath != null) {
+        bookData['coverArt'] = coverPath;
+      } else if (book.coverArt != null) {
+        // Fallback to base64 only if file not found (but this should be rare)
+        // And maybe we should skip it to be safe? 
+        // Let's skip base64 entirely to be safe against TransactionTooLargeException
+        // bookData['coverArt'] = base64Encode(book.coverArt!);
       }
       
       audiobooksData.add(bookData);
