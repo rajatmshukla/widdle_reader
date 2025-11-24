@@ -109,6 +109,11 @@ android {
 
             // TODO: Configure your release signing key
              signingConfig = signingConfigs.getByName("release")
+             
+             // Generate native debug symbols for Play Store
+             ndk {
+                 debugSymbolLevel = "FULL"
+             }
         }
         debug {
              // signingConfig = signingConfigs.getByName("debug")
