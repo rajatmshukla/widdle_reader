@@ -166,9 +166,7 @@ class WiddleReaderMediaService : MediaBrowserServiceCompat() {
     private suspend fun loadChildrenForParent(parentId: String): List<MediaBrowserCompat.MediaItem> {
         return when {
             parentId == ROOT_ID -> buildRootItems()
-            parentId == "section_continue" -> buildContinueListeningItems()
             parentId == "section_recent" -> buildRecentItems()
-            parentId == "section_favorites" -> buildFavoritesItems()
             parentId == "section_all" -> buildAllAudiobooksItems()
             parentId.startsWith("book_") -> buildChaptersForBook(parentId)
             else -> emptyList()
@@ -178,9 +176,8 @@ class WiddleReaderMediaService : MediaBrowserServiceCompat() {
     private fun buildRootItems(): List<MediaBrowserCompat.MediaItem> {
         Log.d(TAG, "🏗️ BUILD: Building root items for Android Auto")
         val audiobooks = audioBridge.loadAudiobooks()
-        Log.d(TAG, "🏗️ BUILD: Received ${audiobooks.size} audiobooks from bridge")
+        
         if (audiobooks.isEmpty()) {
-            Log.w(TAG, "⚠️ BUILD: No audiobooks available, showing empty message")
             return listOf(
                 createBrowsableItem(
                     "empty",
@@ -192,6 +189,7 @@ class WiddleReaderMediaService : MediaBrowserServiceCompat() {
 
         val items = mutableListOf<MediaBrowserCompat.MediaItem>()
 
+        // 1. Resume Item (Top Priority)
         val audiobooksWithTimestamp = audiobooks.filter { (it["lastPlayed"] as? Number)?.toLong() ?: 0L > 0 }
         val currentBook = audiobooksWithTimestamp.maxByOrNull { (it["lastPlayed"] as? Number)?.toLong() ?: 0L }
             ?: audiobooks.firstOrNull()
@@ -201,7 +199,7 @@ class WiddleReaderMediaService : MediaBrowserServiceCompat() {
             val author = book["author"] as? String ?: ""
             val bookId = book["id"] as? String ?: ""
             val coverArt = book["coverArt"] as? String
-            Log.d(TAG, "✅ BUILD: Adding resume item for: $title")
+            
             items += createPlayableItem(
                 "resume_$bookId",
                 "▶ Resume: $title",
@@ -210,37 +208,18 @@ class WiddleReaderMediaService : MediaBrowserServiceCompat() {
             )
         }
 
-        val continueItems = buildContinueListeningItems()
-        if (continueItems.isNotEmpty()) {
-            items += createBrowsableItem(
-                "section_continue",
-                "Continue listening",
-                "Pick up where you left off"
-            )
-        }
+        // 2. Recent (Simplified)
+        items += createBrowsableItem(
+            "section_recent",
+            "Recent",
+            "Recently played books"
+        )
 
-        val recentItems = buildRecentItems()
-        if (recentItems.isNotEmpty()) {
-            items += createBrowsableItem(
-                "section_recent",
-                "Recently played",
-                "Latest audiobooks"
-            )
-        }
-
-        val favoriteItems = buildFavoritesItems()
-        if (favoriteItems.isNotEmpty()) {
-            items += createBrowsableItem(
-                "section_favorites",
-                "Favorites",
-                "Starred audiobooks"
-            )
-        }
-
+        // 3. Library (A-Z)
         items += createBrowsableItem(
             "section_all",
-            "All audiobooks",
-            "Browse entire collection"
+            "Library",
+            "All audiobooks A-Z"
         )
 
         return items
@@ -254,23 +233,7 @@ class WiddleReaderMediaService : MediaBrowserServiceCompat() {
             .map { createAudiobookMediaItem(it) }
     }
     
-    private fun buildFavoritesItems(): List<MediaBrowserCompat.MediaItem> {
-        return audioBridge.loadAudiobooks()
-            .filter { it["isFavorited"] as? Boolean == true }
-            .take(MAX_BROWSE_ITEMS)
-            .map { createAudiobookMediaItem(it) }
-    }
-    
-    private fun buildContinueListeningItems(): List<MediaBrowserCompat.MediaItem> {
-        return audioBridge.loadAudiobooks()
-            .filter {
-                val progress = (it["progress"] as? Number)?.toDouble() ?: 0.0
-                progress > 0.0 && progress < 0.99
-            }
-            .sortedByDescending { (it["lastPlayed"] as? Number)?.toLong() ?: 0L }
-            .take(MAX_BROWSE_ITEMS)
-            .map { createAudiobookMediaItem(it) }
-    }
+
     
     private fun buildAllAudiobooksItems(): List<MediaBrowserCompat.MediaItem> {
         return audioBridge.loadAudiobooks()

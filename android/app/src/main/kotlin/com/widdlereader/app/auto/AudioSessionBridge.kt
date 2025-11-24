@@ -157,7 +157,26 @@ class AudioSessionBridge(private val context: Context) {
                 Log.e(TAG, "Error sending command to Flutter", e)
             }
         }
-        Log.w(TAG, "Command channel not available; falling back to legacy command")
+        
+        Log.w(TAG, "Command channel not available; attempting to wake up Flutter app")
+        
+        // If we are here, Flutter is likely dead or not connected.
+        // We need to start the app to handle the media command.
+        try {
+            val packageManager = context.packageManager
+            val intent = packageManager.getLaunchIntentForPackage(context.packageName)
+            if (intent != null) {
+                intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                // Add extra to tell Flutter to handle this command on start
+                intent.putExtra("background_mode", "audio_service_wake")
+                context.startActivity(intent)
+                Log.i(TAG, "🚀 Launched app to handle background media command")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to launch app for background playback", e)
+        }
+
+        // Still write to legacy prefs just in case
         executeLegacyCommand(action, params)
     }
     

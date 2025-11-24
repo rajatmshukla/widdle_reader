@@ -76,6 +76,9 @@ class AndroidAutoManager {
       // Start periodic sync (every 5 seconds to keep Android Auto updated)
       _startPeriodicSync();
       
+      // Check for any pending commands immediately (e.g. if app was launched by Android Auto)
+      await _checkForPlaybackCommands();
+      
       // Start listening for playback commands from Android Auto
       _startCommandListener();
       
