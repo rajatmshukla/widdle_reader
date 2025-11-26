@@ -143,16 +143,34 @@ class MainActivity: AudioServiceActivity() {
                     try {
                         val tokenBytes = call.argument<ByteArray>("token")
                         if (tokenBytes != null) {
+                            // CRITICAL FIX #4: Enhanced parcel unmarshalling with validation
+                            if (tokenBytes.isEmpty()) {
+                                Log.e(TAG, "ERROR: Token bytes array is empty")
+                                result.error("INVALID_TOKEN", "Token bytes array is empty", null)
+                                return@setMethodCallHandler
+                            }
+                            
                             val parcel = Parcel.obtain()
                             try {
                                 parcel.unmarshall(tokenBytes, 0, tokenBytes.size)
                                 parcel.setDataPosition(0)
+                                
+                                // Validate parcel has data
+                                if (parcel.dataSize() == 0) {
+                                    Log.e(TAG, "ERROR: Parcel has no data after unmarshalling")
+                                    result.error("INVALID_TOKEN", "Token unmarshalling produced empty parcel", null)
+                                    return@setMethodCallHandler
+                                }
+                                
                                 val token = MediaSessionCompat.Token.CREATOR.createFromParcel(parcel)
                                 bridge.registerSessionToken(token)
                                 result.success(mapOf(
                                     "success" to true,
                                     "hasDirectControl" to bridge.hasDirectControl()
                                 ))
+                            } catch (e: RuntimeException) {
+                                Log.e(TAG, "ERROR: Runtime exception during parcel creation: ${e.message}", e)
+                                result.error("PARCEL_ERROR", "Failed to create token from parcel: ${e.message}", null)
                             } finally {
                                 parcel.recycle()
                             }
@@ -287,4 +305,4 @@ class MainActivity: AudioServiceActivity() {
         val digest = md.digest(bytes)
         return digest.fold("") { str, it -> str + "%02x".format(it) }
     }
-} 
+}

@@ -531,8 +531,21 @@ class AndroidAutoManager {
         final bookId = mediaId.replaceFirst('book_', '');
         _logDebug('📖 Loading book with ID: $bookId');
         
-        final book = _audiobookProvider!.audiobooks
-            .firstWhere((b) => b.id == bookId, orElse: () => _audiobookProvider!.audiobooks.first);
+        // CRITICAL FIX #2: Validate audiobooks list is not empty before accessing
+        if (_audiobookProvider!.audiobooks.isEmpty) {
+          _logDebug('❌ CRITICAL: Cannot play - no audiobooks in library');
+          _logDebug('💡 User needs to add audiobooks before playback can start');
+          return; // Exit gracefully instead of crashing
+        }
+        
+        // Find book by ID with safe fallback
+        final book = _audiobookProvider!.audiobooks.firstWhere(
+          (b) => b.id == bookId,
+          orElse: () {
+            _logDebug('⚠️ Book ID $bookId not found, using first available book');
+            return _audiobookProvider!.audiobooks.first; // Safe now that we validated non-empty
+          },
+        );
         
         _logDebug('📖 Found book: ${book.title}');
         
@@ -574,6 +587,12 @@ class AndroidAutoManager {
     _logDebug('Play from search: $query');
     
     try {
+      // ADDITIONAL FIX #2: Validate audiobooks exist before searching
+      if (_audiobookProvider!.audiobooks.isEmpty) {
+        _logDebug('❌ Cannot search - no audiobooks in library');
+        return;
+      }
+      
       final lowerQuery = query.toLowerCase();
       
       // Search for matching audiobook
@@ -583,7 +602,7 @@ class AndroidAutoManager {
           final author = (book.author ?? '').toLowerCase();
           return title.contains(lowerQuery) || author.contains(lowerQuery);
         },
-        orElse: () => _audiobookProvider!.audiobooks.first,
+        orElse: () => _audiobookProvider!.audiobooks.first, // Safe after validation
       );
       
       // Get last position

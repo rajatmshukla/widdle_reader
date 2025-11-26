@@ -56,11 +56,31 @@ class WiddleReaderMediaService : MediaBrowserServiceCompat() {
             Log.w(TAG, "Falling back to local MediaSession instance")
             val session = MediaSessionCompat(this, TAG)
             mediaSession = session
-            val sessionIntent = packageManager?.getLaunchIntentForPackage(packageName)
+            
+            // CRITICAL FIX #1: Null-safe PendingIntent creation
+            // packageManager can be null, getLaunchIntentForPackage can return null
+            val sessionIntent = try {
+                packageManager?.getLaunchIntentForPackage(packageName) ?: run {
+                    Log.w(TAG, "⚠️ Cannot get launch intent, creating fallback intent")
+                    // Create minimal fallback intent to MainActivity
+                    Intent(this, MainActivity::class.java).apply {
+                        action = Intent.ACTION_MAIN
+                        addCategory(Intent.CATEGORY_LAUNCHER)
+                        flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ Error getting launch intent: ${e.message}", e)
+                // Ultimate fallback - create basic intent
+                Intent(this, MainActivity::class.java).apply {
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                }
+            }
+            
             val sessionActivityPendingIntent = PendingIntent.getActivity(
                 this@WiddleReaderMediaService,
                 0,
-                sessionIntent,
+                sessionIntent,  // Now guaranteed to be non-null
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
             session.setSessionActivity(sessionActivityPendingIntent)
@@ -247,8 +267,8 @@ class WiddleReaderMediaService : MediaBrowserServiceCompat() {
         val audiobook = audioBridge.loadAudiobooks()
             .find { it["id"] as? String == audiobookId } ?: return emptyList()
         
-        @Suppress("UNCHECKED_CAST")
-        val chapters = audiobook["chapters"] as? List<Map<String, Any>> ?: return emptyList()
+        val rawChapters = audiobook["chapters"] as? List<*> ?: return emptyList()
+        val chapters = rawChapters.filterIsInstance<Map<String, Any>>()
         
         return chapters.mapIndexed { index, chapter ->
             createPlayableChapterItem(chapter, audiobook, index)
@@ -354,16 +374,44 @@ class WiddleReaderMediaService : MediaBrowserServiceCompat() {
         return try {
             // Check if it's a file path
             if (source.startsWith("/") || source.startsWith("file://")) {
-                val filePath = if (source.startsWith("file://")) Uri.parse(source).path else source
+                // CRITICAL FIX #3: Null-safe file path extraction
+                val filePath = if (source.startsWith("file://")) {
+                    val parsedPath = Uri.parse(source).path
+                    if (parsedPath == null) {
+                        Log.w(TAG, "⚠️ Uri.parse().path returned null for: $source")
+                        return null
+                    }
+                    parsedPath
+                } else {
+                    source
+                }
+                
+                // Validate file exists before attempting to decode
+                val file = java.io.File(filePath)
+                if (!file.exists() || !file.canRead()) {
+                    Log.w(TAG, "⚠️ File does not exist or cannot be read: $filePath")
+                    return null
+                }
+                
                 val options = BitmapFactory.Options().apply {
                     inJustDecodeBounds = true
                 }
                 BitmapFactory.decodeFile(filePath, options)
                 
+                // Validate bitmap dimensions are valid
+                if (options.outWidth <= 0 || options.outHeight <= 0) {
+                    Log.w(TAG, "⚠️ Invalid bitmap dimensions: ${options.outWidth}x${options.outHeight}")
+                    return null
+                }
+                
                 options.inSampleSize = calculateInSampleSize(options, reqWidth, reqHeight)
                 options.inJustDecodeBounds = false
                 
-                return BitmapFactory.decodeFile(filePath, options)
+                val bitmap = BitmapFactory.decodeFile(filePath, options)
+                if (bitmap == null) {
+                    Log.w(TAG, "⚠️ BitmapFactory.decodeFile returned null for: $filePath")
+                }
+                return bitmap
             }
             
             // Fallback to Base64
@@ -446,15 +494,13 @@ class WiddleReaderMediaService : MediaBrowserServiceCompat() {
         val isValid = validPrefixes.any { packageName.startsWith(it) }
         
         if (!isValid) {
-            Log.w(TAG, "⚠️ Unknown package attempting connection: $packageName (UID: $clientUid)")
-            // TEMPORARY DEBUG: Allow all packages to identify the actual client
-            Log.w(TAG, "🔧 DEBUG MODE: Allowing connection anyway for testing")
-            return true  // REMOVE THIS AFTER IDENTIFYING THE CLIENT PACKAGE
-        } else {
-            Log.d(TAG, "✅ Package validated: $packageName")
+            // SECURITY FIX #12: Properly reject unauthorized packages
+            Log.e(TAG, "� REJECTED: Unauthorized package attempting connection: $packageName (UID: $clientUid)")
+            return false
         }
         
-        return isValid
+        Log.d(TAG, "✅ Package validated: $packageName")
+        return true
     }
     
     private fun getAllowedActions(): Long {

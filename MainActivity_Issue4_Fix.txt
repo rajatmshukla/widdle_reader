@@ -1,0 +1,104 @@
+=== MainActivity.kt Issue #4 Fix ===
+Location: lines 143-162 in registerMediaSession handler
+
+FIND THIS CODE (lines 143-162):
+================================================================================
+                "registerMediaSession" -> {
+                    try {
+                        val tokenBytes = call.argument<ByteArray>("token")
+                        if (tokenBytes != null) {
+                            val parcel = Parcel.obtain()
+                            try {
+                                parcel.unmarshall(tokenBytes, 0, tokenBytes.size)
+                                parcel.setDataPosition(0)
+                                val token = MediaSessionCompat.Token.CREATOR.createFromParcel(parcel)
+                                bridge.registerSessionToken(token)
+                                result.success(mapOf(
+                                    "success" to true,
+                                    "hasDirectControl" to bridge.hasDirectControl()
+                                ))
+                            } finally {
+                                parcel.recycle()
+                            }
+                        } else {
+                            result.error("INVALID_TOKEN", "Token bytes missing", null)
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error registering MediaSession: ${e.message}")
+                        result.error("REGISTER_ERROR", e.message, null)
+                    }
+                }
+
+REPLACE WITH THIS CODE:
+================================================================================
+                "registerMediaSession" -> {
+                    try {
+                        val tokenBytes = call.argument<ByteArray>("token")
+                        if (tokenBytes != null) {
+                            // CRITICAL FIX #4: Enhanced parcel unmarshalling with validation
+                            if (tokenBytes.isEmpty()) {
+                                Log.e(TAG, "ERROR: Token bytes array is empty")
+                                result.error("INVALID_TOKEN", "Token bytes array is empty", null)
+                                return@setMethodCallHandler
+                            }
+                            
+                            val parcel = Parcel.obtain()
+                            try {
+                                parcel.unmarshall(tokenBytes, 0, tokenBytes.size)
+                                parcel.setDataPosition(0)
+                                
+                                // Validate parcel has data
+                                if (parcel.dataSize() == 0) {
+                                    Log.e(TAG, "ERROR: Parcel has no data after unmarshalling")
+                                    result.error("INVALID_TOKEN", "Token unmarshalling produced empty parcel", null)
+                                    return@setMethodCallHandler
+                                }
+                                
+                                val token = MediaSessionCompat.Token.CREATOR.createFromParcel(parcel)
+                                bridge.registerSessionToken(token)
+                                result.success(mapOf(
+                                    "success" to true,
+                                    "hasDirectControl" to bridge.hasDirectControl()
+                                ))
+                            } catch (e: RuntimeException) {
+                                Log.e(TAG, "ERROR: Runtime exception during parcel creation: ${e.message}", e)
+                                result.error("PARCEL_ERROR", "Failed to create token from parcel: ${e.message}", null)
+                            } finally {
+                                parcel.recycle()
+                            }
+                        } else {
+                            result.error("INVALID_TOKEN", "Token bytes missing", null)
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error registering MediaSession: ${e.message}")
+                        result.error("REGISTER_ERROR", e.message, null)
+                    }
+                }
+
+WHAT CHANGED:
+================================================================================
+1. Added empty byte array validation (lines 146-150)
+   - Prevents crash if tokenBytes is empty
+   - Returns early with error message
+
+2. Added parcel data size validation (lines 157-161)
+   - Ensures parcel has data after unmarshalling
+   - Prevents crash from empty/corrupted parcel
+
+3. Added specific RuntimeException handling (lines 170-172)
+   - Catches exceptions from createFromParcel()
+   - Provides specific error message for parcel errors
+   - More granular than generic Exception catch
+
+BENEFITS:
+================================================================================
+- Prevents NullPointerException from corrupted token data
+- Prevents crashes from empty byte arrays  
+- Prevents crashes from malformed parcels
+- Better error messages for debugging
+- Specific exception handling for parcel operations
+
+After applying this change, save the file and run:
+flutter build apk --debug
+
+This completes all 12/12 crash fixes!

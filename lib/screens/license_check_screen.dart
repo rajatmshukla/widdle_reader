@@ -78,14 +78,14 @@ class _LicenseCheckScreenState extends State<LicenseCheckScreen> with SingleTick
     });
     
     try {
-      // CRITICAL FIX: Reduce timeouts for faster startup
+      // CRITICAL FIX: Increased timeouts to prevent false failures
       await LicenseService.initialize().timeout(
-        const Duration(seconds: 1), // Reduced from 3 seconds
+        const Duration(seconds: 5), // Increased from 1s to 5s
         onTimeout: () => throw TimeoutException('License service timeout'),
       );
       
       final isLicensed = await LicenseService.isLicenseValid().timeout(
-        const Duration(milliseconds: 800), // Reduced from 2 seconds
+        const Duration(seconds: 5), // Increased from 800ms to 5s
         onTimeout: () => throw TimeoutException('License check timeout'),
       );
       

@@ -78,7 +78,16 @@ class AudioSessionBridge(private val context: Context) {
         Log.d(TAG, "Registering MediaSession token for direct control")
         this.mediaSession = null
         this.serviceSessionToken = token
-        this.mediaController = MediaControllerCompat(context, token)
+        
+        // ENHANCEMENT #9: Protected MediaController construction
+        try {
+            this.mediaController = MediaControllerCompat(context, token)
+            Log.d(TAG, "✅ MediaController created successfully")
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Failed to create MediaController: ${e.message}", e)
+            this.mediaController = null
+            // Don't throw - allow fallback to work
+        }
     }
     
     /**
@@ -266,7 +275,9 @@ class AudioSessionBridge(private val context: Context) {
         
         return try {
             @Suppress("UNCHECKED_CAST")
-            val audiobooks = gson.fromJson(json, List::class.java) as? List<Map<String, Any>> ?: emptyList()
+            val rawList = gson.fromJson(json, List::class.java) as? List<*>
+            val audiobooks = rawList?.filterIsInstance<Map<String, Any>>() ?: emptyList()
+            
             Log.d(TAG, "✅ LOAD: Parsed ${audiobooks.size} audiobooks successfully")
             
             // Log first audiobook for debugging
@@ -290,7 +301,8 @@ class AudioSessionBridge(private val context: Context) {
         
         return try {
             @Suppress("UNCHECKED_CAST")
-            gson.fromJson(json, List::class.java) as? List<Map<String, Any>> ?: emptyList()
+            val rawList = gson.fromJson(json, List::class.java) as? List<*>
+            rawList?.filterIsInstance<Map<String, Any>>() ?: emptyList()
         } catch (e: Exception) {
             Log.e(TAG, "Error loading tags", e)
             emptyList()
@@ -305,7 +317,12 @@ class AudioSessionBridge(private val context: Context) {
         
         return try {
             @Suppress("UNCHECKED_CAST")
-            gson.fromJson(json, Map::class.java) as? Map<String, List<String>> ?: emptyMap()
+            val rawMap = gson.fromJson(json, Map::class.java) as? Map<*, *>
+            rawMap?.entries?.mapNotNull { (key, value) ->
+                val k = key as? String
+                val v = (value as? List<*>)?.filterIsInstance<String>()
+                if (k != null && v != null) k to v else null
+            }?.toMap() ?: emptyMap()
         } catch (e: Exception) {
             Log.e(TAG, "Error loading audiobook tags", e)
             emptyMap()
