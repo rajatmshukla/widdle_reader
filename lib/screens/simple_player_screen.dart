@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart'; // Import the package
 import '../providers/audiobook_provider.dart';
 import '../providers/sleep_timer_provider.dart';
+import '../providers/theme_provider.dart';
 import '../models/audiobook.dart';
 import '../services/simple_audio_service.dart';
 import '../utils/helpers.dart';
@@ -183,6 +184,16 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
       setState(() {
         _isLoading = false;
       });
+      
+      // Extract theme from cover art if Dynamic Theme is enabled
+      if (_audiobook?.coverArt != null && mounted) {
+        final themeProvider = Provider.of<ThemeProvider>(context, listen: false);
+        if (themeProvider.isDynamicThemeEnabled) {
+          await themeProvider.updateThemeFromImage(
+            MemoryImage(_audiobook!.coverArt!),
+          );
+        }
+      }
       
       debugPrint("Audiobook loaded successfully: ${_audiobook!.title}");
       

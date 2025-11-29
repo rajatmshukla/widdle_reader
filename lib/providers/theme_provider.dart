@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:palette_generator/palette_generator.dart';
 
 /// A ChangeNotifier that manages the app's theme mode and seed color
 class ThemeProvider extends ChangeNotifier {
   static const String _themePreferenceKey = 'theme_mode';
   static const String _seedColorKey = 'seed_color';
+  static const String _dynamicThemeKey = 'dynamic_theme_enabled';
 
   /// Current theme mode (light, dark, or system)
   ThemeMode _themeMode = ThemeMode.system;
@@ -12,11 +14,17 @@ class ThemeProvider extends ChangeNotifier {
   /// Current seed color for generating the theme
   Color _seedColor = Colors.blue; // Default blue seed color
 
+  /// Whether dynamic theme based on cover art is enabled
+  bool _isDynamicThemeEnabled = false;
+
   /// Get the current theme mode
   ThemeMode get themeMode => _themeMode;
 
   /// Get the current seed color
   Color get seedColor => _seedColor;
+
+  /// Get whether dynamic theme is enabled
+  bool get isDynamicThemeEnabled => _isDynamicThemeEnabled;
 
   /// Initialize the theme provider
   ThemeProvider() {
@@ -39,6 +47,9 @@ class ThemeProvider extends ChangeNotifier {
       if (savedColorValue != null) {
         _seedColor = Color(savedColorValue);
       }
+
+      // Load dynamic theme setting
+      _isDynamicThemeEnabled = prefs.getBool(_dynamicThemeKey) ?? false;
 
       notifyListeners();
     } catch (e) {
@@ -113,5 +124,60 @@ class ThemeProvider extends ChangeNotifier {
           Brightness.dark;
     }
     return _themeMode == ThemeMode.dark;
+  }
+
+  /// Enable or disable dynamic theme based on cover art
+  Future<void> setDynamicThemeEnabled(bool enabled) async {
+    if (_isDynamicThemeEnabled != enabled) {
+      _isDynamicThemeEnabled = enabled;
+      
+      // Save to preferences
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setBool(_dynamicThemeKey, enabled);
+      } catch (e) {
+        debugPrint('Error saving dynamic theme preference: $e');
+      }
+      
+      // If disabling, revert to saved seed color
+      if (!enabled) {
+        notifyListeners();
+      }
+    }
+  }
+
+  /// Update theme color from an image (e.g., audiobook cover art)
+  Future<void> updateThemeFromImage(ImageProvider imageProvider) async {
+    if (!_isDynamicThemeEnabled) return;
+    
+    try {
+      final PaletteGenerator paletteGenerator = 
+          await PaletteGenerator.fromImageProvider(
+        imageProvider,
+        maximumColorCount: 20,
+      );
+      
+      // Try to get a vibrant color first, fall back to dominant
+      Color? newColor = paletteGenerator.vibrantColor?.color ??
+          paletteGenerator.dominantColor?.color;
+      
+      if (newColor != null) {
+        _seedColor = newColor;
+        // Don't save to preferences - dynamic theme shouldn't override manual selection
+        notifyListeners();
+        debugPrint('Dynamic theme updated to: ${newColor.toString()}');
+      }
+    } catch (e) {
+      debugPrint('Error extracting color from image: $e');
+      // Silently fail - keep current color
+    }
+  }
+
+  /// Reset to default color (used when no audiobook is playing)
+  void resetToDefaultColor() {
+    if (!_isDynamicThemeEnabled) return;
+    
+    _seedColor = Colors.blue;
+    notifyListeners();
   }
 }

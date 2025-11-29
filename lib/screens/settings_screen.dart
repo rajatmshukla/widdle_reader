@@ -7,7 +7,9 @@ import '../widgets/app_logo.dart';
 import '../utils/responsive_utils.dart';
 import '../theme.dart';
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
+import '../services/simple_audio_service.dart';
 
 import 'package:share_plus/share_plus.dart';
 import '../services/storage_service.dart';
@@ -182,14 +184,20 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> with SingleTick
             delay: 100,
           ),
           _buildAnimatedCard(
-        _buildSeedColorCard(themeProvider, colorScheme, textTheme),
-            delay: 150,
+            _buildDynamicThemeCard(themeProvider, colorScheme, textTheme),
+            delay: 125,
           ),
-          if (!_showColorPicker) 
+          if (!themeProvider.isDynamicThemeEnabled) ...[
             _buildAnimatedCard(
-              _buildMaterialColorPalette(themeProvider, colorScheme, textTheme),
-              delay: 200,
+              _buildSeedColorCard(themeProvider, colorScheme, textTheme),
+              delay: 150,
             ),
+            if (!_showColorPicker) 
+              _buildAnimatedCard(
+                _buildMaterialColorPalette(themeProvider, colorScheme, textTheme),
+                delay: 200,
+              ),
+          ],
 
           // Data Management section moved up
           _buildSectionWithDelay(
@@ -253,14 +261,20 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> with SingleTick
                     delay: 100,
                   ),
                   _buildAnimatedCard(
-              _buildSeedColorCard(themeProvider, colorScheme, textTheme),
-                    delay: 150,
+                    _buildDynamicThemeCard(themeProvider, colorScheme, textTheme),
+                    delay: 125,
                   ),
-                  if (!_showColorPicker) 
+                  if (!themeProvider.isDynamicThemeEnabled) ...[
                     _buildAnimatedCard(
-                      _buildMaterialColorPalette(themeProvider, colorScheme, textTheme),
-                      delay: 200,
+                      _buildSeedColorCard(themeProvider, colorScheme, textTheme),
+                      delay: 150,
                     ),
+                    if (!_showColorPicker) 
+                      _buildAnimatedCard(
+                        _buildMaterialColorPalette(themeProvider, colorScheme, textTheme),
+                        delay: 200,
+                      ),
+                  ],
                 ],
               ),
               delay: 0,
@@ -457,6 +471,76 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> with SingleTick
                   'System',
                   Icons.settings_suggest_rounded,
                   themeProvider,
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // Dynamic Theme card
+  Widget _buildDynamicThemeCard(
+    ThemeProvider themeProvider,
+    ColorScheme colorScheme,
+    TextTheme textTheme,
+  ) {
+    final isLandscape = context.isLandscape;
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 16),
+      elevation: 0,
+      color: colorScheme.surfaceContainerLow,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Padding(
+        padding: EdgeInsets.all(isLandscape ? 16 : 20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Dynamic Theme',
+                        style: textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Adapt theme to audiobook cover art',
+                        style: textTheme.bodySmall?.copyWith(
+                          color: colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Switch(
+                  value: themeProvider.isDynamicThemeEnabled,
+                  onChanged: (value) async {
+                    await themeProvider.setDynamicThemeEnabled(value);
+                    
+                    // If enabling and currently playing, extract color from audiobook
+                    if (value && mounted) {
+                      final audioService = SimpleAudioService();
+                      final currentBook = audioService.currentAudiobook;
+                      
+                      if (currentBook?.coverArt != null) {
+                        await themeProvider.updateThemeFromImage(
+                          MemoryImage(currentBook!.coverArt!),
+                        );
+                      }
+                    } else if (!value) {
+                      // Reset to saved manual color when disabling
+                      setState(() {});
+                    }
+                  },
                 ),
               ],
             ),
