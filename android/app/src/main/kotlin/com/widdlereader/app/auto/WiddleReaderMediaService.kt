@@ -1,3 +1,4 @@
+
 package com.widdlereader.app.auto
 
 import android.app.PendingIntent
@@ -186,10 +187,14 @@ class WiddleReaderMediaService : MediaBrowserServiceCompat() {
     private suspend fun loadChildrenForParent(parentId: String): List<MediaBrowserCompat.MediaItem> {
         return when {
             parentId == ROOT_ID -> buildRootItems()
+            parentId == "__empty__" -> emptyList()  // Defensive: empty state should never be browsed
             parentId == "section_recent" -> buildRecentItems()
             parentId == "section_all" -> buildAllAudiobooksItems()
             parentId.startsWith("book_") -> buildChaptersForBook(parentId)
-            else -> emptyList()
+            else -> {
+                Log.w(TAG, "⚠️ Unknown parentId requested: $parentId - returning empty list")
+                emptyList()
+            }
         }
     }
     
@@ -198,11 +203,19 @@ class WiddleReaderMediaService : MediaBrowserServiceCompat() {
         val audiobooks = audioBridge.loadAudiobooks()
         
         if (audiobooks.isEmpty()) {
+            Log.w(TAG, "⚠️ EMPTY STATE: No audiobooks found - returning non-browsable placeholder")
+            // CRITICAL FIX: Return NON-BROWSABLE item so Android Auto doesn't try to expand it
+            // Using FLAG_PLAYABLE (but no play action) makes it informational only
+            val description = MediaDescriptionCompat.Builder()
+                .setMediaId("__empty__")
+                .setTitle("No Audiobooks")
+                .setSubtitle("Open the app to add audiobooks")
+                .build()
+            
             return listOf(
-                createBrowsableItem(
-                    "empty",
-                    "No Audiobooks",
-                    "Add audiobooks in the app"
+                MediaBrowserCompat.MediaItem(
+                    description,
+                    MediaBrowserCompat.MediaItem.FLAG_PLAYABLE  // Non-browsable, won't trigger onLoadChildren
                 )
             )
         }

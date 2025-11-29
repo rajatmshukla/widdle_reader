@@ -50,6 +50,12 @@
     protected *;
 }
 
+# FFmpegKit rules (Fix for release crash)
+-keep class com.arthenica.** { *; }
+-keep class com.nkarpenko.** { *; }
+-keep class **.ffmpegkit.** { *; }
+-keep class com.arthenica.smartexception.** { *; }
+
 # Obfuscate class names for additional security (but exempt critical services above)
 -repackageclasses
 -allowaccessmodification

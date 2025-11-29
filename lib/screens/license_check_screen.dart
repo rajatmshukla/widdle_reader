@@ -165,7 +165,7 @@ class _LicenseCheckScreenState extends State<LicenseCheckScreen> with SingleTick
                     // Replace the generic icon with animated AppLogo widget
                     ScaleTransition(
                       scale: _scaleAnimation,
-                      child: AppLogo(
+                      child: const AppLogo(
                         size: 120,
                         showTitle: false,
                       ),
@@ -304,4 +304,4 @@ class _LicenseCheckScreenState extends State<LicenseCheckScreen> with SingleTick
       ),
     );
   }
-} 
+}
