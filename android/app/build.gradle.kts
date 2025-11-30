@@ -70,7 +70,7 @@ android {
 
     defaultConfig {
         applicationId = "com.widdlereader.app" // Changed from com.example.widdle_reader
-        minSdk = 29 // Required for MediaBrowserService and modern Android features
+        minSdk = 28 // Changed to 28 to support Android 9 (API 28)
         targetSdk = 35
         versionCode = flutterVersionCode.toInt()
         versionName = flutterVersionName
