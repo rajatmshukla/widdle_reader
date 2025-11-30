@@ -17,6 +17,7 @@ import '../widgets/tags_view.dart';
 import '../widgets/tag_assignment_dialog.dart';
 import '../widgets/search_bar_widget.dart';
 import '../widgets/detailed_loading_widget.dart';
+import '../widgets/mini_player_widget.dart';
 import '../models/audiobook.dart';
 import '../models/tag.dart';
 import '../services/storage_service.dart';
@@ -921,8 +922,19 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
                               ),
                             ),
                           ),
-                  ],
-                ),
+
+
+
+          
+          // Mini Player - appears at bottom when audiobook is playing
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 80, // Position above the FAB
+            child: const MiniPlayerWidget(),
+          ),
+        ],
+      ),
       
       // Floating action button (only show in Library mode)
       floatingActionButton: Consumer(
