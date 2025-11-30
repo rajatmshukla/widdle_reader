@@ -197,7 +197,7 @@ class _MiniPlayerWidgetState extends State<MiniPlayerWidget>
         child: Material(
           elevation: 8,
           borderRadius: BorderRadius.circular(28),
-          color: colorScheme.surfaceContainerHighest,
+          color: colorScheme.primaryContainer,
           child: InkWell(
             onTap: _openFullPlayer,
             borderRadius: BorderRadius.circular(28),
@@ -240,7 +240,7 @@ class _MiniPlayerWidgetState extends State<MiniPlayerWidget>
                         chapter?.title ?? 'Unknown Chapter',
                         style: textTheme.bodyLarge?.copyWith(
                           fontWeight: FontWeight.w500,
-                          color: colorScheme.onSurface,
+                          color: colorScheme.onPrimaryContainer,
                         ),
                         maxLines: 1,
                         overflow: TextOverflow.visible,
@@ -260,7 +260,7 @@ class _MiniPlayerWidgetState extends State<MiniPlayerWidget>
                         iconSize: 32,
                         onPressed: _skipToPrevious,
                         tooltip: 'Previous Chapter',
-                        color: colorScheme.onSurfaceVariant,
+                        color: colorScheme.onPrimaryContainer,
                       ),
                       
                       // Play/Pause (larger, primary)
@@ -270,7 +270,7 @@ class _MiniPlayerWidgetState extends State<MiniPlayerWidget>
                         ),
                         iconSize: 40,
                         onPressed: _togglePlayPause,
-                        color: colorScheme.primary,
+                        color: colorScheme.onPrimaryContainer,
                       ),
                       
                       // Next Chapter
@@ -279,7 +279,7 @@ class _MiniPlayerWidgetState extends State<MiniPlayerWidget>
                         iconSize: 32,
                         onPressed: _skipToNext,
                         tooltip: 'Next Chapter',
-                        color: colorScheme.onSurfaceVariant,
+                        color: colorScheme.onPrimaryContainer,
                       ),
                     ],
                   ),
