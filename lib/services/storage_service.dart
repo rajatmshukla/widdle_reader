@@ -290,7 +290,7 @@ class StorageService {
         if (key.endsWith(backupSuffix) && key.startsWith(progressCachePrefix)) {
           final originalKey = key.substring(0, key.length - backupSuffix.length);
           final value = prefs.getDouble(key);
-          if (value != null && !prefs.containsKey(originalKey)) {
+          if (value != null) {
             await prefs.setDouble(originalKey, value);
             restoredAnyData = true;
           }
@@ -302,7 +302,7 @@ class StorageService {
         if (key.endsWith(backupSuffix) && key.startsWith(lastPositionPrefix)) {
           final originalKey = key.substring(0, key.length - backupSuffix.length);
           final value = prefs.getString(key);
-          if (value != null && !prefs.containsKey(originalKey)) {
+          if (value != null) {
             await prefs.setString(originalKey, value);
             restoredAnyData = true;
           }
@@ -311,21 +311,21 @@ class StorageService {
       
       // Restore completed books
       final completedBooksBackup = prefs.getStringList('$completedBooksKey$backupSuffix');
-      if (completedBooksBackup != null && !prefs.containsKey(completedBooksKey)) {
+      if (completedBooksBackup != null) {
         await prefs.setStringList(completedBooksKey, completedBooksBackup);
         restoredAnyData = true;
       }
       
       // Restore custom titles
       final customTitlesBackup = prefs.getStringList('$customTitlesKey$backupSuffix');
-      if (customTitlesBackup != null && !prefs.containsKey(customTitlesKey)) {
+      if (customTitlesBackup != null) {
         await prefs.setStringList(customTitlesKey, customTitlesBackup);
         restoredAnyData = true;
       }
       
       // Restore folders
       final foldersBackup = prefs.getStringList('$foldersKey$backupSuffix');
-      if (foldersBackup != null && !prefs.containsKey(foldersKey)) {
+      if (foldersBackup != null) {
         await prefs.setStringList(foldersKey, foldersBackup);
         restoredAnyData = true;
       }
@@ -335,7 +335,7 @@ class StorageService {
         if (key.endsWith(backupSuffix) && key.startsWith('$bookmarksKey:')) {
           final originalKey = key.substring(0, key.length - backupSuffix.length);
           final value = prefs.getString(key);
-          if (value != null && !prefs.containsKey(originalKey)) {
+          if (value != null) {
             await prefs.setString(originalKey, value);
             restoredAnyData = true;
           }
@@ -344,14 +344,14 @@ class StorageService {
       
       // Restore user tags
       final userTagsBackup = prefs.getString('$userTagsKey$backupSuffix');
-      if (userTagsBackup != null && !prefs.containsKey(userTagsKey)) {
+      if (userTagsBackup != null) {
         await prefs.setString(userTagsKey, userTagsBackup);
         restoredAnyData = true;
       }
       
       // Restore audiobook tags (favorites and other tag assignments)
       final audiobookTagsBackup = prefs.getString('$audiobookTagsKey$backupSuffix');
-      if (audiobookTagsBackup != null && !prefs.containsKey(audiobookTagsKey)) {
+      if (audiobookTagsBackup != null) {
         await prefs.setString(audiobookTagsKey, audiobookTagsBackup);
         restoredAnyData = true;
       }
@@ -571,6 +571,29 @@ class StorageService {
       debugPrint("Saved audiobook folders: $paths");
     } catch (e) {
       debugPrint("Error saving audiobook folders: $e");
+    }
+  }
+
+  /// Saves the library view mode preference (true for grid, false for list)
+  Future<void> saveViewModePreference(bool isGridView) async {
+    try {
+      final prefs = await _preferences;
+      await prefs.setBool('library_is_grid_view', isGridView);
+      debugPrint("Saved view mode preference: ${isGridView ? 'Grid' : 'List'}");
+    } catch (e) {
+      debugPrint("Error saving view mode preference: $e");
+    }
+  }
+
+  /// Loads the library view mode preference
+  Future<bool> loadViewModePreference() async {
+    try {
+      final prefs = await _preferences;
+      // Default to List view (false) if not set
+      return prefs.getBool('library_is_grid_view') ?? false;
+    } catch (e) {
+      debugPrint("Error loading view mode preference: $e");
+      return false;
     }
   }
 

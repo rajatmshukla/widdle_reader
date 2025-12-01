@@ -11,11 +11,14 @@ class AudiobookTile extends StatefulWidget {
   final String customTitle;
   final VoidCallback? onTap;
 
+  final bool isGridView;
+
   const AudiobookTile({
     super.key,
     required this.audiobook,
     required this.customTitle,
     this.onTap,
+    this.isGridView = false,
   });
 
   @override
@@ -217,6 +220,17 @@ class _AudiobookTileState extends State<AudiobookTile>
     final isNew = audiobookProvider.isNewBook(widget.audiobook.id);
     final isCompleted = audiobookProvider.isCompletedBook(widget.audiobook.id);
 
+    // Use grid layout if requested or if in landscape
+    if (widget.isGridView) {
+      return _buildGridTile(
+        context,
+        colorScheme,
+        displayTitle,
+        isNew,
+        isCompleted,
+      );
+    }
+
     return context.isLandscape
         ? _buildLandscapeTile(
           context,
@@ -232,6 +246,140 @@ class _AudiobookTileState extends State<AudiobookTile>
           isNew,
           isCompleted,
         );
+  }
+
+  // Grid layout (vertical card for grid view)
+  Widget _buildGridTile(
+    BuildContext context,
+    ColorScheme colorScheme,
+    String displayTitle,
+    bool isNew,
+    bool isCompleted,
+  ) {
+    return Card(
+      elevation: 4,
+      clipBehavior: Clip.antiAlias,
+      margin: const EdgeInsets.all(4),
+      child: Stack(
+        children: [
+          // Progress gradient background
+          if (!_isLoadingProgress && _progressPercentage > 0)
+            Positioned.fill(
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 500),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      colorScheme.primary.withOpacity(0.15),
+                      Colors.transparent,
+                    ],
+                    stops: [_progressPercentage, _progressPercentage],
+                  ),
+                ),
+              ),
+            ),
+
+          // Main content
+          InkWell(
+            onTap: widget.onTap,
+            splashColor: colorScheme.primary.withOpacity(0.3),
+            highlightColor: colorScheme.primaryContainer.withOpacity(0.3),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // Cover image area (expanded)
+                Expanded(
+                  flex: 3,
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      // Background blur for cover
+                      buildCoverWidget(
+                        context,
+                        widget.audiobook,
+                        size: 200, // Large size for quality
+                        customTitle: displayTitle,
+                      ),
+                      // Gradient overlay for text readability at bottom
+                      Positioned(
+                        bottom: 0,
+                        left: 0,
+                        right: 0,
+                        height: 60,
+                        child: Container(
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topCenter,
+                              end: Alignment.bottomCenter,
+                              colors: [
+                                Colors.transparent,
+                                Colors.black.withOpacity(0.7),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+                // Details area
+                Expanded(
+                  flex: 2,
+                  child: Padding(
+                    padding: const EdgeInsets.all(8.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          displayTitle,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 13,
+                          ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 4),
+                        if (widget.audiobook.author != null)
+                          Text(
+                            widget.audiobook.author!,
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: colorScheme.onSurfaceVariant,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        const Spacer(),
+                        _buildCompactMetadataRow(context, colorScheme),
+                        const SizedBox(height: 6),
+                        _buildCompactProgressIndicator(context, colorScheme),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // Status badge
+          Positioned(
+            top: 0,
+            right: 0,
+            child: _buildStatusBadge(
+              colorScheme,
+              isNew: isNew,
+              isCompleted: isCompleted,
+              hasProgress: _progressPercentage > 0.01 && !_isLoadingProgress,
+              isCompact: true,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   // Portrait layout (vertical card)

@@ -70,6 +70,10 @@ class AudiobookProvider extends ChangeNotifier {
   String? get errorMessage => _errorMessage;
   bool get permissionPermanentlyDenied => _permissionPermanentlyDenied;
 
+  // Getters for filtered book lists
+  List<Audiobook> get ongoingBooks => _audiobooks.where((book) => !(_completedBooks[book.id] ?? false)).toList();
+  List<Audiobook> get completedBooksOnly => _audiobooks.where((book) => _completedBooks[book.id] ?? false).toList();
+  
   // Keep detailed loading getters for compatibility but they now just return default values
   bool get isDetailedLoading => _isLoading;
   String get currentLoadingStep => '';

@@ -51,6 +51,9 @@ class ThemeProvider extends ChangeNotifier {
       // Load dynamic theme setting
       _isDynamicThemeEnabled = prefs.getBool(_dynamicThemeKey) ?? false;
 
+      // Load library view mode
+      _isGridView = prefs.getBool('library_is_grid_view') ?? false;
+
       notifyListeners();
     } catch (e) {
       debugPrint('Error loading theme preferences: $e');
@@ -179,5 +182,30 @@ class ThemeProvider extends ChangeNotifier {
     
     _seedColor = Colors.blue;
     notifyListeners();
+  }
+
+  // Library View Mode State
+  bool _isGridView = false;
+  bool get isGridView => _isGridView;
+
+  /// Set the library view mode
+  Future<void> setGridView(bool isGrid) async {
+    if (_isGridView != isGrid) {
+      _isGridView = isGrid;
+      notifyListeners();
+      
+      // Save to storage
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setBool('library_is_grid_view', isGrid);
+      } catch (e) {
+        debugPrint('Error saving view mode preference: $e');
+      }
+    }
+  }
+
+  /// Toggle between list and grid view
+  Future<void> toggleViewMode() async {
+    await setGridView(!_isGridView);
   }
 }

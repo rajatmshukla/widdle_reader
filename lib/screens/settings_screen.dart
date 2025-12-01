@@ -184,6 +184,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> with SingleTick
             delay: 100,
           ),
           _buildAnimatedCard(
+            _buildViewModeCard(themeProvider, colorScheme, textTheme),
+            delay: 115,
+          ),
+          _buildAnimatedCard(
             _buildDynamicThemeCard(themeProvider, colorScheme, textTheme),
             delay: 125,
           ),
@@ -257,8 +261,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> with SingleTick
               ),
                   const SizedBox(height: 12),
                   _buildAnimatedCard(
-              _buildThemeModeCard(themeProvider, colorScheme, textTheme),
+                    _buildThemeModeCard(themeProvider, colorScheme, textTheme),
                     delay: 100,
+                  ),
+                  _buildAnimatedCard(
+                    _buildViewModeCard(themeProvider, colorScheme, textTheme),
+                    delay: 115,
                   ),
                   _buildAnimatedCard(
                     _buildDynamicThemeCard(themeProvider, colorScheme, textTheme),
@@ -471,6 +479,72 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> with SingleTick
                   'System',
                   Icons.settings_suggest_rounded,
                   themeProvider,
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // View Mode Card (Grid vs List)
+  Widget _buildViewModeCard(
+    ThemeProvider themeProvider,
+    ColorScheme colorScheme,
+    TextTheme textTheme,
+  ) {
+    final isGridView = themeProvider.isGridView;
+    
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      elevation: 0,
+      color: colorScheme.surfaceContainerLow,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  isGridView ? Icons.grid_view_rounded : Icons.view_list_rounded,
+                  color: colorScheme.primary,
+                  size: 24,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Library Layout',
+                        style: textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        isGridView ? 'Grid View' : 'List View',
+                        style: textTheme.bodySmall?.copyWith(
+                          color: colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Switch(
+                  value: isGridView,
+                  onChanged: (value) => themeProvider.setGridView(value),
+                  thumbIcon: WidgetStateProperty.resolveWith<Icon?>(
+                    (Set<WidgetState> states) {
+                      if (states.contains(WidgetState.selected)) {
+                        return const Icon(Icons.grid_view_rounded);
+                      }
+                      return const Icon(Icons.view_list_rounded);
+                    },
+                  ),
                 ),
               ],
             ),
@@ -735,7 +809,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> with SingleTick
 
             // Version
             Text(
-              'Version 1.0.9',
+              'Version 1.1.0',
               style: textTheme.bodyMedium?.copyWith(
                 color: colorScheme.onSurfaceVariant,
               ),

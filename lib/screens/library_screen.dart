@@ -12,7 +12,6 @@ import '../providers/search_provider.dart';
 import '../widgets/audiobook_tile.dart';
 import '../widgets/app_logo.dart';
 import '../widgets/countdown_timer_widget.dart';
-import '../widgets/library_toggle.dart';
 import '../widgets/tags_view.dart';
 import '../widgets/tag_assignment_dialog.dart';
 import '../widgets/search_bar_widget.dart';
@@ -46,6 +45,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
   bool _androidAutoInitialized = false;
+  int _selectedIndex = 0; // 0 = Library, 1 = Completed, 2 = Tags
   
   @override  
   void initState() {    
@@ -505,7 +505,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
             if (provider.audiobooks.isNotEmpty) ...[
               const Divider(),
               ListTile(
-                leading: Icon(Icons.local_offer_outlined, color: colorScheme.secondary),
+                leading: Icon(Icons.local_offer, color: colorScheme.secondary),
                 title: const Text('Scan Library for Tags'),
                 subtitle: const Text('Create tags from existing books\' folder structure'),
                 onTap: () async {
@@ -773,23 +773,6 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
                 ],
               ),
               actions: [
-                    // Search button
-                    Consumer(
-                      builder: (context, widgetRef, child) {
-                        final searchState = ref.watch(searchProvider);
-                        return IconButton(
-                          icon: Icon(
-                            searchState.isActive ? Icons.search_off_rounded : Icons.search_rounded,
-                            size: 24,
-                          ),
-                          tooltip: searchState.isActive ? 'Close Search' : 'Search Library',
-                          onPressed: () {
-                            ref.read(searchProvider.notifier).toggleSearch();
-                          },
-                        );
-                      },
-                    ),
-                    
                 // Sleep Timer button
                 IconButton(
                   icon: CountdownTimerWidget(
@@ -823,49 +806,26 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
           decoration: AppTheme.gradientBackground(context),
           child: Column(
             children: [
-                  // Search bar (only show when search is active)
-                  Consumer(
-                    builder: (context, widgetRef, child) {
-                      final searchState = ref.watch(searchProvider);
-                      return AnimatedSwitcher(
-                        duration: const Duration(milliseconds: 300),
-                        child: searchState.isActive
-                            ? const SearchBarWidget()
-                            : const SizedBox.shrink(),
-                      );
-                    },
-                  ),
-                  
-                  // Toggle bar between Library and Tags (only show when search is not active)
-                  Consumer(
-                    builder: (context, widgetRef, child) {
-                      final searchState = ref.watch(searchProvider);
-                      return AnimatedSwitcher(
-                        duration: const Duration(milliseconds: 300),
-                        child: searchState.isActive
-                            ? const SizedBox.shrink()
-                            : const LibraryToggle(),
-                      );
-                    },
-                  ),
-              
               // Main content area
               Expanded(
                 child: Stack(
                   children: [
-                    // Main content with conditional view based on selected mode
+                    // Main content with conditional view based on selected tab
                     FadeTransition(
                       opacity: _fadeAnimation,
                       child: Column(
                         children: [
+                          // Search bar and controls (only show in Library and Completed tabs)
+                          if (_selectedIndex == 0 || _selectedIndex == 1)
+                            _buildSearchAndSortBar(context, ref),
+                          
                           // Loading card at the top (only in library mode when not searching)
                           Consumer(
                             builder: (context, widgetRef, child) {
-                              final libraryMode = ref.watch(libraryModeProvider);
                               final searchState = ref.watch(searchProvider);
                               
-                              // Only show loading card in library mode when not searching
-                              if (libraryMode == LibraryMode.library && !searchState.isActive) {
+                              // Only show loading card in library tab when not searching
+                              if (_selectedIndex == 0 && !searchState.isActive) {
                                 return const DetailedLoadingWidget();
                               }
                               return const SizedBox.shrink();
@@ -876,32 +836,62 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
                           Expanded(
                             child: Consumer(
                               builder: (context, widgetRef, child) {
-                                final libraryMode = ref.watch(libraryModeProvider);
-                                    final searchState = ref.watch(searchProvider);
-                                    
-                                    // If search is active, show search results
-                                    if (searchState.isActive) {
-                                      return _buildSearchResults(context, provider, searchState, colorScheme);
-                                    }
+                                final searchState = ref.watch(searchProvider);
                                 
-                                if (libraryMode == LibraryMode.tags) {
+                                // Switch content based on selected tab
+                                if (_selectedIndex == 2) {
+                                  // Tags view
                                   return const TagsView();
+                                } else if (_selectedIndex == 1) {
+                                  // Completed books view
+                                  return Consumer(
+                                    builder: (context, widgetRef, child) {
+                                      final sortOption = ref.watch(librarySortOptionProvider);
+                                      
+                                      // Apply sorting
+                                      provider.sortAudiobooks(sortOption);
+                                      
+                                      var completedBooks = provider.completedBooksOnly;
+                                      
+                                      // Apply search filter if active
+                                      if (searchState.query.isNotEmpty) {
+                                        completedBooks = _getSearchResults(provider, searchState.query, booksToSearch: completedBooks);
+                                      }
+                                      
+                                      return completedBooks.isEmpty && !provider.isLoading
+                                          ? (searchState.query.isNotEmpty 
+                                              ? _buildEmptySearchResults(context, colorScheme) 
+                                              : _buildEmptyCompletedView(context, colorScheme))
+                                          : (isLandscape || themeProvider.isGridView)
+                                              ? _buildGridView(context, provider, isPortraitGrid: !isLandscape, booksToShow: completedBooks)
+                                              : _buildListView(context, provider, booksToShow: completedBooks);
+                                    },
+                                  );
                                 } else {
-                                      // Library mode - show audiobooks with sorting
-                                      return Consumer(
-                                        builder: (context, widgetRef, child) {
-                                          final sortOption = ref.watch(librarySortOptionProvider);
-                                          
-                                          // Apply sorting (optimized to skip if sort option hasn't changed)
-                                          provider.sortAudiobooks(sortOption);
-                                          
-                                  return provider.audiobooks.isEmpty && !provider.isLoading
-                                      ? _buildEmptyLibraryView(context, provider, colorScheme)
-                                      : isLandscape
-                                          ? _buildGridView(context, provider)
-                                          : _buildListView(context, provider);
-                                        },
-                                      );
+                                  // Library mode (ongoing books only)
+                                  return Consumer(
+                                    builder: (context, widgetRef, child) {
+                                      final sortOption = ref.watch(librarySortOptionProvider);
+                                      
+                                      // Apply sorting
+                                      provider.sortAudiobooks(sortOption);
+                                      
+                                      var ongoingBooks = provider.ongoingBooks;
+                                      
+                                      // Apply search filter if active
+                                      if (searchState.query.isNotEmpty) {
+                                        ongoingBooks = _getSearchResults(provider, searchState.query, booksToSearch: ongoingBooks);
+                                      }
+                                      
+                                      return ongoingBooks.isEmpty && !provider.isLoading
+                                          ? (searchState.query.isNotEmpty 
+                                              ? _buildEmptySearchResults(context, colorScheme) 
+                                              : _buildEmptyLibraryView(context, provider, colorScheme))
+                                          : (isLandscape || themeProvider.isGridView)
+                                              ? _buildGridView(context, provider, isPortraitGrid: !isLandscape, booksToShow: ongoingBooks)
+                                              : _buildListView(context, provider, booksToShow: ongoingBooks);
+                                    },
+                                  );
                                 }
                               },
                             ),
@@ -927,35 +917,233 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
 
           
           // Mini Player - appears at bottom when audiobook is playing
-          Positioned(
-            left: 0,
-            right: 0,
-            bottom: 80, // Position above the FAB
-            child: const MiniPlayerWidget(),
-          ),
+          // Note: This is now part of bottomNavigationBar
         ],
       ),
       
-      // Floating action button (only show in Library mode)
-      floatingActionButton: Consumer(
-        builder: (context, widgetRef, child) {
-          final libraryMode = ref.watch(libraryModeProvider);
-          final showFab = libraryMode == LibraryMode.library && !provider.isLoading;
-          
-          return AnimatedScale(
-            scale: showFab ? 1.0 : 0.0,
-            duration: const Duration(milliseconds: 300),
-            child: FloatingActionButton.extended(
-              onPressed: provider.isLoading
-                  ? null
-                  : () => _showAddBooksDialog(context, provider),
+      // Floating action button (only show in Library tab)
+      floatingActionButton: _selectedIndex == 0 && !provider.isLoading
+          ? FloatingActionButton(
+              onPressed: () => _showAddBooksDialog(context, provider),
               elevation: 3,
-              label: const Text('Add Books'),
-              icon: const Icon(Icons.add_rounded),
+              child: const Icon(Icons.add_rounded),
               tooltip: 'Add Audiobooks',
+            )
+          : null,
+      
+      // Bottom Navigation Bar with Mini Player
+      bottomNavigationBar: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Mini Player appears above navigation bar when playing
+          const MiniPlayerWidget(),
+          
+          // Navigation Bar
+          NavigationBar(
+            selectedIndex: _selectedIndex,
+            onDestinationSelected: (index) {
+              setState(() {
+                _selectedIndex = index;
+              });
+            },
+            destinations: const [
+              NavigationDestination(
+                icon: Icon(Icons.auto_stories_outlined),
+                selectedIcon: Icon(Icons.auto_stories),
+                label: 'Library',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.check_circle_outline),
+                selectedIcon: Icon(Icons.check_circle),
+                label: 'Completed',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.local_offer_outlined),
+                selectedIcon: Icon(Icons.local_offer),
+                label: 'Tags',
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Search bar and sort button
+  Widget _buildSearchAndSortBar(BuildContext context, WidgetRef ref) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final searchState = ref.watch(searchProvider);
+    final currentSort = ref.watch(librarySortOptionProvider);
+    
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Row(
+        children: [
+          // Search bar
+          Expanded(
+            child: TextField(
+              onTapOutside: (event) {
+                FocusManager.instance.primaryFocus?.unfocus();
+              },
+              onChanged: (value) {
+                ref.read(searchProvider.notifier).updateQuery(value);
+                // We don't need to toggle active state anymore as we filter in-place
+              },
+              decoration: InputDecoration(
+                hintText: 'Search audiobooks...',
+                prefixIcon: const Icon(Icons.search_rounded),
+                suffixIcon: searchState.isActive && searchState.query.isNotEmpty
+                    ? IconButton(
+                        icon: const Icon(Icons.clear_rounded),
+                        onPressed: () {
+                          ref.read(searchProvider.notifier).updateQuery('');
+                          FocusManager.instance.primaryFocus?.unfocus();
+                        },
+                      )
+                    : null,
+                filled: true,
+                fillColor: colorScheme.surfaceContainerHighest.withOpacity(0.5),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide.none,
+                ),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              ),
             ),
-          );
-        },
+          ),
+          const SizedBox(width: 12),
+          // Sort button
+          Container(
+            decoration: BoxDecoration(
+              color: colorScheme.surfaceContainerHighest.withOpacity(0.5),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                borderRadius: BorderRadius.circular(12),
+                onTap: () => _showLibrarySortMenu(context, ref, colorScheme),
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Icon(
+                    Icons.sort_rounded,
+                    size: 24,
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Show library sort menu
+  void _showLibrarySortMenu(BuildContext context, WidgetRef ref, ColorScheme colorScheme) {
+    final currentSort = ref.read(librarySortOptionProvider);
+    
+    showMenu<LibrarySortOption>(
+      context: context,
+      position: RelativeRect.fromLTRB(
+        MediaQuery.of(context).size.width - 200,
+        kToolbarHeight + 100,
+        20,
+        0,
+      ),
+      items: LibrarySortOption.values.map((option) {
+        return PopupMenuItem<LibrarySortOption>(
+          value: option,
+          child: Row(
+            children: [
+              Icon(
+                _getLibrarySortIcon(option),
+                size: 20,
+                color: option == currentSort ? colorScheme.primary : colorScheme.onSurfaceVariant,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  option.displayName,
+                  style: TextStyle(
+                    color: option == currentSort ? colorScheme.primary : colorScheme.onSurface,
+                    fontWeight: option == currentSort ? FontWeight.w600 : FontWeight.normal,
+                  ),
+                ),
+              ),
+              if (option == currentSort)
+                Icon(
+                  Icons.check,
+                  size: 16,
+                  color: colorScheme.primary,
+                ),
+            ],
+          ),
+        );
+      }).toList(),
+    ).then((selectedOption) {
+      if (selectedOption != null) {
+        ref.read(librarySortOptionProvider.notifier).updateSortOption(selectedOption);
+      }
+    });
+  }
+
+  // Get icon for library sort options
+  IconData _getLibrarySortIcon(LibrarySortOption option) {
+    switch (option) {
+      case LibrarySortOption.alphabeticalAZ:
+      case LibrarySortOption.alphabeticalZA:
+        return Icons.sort_by_alpha;
+      case LibrarySortOption.authorAZ:
+      case LibrarySortOption.authorZA:
+        return Icons.person;
+      case LibrarySortOption.dateAddedNewest:
+      case LibrarySortOption.dateAddedOldest:
+        return Icons.schedule;
+      case LibrarySortOption.lastPlayedRecent:
+      case LibrarySortOption.lastPlayedOldest:
+        return Icons.play_circle_outline;
+      case LibrarySortOption.series:
+        return Icons.library_books;
+      case LibrarySortOption.completionStatus:
+        return Icons.check_circle_outline;
+    }
+  }
+
+  // Empty search results view
+  Widget _buildEmptySearchResults(BuildContext context, ColorScheme colorScheme) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(30.0),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.search_off_rounded,
+              size: 64,
+              color: colorScheme.onSurfaceVariant.withOpacity(0.5),
+            ),
+            const SizedBox(height: 24),
+            Text(
+              'No matches found',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.w600,
+                color: colorScheme.onSurface,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Try adjusting your search terms',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 14,
+                color: colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1013,59 +1201,113 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
     );
   }
 
-  // Grid view for landscape orientation
-  Widget _buildGridView(BuildContext context, AudiobookProvider audiobookProvider) {
-    final screenWidth = MediaQuery.of(context).size.width;
-    // Calculate how many items to show per row based on screen width
-    final crossAxisCount = screenWidth > 1200 ? 4 : (screenWidth > 800 ? 3 : 2);
-
-    return GridView.builder(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
-      physics: const BouncingScrollPhysics(),
-      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: crossAxisCount,
-        childAspectRatio: 1.8,
-        crossAxisSpacing: 8,
-        mainAxisSpacing: 8,
-      ),
-      itemCount: audiobookProvider.audiobooks.length,
-      itemBuilder: (context, index) {
-        final audiobook = audiobookProvider.audiobooks[index];
-        
-        // Apply staggered animation for items
-        return AnimatedOpacity(
-          duration: const Duration(milliseconds: 300),
-          opacity: 1.0,
-          curve: Curves.easeOut,
-          child: AnimatedScale(
-            duration: const Duration(milliseconds: 200),
-            scale: 1.0,
-            child: GestureDetector(
-              onTap: () => _loadLastPositionAndNavigate(context, audiobook),
-              onLongPress: () => _showLongPressMenu(context, audiobook, audiobookProvider),
-              child: AudiobookTile(
-                // Use a more comprehensive key that will force a rebuild when reset happens
-                key: ValueKey(
-                  '${audiobook.id}-${audiobookProvider.isCompletedBook(audiobook.id)}-${DateTime.now().millisecondsSinceEpoch}',
-                ),
-                audiobook: audiobook,
-                customTitle: audiobookProvider.getTitleForAudiobook(audiobook),
+  // Empty completed view
+  Widget _buildEmptyCompletedView(BuildContext context, ColorScheme colorScheme) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(30.0),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.check_circle_outline,
+              size: 64,
+              color: colorScheme.primary.withOpacity(0.5),
+            ),
+            const SizedBox(height: 24),
+            Text(
+              'No completed books yet',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.w600,
+                color: colorScheme.onSurface,
               ),
             ),
-          ),
-        );
-      },
+            const SizedBox(height: 8),
+            Text(
+              'Finished audiobooks will appear here',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 14,
+                color: colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
+  // Grid view for landscape or when grid view is enabled
+  Widget _buildGridView(BuildContext context, AudiobookProvider audiobookProvider, {bool isPortraitGrid = false, List<Audiobook>? booksToShow}) {
+  final screenWidth = MediaQuery.of(context).size.width;
+  final books = booksToShow ?? audiobookProvider.audiobooks;
+  
+  // Calculate columns based on mode
+  int crossAxisCount;
+  double childAspectRatio;
+  
+  if (isPortraitGrid) {
+    // Portrait Grid Mode
+    crossAxisCount = screenWidth > 600 ? 3 : 2;
+    childAspectRatio = 0.65; // Taller cards to prevent overflow with 2-line titles
+  } else {
+    // Landscape Mode (existing logic)
+    crossAxisCount = screenWidth > 1200 ? 4 : (screenWidth > 800 ? 3 : 2);
+    childAspectRatio = 1.8; // Wider cards for landscape
+  }
+
+  return GridView.builder(
+    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+    physics: const BouncingScrollPhysics(),
+    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+      crossAxisCount: crossAxisCount,
+      childAspectRatio: childAspectRatio,
+      crossAxisSpacing: 8,
+      mainAxisSpacing: 8,
+    ),
+    itemCount: books.length,
+    itemBuilder: (context, index) {
+      final audiobook = books[index];
+      
+      // Apply staggered animation for items
+      return AnimatedOpacity(
+        duration: const Duration(milliseconds: 300),
+        opacity: 1.0,
+        curve: Curves.easeOut,
+        child: AnimatedScale(
+          duration: const Duration(milliseconds: 200),
+          scale: 1.0,
+          child: GestureDetector(
+            onTap: () => _loadLastPositionAndNavigate(context, audiobook),
+            onLongPress: () => _showLongPressMenu(context, audiobook, audiobookProvider),
+            child: AudiobookTile(
+              // Use a more comprehensive key that will force a rebuild when reset happens
+              key: ValueKey(
+                '${audiobook.id}-${audiobookProvider.isCompletedBook(audiobook.id)}-${DateTime.now().millisecondsSinceEpoch}',
+              ),
+              audiobook: audiobook,
+              customTitle: audiobookProvider.getTitleForAudiobook(audiobook),
+              isGridView: isPortraitGrid, // Enable grid layout for portrait grid
+            ),
+          ),
+        ),
+      );
+    },
+  );
+}
+
   // List view for portrait orientation
-  Widget _buildListView(BuildContext context, AudiobookProvider audiobookProvider) {
+  Widget _buildListView(BuildContext context, AudiobookProvider audiobookProvider, {List<Audiobook>? booksToShow}) {
+    final books = booksToShow ?? audiobookProvider.audiobooks;
+    
     return ListView.builder(
       padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 2),
       physics: const BouncingScrollPhysics(),
-      itemCount: audiobookProvider.audiobooks.length,
+      itemCount: books.length,
       itemBuilder: (context, index) {
-        final audiobook = audiobookProvider.audiobooks[index];
+        final audiobook = books[index];
         
         // Apply staggered animation for items
         return AnimatedOpacity(
@@ -1089,75 +1331,15 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
     );
   }
 
-  // Build search results view
-  Widget _buildSearchResults(BuildContext context, AudiobookProvider audiobookProvider, SearchState searchState, ColorScheme colorScheme) {
-    // Get search results
-    final results = _getSearchResults(audiobookProvider, searchState.query);
-    
-    if (searchState.query.trim().isEmpty) {
-      // Show empty search state
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(32.0),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                Icons.search_rounded,
-                size: 64,
-                color: colorScheme.onSurfaceVariant.withOpacity(0.5),
-              ),
-              const SizedBox(height: 16),
-              Text(
-                'Start typing to search',
-                style: TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w600,
-                  color: colorScheme.onSurface,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Search for books, authors, or tags',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 14,
-                  color: colorScheme.onSurfaceVariant,
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
-    // Build search result tiles
-    final searchResultTiles = results.map((audiobook) {
-      return GestureDetector(
-        onTap: () => _loadLastPositionAndNavigate(context, audiobook),
-        onLongPress: () => _showLongPressMenu(context, audiobook, audiobookProvider),
-        child: AudiobookTile(
-          key: ValueKey('search_${audiobook.id}'),
-          audiobook: audiobook,
-          customTitle: audiobookProvider.getTitleForAudiobook(audiobook),
-        ),
-      );
-    }).toList();
-
-    return SearchResultsWidget(
-      children: searchResultTiles,
-      query: searchState.query,
-    );
-  }
-
   // Get search results using the search service
-  List<Audiobook> _getSearchResults(AudiobookProvider audiobookProvider, String query) {
-    if (query.trim().isEmpty) {
-      return [];
-    }
-
+  List<Audiobook> _getSearchResults(AudiobookProvider audiobookProvider, String query, {List<Audiobook>? booksToSearch}) {
     // Get all necessary data for search
-    final audiobooks = audiobookProvider.audiobooks;
+    final audiobooks = booksToSearch ?? audiobookProvider.audiobooks;
+    
+    if (query.trim().isEmpty) {
+      return audiobooks;
+    }
+    
     final customTitles = audiobookProvider.customTitles;
     
     // Get audiobook tags
