@@ -60,6 +60,8 @@ dependencies:
   crypto: ^3.0.3  # For cryptographic operations
   ffmpeg_kit_flutter_new_audio: ^2.0.0
   palette_generator: ^0.3.3+3  # For extracting colors from images
+  fl_chart: ^0.66.0
+  intl: ^0.20.2
 
 # Add this section at the root level of your pubspec.yaml
 flutter_launcher_icons:

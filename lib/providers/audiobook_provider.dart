@@ -12,6 +12,7 @@ import 'package:path/path.dart' as p; // For path operations
 
 // Import local models and services
 import '../models/audiobook.dart';
+
 import '../models/chapter.dart';
 import '../models/tag.dart'; // Contains LibrarySortOption
 import '../services/metadata_service.dart';
@@ -633,6 +634,8 @@ class AudiobookProvider extends ChangeNotifier {
         }
       }
       
+
+    
       // STEP 3: Update UI with loaded books in the stored order initially
       _audiobooks = loadedBooks;
       await _loadLastPlayedTimestamps();
@@ -1742,5 +1745,7 @@ class AudiobookProvider extends ChangeNotifier {
 
     return finalRoots.isNotEmpty ? finalRoots : [Directory(paths.first).parent.path];
   }
+
+
 }
 

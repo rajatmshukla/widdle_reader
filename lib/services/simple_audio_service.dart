@@ -10,6 +10,7 @@ import 'package:audio_session/audio_session.dart';
 import 'package:just_audio_background/just_audio_background.dart';
 import '../models/audiobook.dart';
 import '../services/storage_service.dart';
+import '../services/statistics_service.dart';
 
 class SimpleAudioService {
   // Singleton instance
@@ -18,6 +19,8 @@ class SimpleAudioService {
 
   // Method channel for Android Auto MediaSession updates
   static const _audioBridgeChannel = MethodChannel('com.widdlereader.app/audio_bridge');
+
+
 
   // Internal player
   final AudioPlayer _player = AudioPlayer();
@@ -40,6 +43,7 @@ class SimpleAudioService {
   // Timer for auto-saving
   Timer? _autoSaveTimer;
   final StorageService _storageService = StorageService();
+  final StatisticsService _statsService = StatisticsService();
 
   // Timer for MediaSession updates
   Timer? _mediaSessionUpdateTimer;
@@ -304,31 +308,26 @@ class SimpleAudioService {
 
     try {
       final chapter = _currentAudiobook!.chapters[index];
-      final audioFilePath = chapter.sourcePath;
       
-      // CRITICAL FIX: Validate audio file exists and is accessible
-      final audioFile = File(audioFilePath);
+      // Validate file
+      final audioFile = File(chapter.sourcePath);
       if (!await audioFile.exists()) {
         throw Exception("Audio file not found: ${audioFile.path}");
       }
       
-      // Check file size to ensure it's not corrupted
       final fileSize = await audioFile.length();
-      if (fileSize < 1024) { // Less than 1KB is likely corrupted
+      if (fileSize < 1024) {
         throw Exception("Audio file appears corrupted (too small): ${audioFile.path}");
       }
-      
-      debugPrint("Loading chapter: ${chapter.title} from ${audioFile.path} (${(fileSize / 1024 / 1024).toStringAsFixed(1)} MB)");
+      debugPrint("Loading chapter: ${chapter.title} from ${audioFile.path}");
 
-      // Prepare artUri from cover art if available
+      // Prepare artUri
       Uri? artUri;
       try {
         final coverPath = await _storageService.getCachedCoverArtPath(_currentAudiobook!.id);
         if (coverPath != null) {
           artUri = Uri.file(coverPath);
-          debugPrint("Cover art URI from storage: $artUri");
         } else if (_currentAudiobook!.coverArt != null) {
-          // Fallback to temp file if not in storage (rare)
           final sanitizedId = _currentAudiobook!.id.replaceAll(RegExp(r'[^\w]'), '_');
           artUri = await _getCoverArtUri(_currentAudiobook!.coverArt!, sanitizedId);
         }
@@ -336,7 +335,7 @@ class SimpleAudioService {
         debugPrint("Error getting cover art URI: $e");
       }
       
-      // Create a MediaItem for the chapter - ALWAYS create this for just_audio_background
+      // Create MediaItem
       final mediaItem = MediaItem(
         id: chapter.id,
         album: _currentAudiobook!.title,
@@ -347,7 +346,6 @@ class SimpleAudioService {
         displayTitle: chapter.title,
         displaySubtitle: _currentAudiobook!.title,
         displayDescription: _currentAudiobook!.author ?? _currentAudiobook!.title,
-        // Add extra metadata to enhance the notification display
         extras: {
           'audiobookId': _currentAudiobook!.id,
           'chapterIndex': index,
@@ -358,46 +356,30 @@ class SimpleAudioService {
         },
       );
 
-      // CRITICAL FIX: Better error handling for audio source loading
+      // Set Audio Source
       try {
-        debugPrint("Setting audio source for: ${audioFile.path}");
-        
         AudioSource audioSource;
         
-        // Check if this is a segment (embedded chapter) or a full file
         if (chapter.end != null && chapter.end! > Duration.zero && chapter.end! > chapter.start) {
-          debugPrint("Loading chapter segment: ${chapter.start} to ${chapter.end}");
           audioSource = ClippingAudioSource(
-            child: AudioSource.uri(
-              Uri.file(chapter.sourcePath),
+              child: AudioSource.uri(Uri.file(chapter.sourcePath), tag: mediaItem),
+              start: chapter.start,
+              end: chapter.end,
               tag: mediaItem,
-            ),
-            start: chapter.start,
-            end: chapter.end,
-            tag: mediaItem,
           );
         } else {
-          debugPrint("Loading full file chapter");
-          audioSource = AudioSource.uri(
-            Uri.file(chapter.sourcePath),
-            tag: mediaItem,
-          );
+          audioSource = AudioSource.uri(Uri.file(chapter.sourcePath), tag: mediaItem);
         }
 
-        await _player.setAudioSource(
-          audioSource,
-          initialPosition: startPosition,
-        );
-        debugPrint("Audio source set successfully");
+        await _player.setAudioSource(audioSource, initialPosition: startPosition);
       } catch (audioSourceError) {
-        // More specific error handling for common audio issues
         if (audioSourceError.toString().contains('FileSystemException')) {
-          throw Exception("Cannot access audio file. Check file permissions: ${audioFile.path}");
+          throw Exception("Cannot access audio file. Check file permissions.");
         } else if (audioSourceError.toString().contains('FormatException') || 
                    audioSourceError.toString().contains('Unsupported')) {
-          throw Exception("Unsupported audio format or corrupted file: ${audioFile.path}");
+          throw Exception("Unsupported audio format or corrupted file.");
         } else if (audioSourceError.toString().contains('NetworkException')) {
-          throw Exception("File access error (may be on unavailable drive): ${audioFile.path}");
+          throw Exception("File access error (may be on unavailable drive).");
         } else {
           throw Exception("Failed to load audio file: $audioSourceError");
         }
@@ -405,13 +387,19 @@ class SimpleAudioService {
 
       _currentChapterIndex = index;
       _currentChapterSubject.add(index);
-      debugPrint("Successfully loaded chapter: ${chapter.title}");
+      
+      // Restore playback speed for this book
+      final savedSpeed = await _storageService.getPlaybackSpeed(_currentAudiobook!.id);
+      final speedToUse = savedSpeed ?? 1.0;
+      await _player.setSpeed(speedToUse);
+      _speedSubject.add(speedToUse);
+      
+      debugPrint("Successfully loaded chapter: ${chapter.title} with speed: $speedToUse");
       await _updateMediaSessionMetadata();
       await _updateMediaSessionPlaybackState();
     } catch (e) {
       debugPrint("Error loading chapter $index: $e");
       
-      // Provide user-friendly error message
       String userMessage = "Failed to load chapter.";
       if (e.toString().contains("not found")) {
         userMessage = "Audio file not found. The file may have been moved or deleted.";
@@ -437,8 +425,9 @@ class SimpleAudioService {
     // Create a new timer that saves position every 30 seconds
     _autoSaveTimer = Timer.periodic(const Duration(seconds: 30), (_) {
       if (_currentAudiobook != null && isPlaying) {
-        debugPrint("Auto-saving playback position");
+        debugPrint("Auto-saving playback position and syncing stats");
         saveCurrentPosition();
+        _statsService.syncCurrentSession();
       }
     });
   }
@@ -581,6 +570,15 @@ class SimpleAudioService {
       try {
         await _player.play();
         debugPrint('Playback started successfully');
+        
+        // Start statistics session tracking
+        final chapterName = _currentAudiobook!.chapters[_currentChapterIndex].title;
+        await _statsService.startSession(
+          audiobookId: _currentAudiobook!.id,
+          chapterName: chapterName,
+        );
+        debugPrint('Started statistics session tracking');
+        
         _notifyPlaybackChanged(nativeUpdate: true);
       } catch (error) {
         debugPrint('Error starting playback: $error');
@@ -600,6 +598,11 @@ class SimpleAudioService {
     debugPrint('Playback paused');
     _userPaused = true;
     await saveCurrentPosition(); // Save position immediately on pause
+    
+    // End statistics session tracking
+    await _statsService.endSession();
+    debugPrint('Ended statistics session tracking');
+    
     _notifyPlaybackChanged(nativeUpdate: true);
   }
 

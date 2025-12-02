@@ -61,6 +61,9 @@ class MetadataService {
 
   /// Recursively scans a directory and its subdirectories for audiobook folders.
   /// A folder is considered an audiobook folder if it contains audio files.
+  /// NOTE: This method explicitly ignores .nomedia files and scans directories containing them.
+  /// The .nomedia file is an Android directive for media scanners (like music players),
+  /// not a filesystem directive, so audiobook apps should ignore it.
   Future<void> _scanDirectoryRecursively(
     Directory directory, 
     List<String> audiobookFolders
@@ -72,12 +75,22 @@ class MetadataService {
       bool hasAudioFiles = false;
       bool hasSubdirectories = false;
       final List<Directory> subdirectories = [];
+      bool hasNomediaFile = false;
       
       debugPrint("Scanning directory: ${directory.path} (${entities.length} items)");
       
       for (final entity in entities) {
         if (entity is File) {
+          final fileName = p.basename(entity.path);
           final extension = p.extension(entity.path).toLowerCase();
+          
+          // Check for .nomedia file (for logging purposes)
+          if (fileName == '.nomedia' || fileName.toLowerCase() == '.nomedia') {
+            hasNomediaFile = true;
+            debugPrint("  Found .nomedia file (will scan directory anyway)");
+            continue; // Skip the .nomedia file itself
+          }
+          
           if (_supportedFormats.contains(extension)) {
             hasAudioFiles = true;
             debugPrint("  Found audio file: ${p.basename(entity.path)}");
@@ -92,7 +105,11 @@ class MetadataService {
 
       // If this directory has audio files, it's an audiobook folder
       if (hasAudioFiles) {
-        debugPrint("✓ AUDIOBOOK FOLDER FOUND: ${directory.path}");
+        if (hasNomediaFile) {
+          debugPrint("✓ AUDIOBOOK FOLDER FOUND (with .nomedia): ${directory.path}");
+        } else {
+          debugPrint("✓ AUDIOBOOK FOLDER FOUND: ${directory.path}");
+        }
         audiobookFolders.add(directory.path);
         
         // Don't scan subdirectories if this folder has audio files
@@ -108,7 +125,11 @@ class MetadataService {
         }
       } else {
         // Empty directory or no relevant content
-        debugPrint("  Skipping empty directory: ${directory.path}");
+        if (hasNomediaFile) {
+          debugPrint("  Directory has .nomedia but no audio files: ${directory.path}");
+        } else {
+          debugPrint("  Skipping empty directory: ${directory.path}");
+        }
       }
     } catch (e) {
       debugPrint("Error scanning directory ${directory.path}: $e");

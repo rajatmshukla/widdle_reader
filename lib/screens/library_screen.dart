@@ -4,6 +4,11 @@ import 'package:provider/provider.dart' as provider;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
 
+import 'settings_screen.dart';
+import 'simple_player_screen.dart';
+
+
+
 import '../providers/audiobook_provider.dart';
 import '../providers/theme_provider.dart';
 import '../providers/sleep_timer_provider.dart';
@@ -501,6 +506,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
                 await _handleAutoTagCreation(provider);
               },
             ),
+
             // Add the new scan existing library option
             if (provider.audiobooks.isNotEmpty) ...[
               const Divider(),
@@ -782,6 +788,18 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
                   ),
                   tooltip: 'Sleep Timer',
                   onPressed: _showSleepTimerDialog,
+                ),
+                
+                // Statistics button
+                IconButton(
+                  icon: const Icon(
+                    Icons.bar_chart_rounded,
+                    size: 24,
+                  ),
+                  tooltip: 'Statistics',
+                  onPressed: () {
+                    Navigator.pushNamed(context, '/statistics');
+                  },
                 ),
                 
                 // Settings button

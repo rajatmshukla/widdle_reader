@@ -7,12 +7,14 @@ import 'dart:typed_data'; // For Uint8List
 import 'package:path_provider/path_provider.dart';
 import '../models/bookmark.dart'; // Import the Bookmark model
 import 'dart:async'; // For periodic cache persistence
+import '../models/audiobook.dart'; // Import Audiobook model
 
 class StorageService {
   // Callback for notifying providers about data changes
   static Function()? _onDataImported;
   // Key constants for SharedPreferences
-  static const foldersKey = 'audiobook_folders';
+  static const String foldersKey = 'audiobook_folders';
+
   static const lastPositionPrefix = 'last_pos_';
   static const customTitlesKey = 'custom_titles';
   static const progressCachePrefix = 'progress_cache_';
@@ -265,12 +267,36 @@ class StorageService {
       if (audiobookTags != null) {
         await prefs.setString('$audiobookTagsKey$backupSuffix', audiobookTags);
       }
+
+      // Backup playback speeds
+      for (final key in prefs.getKeys()) {
+        if (key.startsWith(playbackSpeedPrefix)) {
+          final value = prefs.getDouble(key);
+          if (value != null) {
+            await prefs.setDouble('$key$backupSuffix', value);
+          }
+        }
+      }
+      
+      // Backup reading statistics
+      for (final key in prefs.getKeys()) {
+        if (key.startsWith('reading_session_') || 
+            key.startsWith('daily_stats_') ||
+            key == 'reading_streak' ||
+            key == 'active_session') {
+          final value = prefs.getString(key);
+          if (value != null) {
+            await prefs.setString('$key$backupSuffix', value);
+          }
+        }
+      }
       
       debugPrint('Data backup created successfully.');
     } catch (e) {
       debugPrint('Error creating data backup: $e');
     }
   }
+
 
   // Restore data from backup
   Future<bool> restoreFromBackup() async {
@@ -355,6 +381,34 @@ class StorageService {
         await prefs.setString(audiobookTagsKey, audiobookTagsBackup);
         restoredAnyData = true;
       }
+
+      // Restore playback speeds
+      for (final key in prefs.getKeys()) {
+        if (key.endsWith(backupSuffix) && key.startsWith(playbackSpeedPrefix)) {
+          final originalKey = key.substring(0, key.length - backupSuffix.length);
+          final value = prefs.getDouble(key);
+          if (value != null) {
+            await prefs.setDouble(originalKey, value);
+            restoredAnyData = true;
+          }
+        }
+      }
+      
+      // Restore reading statistics
+      for (final key in prefs.getKeys()) {
+        if (key.endsWith(backupSuffix) && 
+            (key.startsWith('reading_session_') || 
+             key.startsWith('daily_stats_') ||
+             key.contains('reading_streak') ||
+             key.contains('active_session'))) {
+          final originalKey = key.substring(0, key.length - backupSuffix.length);
+          final value = prefs.getString(key);
+          if (value != null) {
+            await prefs.setString(originalKey, value);
+            restoredAnyData = true;
+          }
+        }
+      }
       
       if (restoredAnyData) {
         debugPrint('Data restored successfully from backup.');
@@ -432,6 +486,14 @@ class StorageService {
         }
       }
       
+      // Count reading statistics
+      int readingSessionsCount = 0;
+      int dailyStatsCount = 0;
+      for (final key in prefs.getKeys()) {
+        if (key.startsWith('reading_session_')) readingSessionsCount++;
+        if (key.startsWith('daily_stats_')) dailyStatsCount++;
+      }
+      
       result['counts'] = {
         'progress': progressCount,
         'positions': positionCount,
@@ -441,6 +503,8 @@ class StorageService {
         'customTitles': customTitlesCount,
         'userTags': userTagsCount,
         'audiobookTagAssignments': audiobookTagAssignmentsCount,
+        'readingSessions': readingSessionsCount,
+        'dailyStats': dailyStatsCount,
       };
       
       // Get last cache sync timestamp
@@ -1505,9 +1569,12 @@ class StorageService {
       // Export progress cache
       final progressData = <String, dynamic>{};
       for (final key in prefs.getKeys()) {
-        if (key.startsWith(progressCachePrefix)) {
+        if (key.startsWith(progressCachePrefix) && !key.endsWith(backupSuffix)) {
           final audiobookId = key.substring(progressCachePrefix.length);
-          progressData[audiobookId] = prefs.getDouble(key);
+          final value = prefs.getDouble(key);
+          if (value != null) {
+            progressData[audiobookId] = value;
+          }
         }
       }
       allData['data']['progress'] = progressData;
@@ -1515,9 +1582,12 @@ class StorageService {
       // Export position data
       final positionData = <String, dynamic>{};
       for (final key in prefs.getKeys()) {
-        if (key.startsWith(lastPositionPrefix)) {
+        if (key.startsWith(lastPositionPrefix) && !key.endsWith(backupSuffix)) {
           final audiobookId = key.substring(lastPositionPrefix.length);
-          positionData[audiobookId] = prefs.getString(key);
+          final value = prefs.getString(key);
+          if (value != null) {
+            positionData[audiobookId] = value;
+          }
         }
       }
       allData['data']['positions'] = positionData;
@@ -1525,9 +1595,12 @@ class StorageService {
       // Export bookmarks
       final bookmarksData = <String, dynamic>{};
       for (final key in prefs.getKeys()) {
-        if (key.startsWith('$bookmarksKey:')) {
+        if (key.startsWith('$bookmarksKey:') && !key.endsWith(backupSuffix)) {
           final audiobookId = key.substring('$bookmarksKey:'.length);
-          bookmarksData[audiobookId] = prefs.getString(key);
+          final value = prefs.getString(key);
+          if (value != null) {
+            bookmarksData[audiobookId] = value;
+          }
         }
       }
       allData['data']['bookmarks'] = bookmarksData;
@@ -1544,9 +1617,12 @@ class StorageService {
       // Export timestamps
       final timestampData = <String, dynamic>{};
       for (final key in prefs.getKeys()) {
-        if (key.startsWith(lastPlayedTimestampPrefix)) {
+        if (key.startsWith(lastPlayedTimestampPrefix) && !key.endsWith(backupSuffix)) {
           final audiobookId = key.substring(lastPlayedTimestampPrefix.length);
-          timestampData[audiobookId] = prefs.getInt(key);
+          final value = prefs.getInt(key);
+          if (value != null) {
+            timestampData[audiobookId] = value;
+          }
         }
       }
       allData['data']['timestamps'] = timestampData;
@@ -1610,8 +1686,11 @@ class StorageService {
       // Import position data
       final positionData = data['positions'] as Map<String, dynamic>? ?? {};
       for (final entry in positionData.entries) {
-        final key = '$lastPositionPrefix${entry.key}';
-        await prefs.setString(key, entry.value.toString());
+        if (entry.value != null) {
+          final key = '$lastPositionPrefix${entry.key}';
+          await prefs.setString(key, entry.value.toString());
+          debugPrint('Imported position for ${entry.key}: ${entry.value}');
+        }
       }
       
       // Import bookmarks

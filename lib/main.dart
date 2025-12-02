@@ -14,9 +14,9 @@ import 'screens/library_screen.dart';
 import 'screens/simple_player_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/license_check_screen.dart';
+import 'screens/statistics_screen.dart';
 import 'theme.dart';
 import 'services/storage_service.dart';
-import 'services/android_auto_manager.dart';
 import 'services/simple_audio_service.dart';
 
 // Define a global navigator key to access context from anywhere
@@ -174,6 +174,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
             '/library': (context) => const LibraryScreen(),
             '/player': (context) => const SimplePlayerScreen(),
             '/settings': (context) => const SettingsScreen(),
+            '/statistics': (context) => const StatisticsScreen(),
           },
         );
       },
