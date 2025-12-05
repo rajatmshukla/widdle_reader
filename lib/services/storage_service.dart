@@ -1551,10 +1551,11 @@ class StorageService {
     _persistDirtyCaches();
   }
 
-  /// Export all user data as a JSON file
+  /// Export all user data as a JSON file - COMPREHENSIVE BACKUP
+  /// Captures: progress, positions, speeds, statistics, streaks, achievements, challenges, themes
   Future<File?> exportUserData() async {
     try {
-      debugPrint('Exporting user data to backup file...');
+      debugPrint('📦 Starting comprehensive backup export...');
       
       // First make sure we persist all caches
       await _persistDirtyCaches();
@@ -1563,10 +1564,12 @@ class StorageService {
       final allData = <String, dynamic>{
         'version': currentDataVersion,
         'timestamp': DateTime.now().toIso8601String(),
+        'timestampMs': DateTime.now().millisecondsSinceEpoch,
+        'backupType': 'comprehensive',
         'data': <String, dynamic>{},
       };
       
-      // Export progress cache
+      // ===== 1. PROGRESS CACHE =====
       final progressData = <String, dynamic>{};
       for (final key in prefs.getKeys()) {
         if (key.startsWith(progressCachePrefix) && !key.endsWith(backupSuffix)) {
@@ -1578,8 +1581,9 @@ class StorageService {
         }
       }
       allData['data']['progress'] = progressData;
+      debugPrint('📦 Exported ${progressData.length} progress entries');
       
-      // Export position data
+      // ===== 2. POSITION DATA =====
       final positionData = <String, dynamic>{};
       for (final key in prefs.getKeys()) {
         if (key.startsWith(lastPositionPrefix) && !key.endsWith(backupSuffix)) {
@@ -1591,8 +1595,23 @@ class StorageService {
         }
       }
       allData['data']['positions'] = positionData;
+      debugPrint('📦 Exported ${positionData.length} position entries');
       
-      // Export bookmarks
+      // ===== 3. PLAYBACK SPEEDS (NEW) =====
+      final speedData = <String, dynamic>{};
+      for (final key in prefs.getKeys()) {
+        if (key.startsWith('playback_speed_') && !key.endsWith(backupSuffix)) {
+          final audiobookId = key.substring('playback_speed_'.length);
+          final value = prefs.getDouble(key);
+          if (value != null) {
+            speedData[audiobookId] = value;
+          }
+        }
+      }
+      allData['data']['playback_speeds'] = speedData;
+      debugPrint('📦 Exported ${speedData.length} playback speed entries');
+      
+      // ===== 4. BOOKMARKS =====
       final bookmarksData = <String, dynamic>{};
       for (final key in prefs.getKeys()) {
         if (key.startsWith('$bookmarksKey:') && !key.endsWith(backupSuffix)) {
@@ -1604,17 +1623,18 @@ class StorageService {
         }
       }
       allData['data']['bookmarks'] = bookmarksData;
+      debugPrint('📦 Exported ${bookmarksData.length} bookmark sets');
       
-      // Export completed books
+      // ===== 5. COMPLETED BOOKS =====
       allData['data']['completed_books'] = prefs.getStringList(completedBooksKey) ?? [];
       
-      // Export folders
+      // ===== 6. FOLDERS =====
       allData['data']['folders'] = prefs.getStringList(foldersKey) ?? [];
       
-      // Export custom titles
+      // ===== 7. CUSTOM TITLES =====
       allData['data']['custom_titles'] = prefs.getStringList(customTitlesKey) ?? [];
       
-      // Export timestamps
+      // ===== 8. TIMESTAMPS =====
       final timestampData = <String, dynamic>{};
       for (final key in prefs.getKeys()) {
         if (key.startsWith(lastPlayedTimestampPrefix) && !key.endsWith(backupSuffix)) {
@@ -1627,16 +1647,82 @@ class StorageService {
       }
       allData['data']['timestamps'] = timestampData;
       
-      // Export user tags (includes Favorites tag definition)
+      // ===== 9. TAGS =====
       final userTagsJson = prefs.getString(userTagsKey);
       if (userTagsJson != null) {
         allData['data']['user_tags'] = userTagsJson;
       }
-      
-      // Export audiobook tag assignments (includes favorites assignments)
       final audiobookTagsJson = prefs.getString(audiobookTagsKey);
       if (audiobookTagsJson != null) {
         allData['data']['audiobook_tags'] = audiobookTagsJson;
+      }
+      
+      // ===== 10. READING SESSIONS (NEW - Full Statistics) =====
+      final sessionsData = <String, dynamic>{};
+      for (final key in prefs.getKeys()) {
+        if (key.startsWith('reading_session_') && !key.endsWith(backupSuffix)) {
+          final value = prefs.getString(key);
+          if (value != null) {
+            sessionsData[key] = value;
+          }
+        }
+      }
+      allData['data']['reading_sessions'] = sessionsData;
+      debugPrint('📦 Exported ${sessionsData.length} reading sessions');
+      
+      // ===== 11. DAILY STATS (NEW) =====
+      final dailyStatsData = <String, dynamic>{};
+      for (final key in prefs.getKeys()) {
+        if (key.startsWith('daily_stats_') && !key.endsWith(backupSuffix)) {
+          final value = prefs.getString(key);
+          if (value != null) {
+            dailyStatsData[key] = value;
+          }
+        }
+      }
+      allData['data']['daily_stats'] = dailyStatsData;
+      debugPrint('📦 Exported ${dailyStatsData.length} daily stats');
+      
+      // ===== 12. STREAK DATA (NEW) =====
+      final streakData = prefs.getString('reading_streak');
+      if (streakData != null) {
+        allData['data']['reading_streak'] = streakData;
+      }
+      
+      // ===== 13. GOALS & SETTINGS (NEW) =====
+      allData['data']['daily_reading_goal'] = prefs.getInt('daily_reading_goal');
+      allData['data']['show_streak'] = prefs.getBool('show_streak');
+      
+      // ===== 14. ACHIEVEMENTS (NEW) =====
+      final unlockedAchievements = prefs.getString('unlocked_achievements');
+      if (unlockedAchievements != null) {
+        allData['data']['unlocked_achievements'] = unlockedAchievements;
+      }
+      
+      // ===== 15. CHALLENGES (NEW) =====
+      final activeChallenges = prefs.getString('active_challenges');
+      if (activeChallenges != null) {
+        allData['data']['active_challenges'] = activeChallenges;
+      }
+      allData['data']['completed_challenges'] = prefs.getInt('completed_challenges');
+      
+      // ===== 16. THEME SETTINGS (NEW) =====
+      allData['data']['theme_mode'] = prefs.getString('theme_mode');
+      allData['data']['seed_color'] = prefs.getInt('seed_color');
+      allData['data']['dynamic_theme'] = prefs.getBool('dynamic_theme');
+      
+      // ===== 17. VIEW PREFERENCES (NEW) =====
+      allData['data']['is_grid_view'] = prefs.getBool('is_grid_view');
+      allData['data']['library_sort_mode'] = prefs.getString('library_sort_mode');
+      
+      // ===== 18. CONTENT HASHES FOR PATH MIGRATION =====
+      final contentHashes = prefs.getString('content_hashes');
+      if (contentHashes != null) {
+        allData['data']['content_hashes'] = contentHashes;
+      }
+      final pathMigrations = prefs.getString('path_migrations');
+      if (pathMigrations != null) {
+        allData['data']['path_migrations'] = pathMigrations;
       }
       
       // Write to a file in the app's documents directory
@@ -1644,20 +1730,23 @@ class StorageService {
       final now = DateTime.now().toIso8601String().replaceAll(':', '_');
       final file = File('${dir.path}/widdle_reader_backup_$now.json');
       
-      await file.writeAsString(jsonEncode(allData));
-      debugPrint('User data exported successfully to ${file.path}');
+      final jsonString = jsonEncode(allData);
+      await file.writeAsString(jsonString);
+      
+      debugPrint('📦 ✅ Comprehensive backup exported to ${file.path}');
+      debugPrint('📦 Total backup size: ${(jsonString.length / 1024).toStringAsFixed(2)} KB');
       
       return file;
     } catch (e) {
-      debugPrint('Error exporting user data: $e');
+      debugPrint('📦 ❌ Error exporting user data: $e');
       return null;
     }
   }
   
-  /// Import user data from a JSON file
+  /// Import user data from a JSON file - COMPREHENSIVE RESTORE
   Future<bool> importUserData(File file) async {
     try {
-      debugPrint('Importing user data from backup file...');
+      debugPrint('📦 Starting comprehensive backup import...');
       
       // Read and parse the backup file
       final jsonString = await file.readAsString();
@@ -1666,7 +1755,7 @@ class StorageService {
       // Check version compatibility
       final version = backupData['version'] as int? ?? 0;
       if (version > currentDataVersion) {
-        debugPrint('Backup file version ($version) is newer than current version ($currentDataVersion)');
+        debugPrint('📦 Backup file version ($version) is newer than current version ($currentDataVersion)');
         return false;
       }
       
@@ -1676,59 +1765,143 @@ class StorageService {
       final prefs = await _preferences;
       final data = backupData['data'] as Map<String, dynamic>;
       
-      // Import progress cache
+      // ===== 1. PROGRESS CACHE =====
       final progressData = data['progress'] as Map<String, dynamic>? ?? {};
       for (final entry in progressData.entries) {
         final key = '$progressCachePrefix${entry.key}';
         await prefs.setDouble(key, double.parse(entry.value.toString()));
       }
+      debugPrint('📦 Imported ${progressData.length} progress entries');
       
-      // Import position data
+      // ===== 2. POSITION DATA =====
       final positionData = data['positions'] as Map<String, dynamic>? ?? {};
       for (final entry in positionData.entries) {
         if (entry.value != null) {
           final key = '$lastPositionPrefix${entry.key}';
           await prefs.setString(key, entry.value.toString());
-          debugPrint('Imported position for ${entry.key}: ${entry.value}');
         }
       }
+      debugPrint('📦 Imported ${positionData.length} position entries');
       
-      // Import bookmarks
+      // ===== 3. PLAYBACK SPEEDS (NEW) =====
+      final speedData = data['playback_speeds'] as Map<String, dynamic>? ?? {};
+      for (final entry in speedData.entries) {
+        if (entry.value != null) {
+          await prefs.setDouble('playback_speed_${entry.key}', 
+              double.tryParse(entry.value.toString()) ?? 1.0);
+        }
+      }
+      debugPrint('📦 Imported ${speedData.length} playback speeds');
+      
+      // ===== 4. BOOKMARKS =====
       final bookmarksData = data['bookmarks'] as Map<String, dynamic>? ?? {};
       for (final entry in bookmarksData.entries) {
         final key = '$bookmarksKey:${entry.key}';
         await prefs.setString(key, entry.value.toString());
       }
+      debugPrint('📦 Imported ${bookmarksData.length} bookmark sets');
       
-      // Import completed books
+      // ===== 5. COMPLETED BOOKS =====
       final completedBooks = (data['completed_books'] as List?)?.map((e) => e.toString()).toList() ?? [];
       await prefs.setStringList(completedBooksKey, completedBooks);
       
-      // Import folders
+      // ===== 6. FOLDERS =====
       final folders = (data['folders'] as List?)?.map((e) => e.toString()).toList() ?? [];
       await prefs.setStringList(foldersKey, folders);
       
-      // Import custom titles
+      // ===== 7. CUSTOM TITLES =====
       final customTitles = (data['custom_titles'] as List?)?.map((e) => e.toString()).toList() ?? [];
       await prefs.setStringList(customTitlesKey, customTitles);
       
-      // Import timestamps
+      // ===== 8. TIMESTAMPS =====
       final timestampData = data['timestamps'] as Map<String, dynamic>? ?? {};
       for (final entry in timestampData.entries) {
         final key = '$lastPlayedTimestampPrefix${entry.key}';
         await prefs.setInt(key, int.parse(entry.value.toString()));
       }
       
-      // Import user tags (includes Favorites tag definition)
+      // ===== 9. TAGS =====
       final userTagsJson = data['user_tags'] as String?;
       if (userTagsJson != null) {
         await prefs.setString(userTagsKey, userTagsJson);
       }
-      
-      // Import audiobook tag assignments (includes favorites assignments)
       final audiobookTagsJson = data['audiobook_tags'] as String?;
       if (audiobookTagsJson != null) {
         await prefs.setString(audiobookTagsKey, audiobookTagsJson);
+      }
+      
+      // ===== 10. READING SESSIONS (NEW) =====
+      final sessionsData = data['reading_sessions'] as Map<String, dynamic>? ?? {};
+      for (final entry in sessionsData.entries) {
+        if (entry.value != null) {
+          await prefs.setString(entry.key, entry.value.toString());
+        }
+      }
+      debugPrint('📦 Imported ${sessionsData.length} reading sessions');
+      
+      // ===== 11. DAILY STATS (NEW) =====
+      final dailyStatsData = data['daily_stats'] as Map<String, dynamic>? ?? {};
+      for (final entry in dailyStatsData.entries) {
+        if (entry.value != null) {
+          await prefs.setString(entry.key, entry.value.toString());
+        }
+      }
+      debugPrint('📦 Imported ${dailyStatsData.length} daily stats');
+      
+      // ===== 12. STREAK DATA (NEW) =====
+      final streakData = data['reading_streak'] as String?;
+      if (streakData != null) {
+        await prefs.setString('reading_streak', streakData);
+      }
+      
+      // ===== 13. GOALS & SETTINGS (NEW) =====
+      if (data['daily_reading_goal'] != null) {
+        await prefs.setInt('daily_reading_goal', data['daily_reading_goal'] as int);
+      }
+      if (data['show_streak'] != null) {
+        await prefs.setBool('show_streak', data['show_streak'] as bool);
+      }
+      
+      // ===== 14. ACHIEVEMENTS (NEW) =====
+      final unlockedAchievements = data['unlocked_achievements'] as String?;
+      if (unlockedAchievements != null) {
+        await prefs.setString('unlocked_achievements', unlockedAchievements);
+      }
+      
+      // ===== 15. CHALLENGES (NEW) =====
+      final activeChallenges = data['active_challenges'] as String?;
+      if (activeChallenges != null) {
+        await prefs.setString('active_challenges', activeChallenges);
+      }
+      if (data['completed_challenges'] != null) {
+        await prefs.setInt('completed_challenges', data['completed_challenges'] as int);
+      }
+      
+      // ===== 16. THEME SETTINGS (NEW) =====
+      if (data['theme_mode'] != null) {
+        await prefs.setString('theme_mode', data['theme_mode'].toString());
+      }
+      if (data['seed_color'] != null) {
+        await prefs.setInt('seed_color', data['seed_color'] as int);
+      }
+      if (data['dynamic_theme'] != null) {
+        await prefs.setBool('dynamic_theme', data['dynamic_theme'] as bool);
+      }
+      
+      // ===== 17. VIEW PREFERENCES (NEW) =====
+      if (data['is_grid_view'] != null) {
+        await prefs.setBool('is_grid_view', data['is_grid_view'] as bool);
+      }
+      if (data['library_sort_mode'] != null) {
+        await prefs.setString('library_sort_mode', data['library_sort_mode'].toString());
+      }
+      
+      // ===== 18. CONTENT HASHES (NEW) =====
+      if (data['content_hashes'] != null) {
+        await prefs.setString('content_hashes', data['content_hashes'].toString());
+      }
+      if (data['path_migrations'] != null) {
+        await prefs.setString('path_migrations', data['path_migrations'].toString());
       }
       
       // Clear all caches to force reload from imported data
@@ -1753,10 +1926,10 @@ class StorageService {
         _onDataImported!();
       }
       
-      debugPrint('User data imported successfully');
+      debugPrint('📦 ✅ Comprehensive backup imported successfully');
       return true;
     } catch (e) {
-      debugPrint('Error importing user data: $e');
+      debugPrint('📦 ❌ Error importing user data: $e');
       return false;
     }
   }

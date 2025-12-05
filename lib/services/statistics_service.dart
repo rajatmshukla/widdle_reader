@@ -5,6 +5,13 @@ import 'dart:async';
 import '../models/reading_session.dart';
 import '../models/reading_statistics.dart';
 
+// Safe debug logging - only prints in debug mode
+void _logStats(String message) {
+  if (kDebugMode) {
+    debugPrint(message);
+  }
+}
+
 /// Service for tracking and managing reading statistics
 class StatisticsService {
   // Singleton pattern
@@ -18,6 +25,8 @@ class StatisticsService {
   static const String streakDataKey = 'reading_streak';
   static const String activeSessionKey = 'active_session';
   static const String statsBackupSuffix = '_backup';
+  static const String dailyGoalKey = 'daily_reading_goal';
+  static const String showStreakKey = 'show_reading_streak';
 
   // Cached instance
   SharedPreferences? _prefs;
@@ -28,11 +37,91 @@ class StatisticsService {
   String? _currentAudiobookId;
   String? _currentChapterName;
   int _sessionPagesRead = 0;
+  Timer? _sessionPersistTimer;
 
   /// Initialize the service
   Future<SharedPreferences> get _preferences async {
     _prefs ??= await SharedPreferences.getInstance();
     return _prefs!;
+  }
+
+  /// Initialize and recover any crashed sessions
+  Future<void> initialize() async {
+    await _recoverCrashedSession();
+  }
+
+  /// Recover a session that may have been interrupted by crash/kill
+  Future<void> _recoverCrashedSession() async {
+    try {
+      final prefs = await _preferences;
+      final activeSessionJson = prefs.getString(activeSessionKey);
+      
+      if (activeSessionJson != null) {
+        final data = jsonDecode(activeSessionJson) as Map<String, dynamic>;
+        final startMs = data['startTime'] as int?;
+        final audiobookId = data['audiobookId'] as String?;
+        final chapterName = data['chapterName'] as String?;
+        
+        if (startMs != null && audiobookId != null) {
+          final startTime = DateTime.fromMillisecondsSinceEpoch(startMs);
+          final endTime = DateTime.now();
+          final duration = endTime.difference(startTime).inMinutes;
+          
+          // Only recover sessions < 24 hours old and > 1 minute
+          if (duration >= 1 && duration < 1440) {
+            _logStats('📊 Recovering crashed session: $duration minutes for $audiobookId');
+            
+            final session = ReadingSession.fromTimes(
+              audiobookId: audiobookId,
+              startTime: startTime,
+              endTime: endTime,
+              pagesRead: data['pagesRead'] as int? ?? 0,
+              chapterName: chapterName,
+            );
+            
+            await _saveSession(session);
+            await _updateDailyStats(session);
+            await _updateStreak();
+            
+            _logStats('📊 ✅ Recovered session: ${session.durationMinutes} minutes');
+          }
+          
+          // Clear the active session marker
+          await prefs.remove(activeSessionKey);
+        }
+      }
+    } catch (e) {
+      _logStats('📊 Error recovering crashed session: $e');
+    }
+  }
+
+  /// Persist active session state (called periodically)
+  Future<void> _persistActiveSessionState() async {
+    if (_sessionStartTime == null || _currentAudiobookId == null) return;
+    
+    try {
+      final prefs = await _preferences;
+      final data = {
+        'startTime': _sessionStartTime!.millisecondsSinceEpoch,
+        'audiobookId': _currentAudiobookId,
+        'chapterName': _currentChapterName,
+        'pagesRead': _sessionPagesRead,
+        'lastUpdate': DateTime.now().millisecondsSinceEpoch,
+      };
+      await prefs.setString(activeSessionKey, jsonEncode(data));
+    } catch (e) {
+      _logStats('📊 Error persisting session state: $e');
+    }
+  }
+
+  /// Clear active session marker
+  Future<void> _clearActiveSessionMarker() async {
+    try {
+      final prefs = await _preferences;
+      await prefs.remove(activeSessionKey);
+    } catch (e) {
+      _logStats('📊 Error clearing session marker: $e');
+    }
   }
 
   // ===========================
@@ -45,8 +134,11 @@ class StatisticsService {
     String? chapterName,
   }) async {
     try {
+      _logStats('📊 startSession called - audiobookId: $audiobookId, chapter: $chapterName');
+      
       // End any existing session first
-      if (_activeSession != null) {
+      if (_activeSession != null || _sessionStartTime != null) {
+        _logStats('📊 Active session exists, ending it first');
         await endSession();
       }
 
@@ -55,9 +147,20 @@ class StatisticsService {
       _currentChapterName = chapterName;
       _sessionPagesRead = 0;
 
-      debugPrint('📊 Started reading session for: $audiobookId');
-    } catch (e) {
-      debugPrint('Error starting session: $e');
+      // Persist immediately for crash recovery
+      await _persistActiveSessionState();
+      
+      // Start periodic persistence (every 30 seconds)
+      _sessionPersistTimer?.cancel();
+      _sessionPersistTimer = Timer.periodic(
+        const Duration(seconds: 30),
+        (_) => _persistActiveSessionState(),
+      );
+
+      _logStats('📊 ✅ Session started with crash recovery enabled');
+    } catch (e, stackTrace) {
+      _logStats('📊 ❌ EXCEPTION in startSession: $e');
+      if (kDebugMode) debugPrint('📊 Stack trace: $stackTrace');
     }
   }
 
@@ -78,16 +181,27 @@ class StatisticsService {
 
   /// End the current reading session
   Future<void> endSession() async {
+    _logStats('📊 endSession called - sessionStartTime: $_sessionStartTime, audiobookId: $_currentAudiobookId');
+    
+    // Stop the persist timer
+    _sessionPersistTimer?.cancel();
+    _sessionPersistTimer = null;
+    
     if (_sessionStartTime == null || _currentAudiobookId == null) {
+      _logStats('📊 ⚠️ No active session to end (start time or audiobook ID is null)');
+      await _clearActiveSessionMarker();
       return; // No active session
     }
 
     try {
       final endTime = DateTime.now();
       final duration = endTime.difference(_sessionStartTime!).inMinutes;
+      _logStats('📊 Session duration: $duration minutes');
 
       // Only save sessions longer than 1 minute
       if (duration >= 1) {
+        _logStats('📊 Duration >= 1 minute, saving session...');
+        
         final session = ReadingSession.fromTimes(
           audiobookId: _currentAudiobookId!,
           startTime: _sessionStartTime!,
@@ -95,12 +209,15 @@ class StatisticsService {
           pagesRead: _sessionPagesRead,
           chapterName: _currentChapterName,
         );
+        _logStats('📊 Created session object - ID: ${session.sessionId}, duration: ${session.durationMinutes}min');
 
         await _saveSession(session);
         await _updateDailyStats(session);
         await _updateStreak();
 
-        debugPrint('📊 Ended reading session: ${session.durationMinutes} minutes');
+        _logStats('📊 ✅ Ended reading session: ${session.durationMinutes} minutes');
+      } else {
+        _logStats('📊 ⚠️ Session too short ($duration min), not saving');
       }
 
       // Clear active session
@@ -109,8 +226,14 @@ class StatisticsService {
       _currentChapterName = null;
       _sessionPagesRead = 0;
       _activeSession = null;
-    } catch (e) {
-      debugPrint('Error ending session: $e');
+      
+      // Clear persisted session marker
+      await _clearActiveSessionMarker();
+      
+      _logStats('📊 Session variables cleared');
+    } catch (e, stackTrace) {
+      _logStats('📊 ❌ EXCEPTION in endSession: $e');
+      if (kDebugMode) debugPrint('📊 Stack trace: $stackTrace');
     }
   }
 
@@ -148,10 +271,13 @@ class StatisticsService {
         _sessionStartTime = now;
         _sessionPagesRead = 0; // Reset pages for next chunk
         
-        debugPrint('📊 Synced reading session: ${session.durationMinutes} minutes');
+        // Update persisted state
+        await _persistActiveSessionState();
+        
+        _logStats('📊 Synced reading session: ${session.durationMinutes} minutes');
       }
     } catch (e) {
-      debugPrint('Error syncing session: $e');
+      _logStats('Error syncing session: $e');
     }
   }
 
@@ -160,9 +286,13 @@ class StatisticsService {
     try {
       final prefs = await _preferences;
       final key = '$sessionPrefix${session.sessionId}';
-      await prefs.setString(key, jsonEncode(session.toJson()));
-    } catch (e) {
-      debugPrint('Error saving session: $e');
+      final jsonString = jsonEncode(session.toJson());
+      _logStats('📊 Saving session with key: $key');
+      await prefs.setString(key, jsonString);
+      _logStats('📊 ✅ Session saved successfully');
+    } catch (e, stackTrace) {
+      _logStats('📊 ❌ EXCEPTION saving session: $e');
+      if (kDebugMode) debugPrint('📊 Stack trace: $stackTrace');
     }
   }
 
@@ -185,7 +315,7 @@ class StatisticsService {
 
       await _saveDailyStats(updatedStats);
     } catch (e) {
-      debugPrint('Error updating daily stats: $e');
+      _logStats('Error updating daily stats: $e');
     }
   }
 
@@ -196,7 +326,7 @@ class StatisticsService {
       final key = '$dailyStatsPrefix${stats.date}';
       await prefs.setString(key, jsonEncode(stats.toJson()));
     } catch (e) {
-      debugPrint('Error saving daily stats: $e');
+      _logStats('Error saving daily stats: $e');
     }
   }
 
@@ -216,7 +346,7 @@ class StatisticsService {
         return DailyStats.fromJson(json);
       }
     } catch (e) {
-      debugPrint('Error loading daily stats for $date: $e');
+      _logStats('Error loading daily stats for $date: $e');
     }
 
     return DailyStats.empty(date);
@@ -247,31 +377,34 @@ class StatisticsService {
   }
 
   /// Get all sessions for a specific date
-  Future<List<ReadingSession>> getSessionsForDate(String date) async {
+  Future<List<ReadingSession>> getSessionsForDate(DateTime date) async {
     final sessions = <ReadingSession>[];
-
     try {
       final prefs = await _preferences;
+      final datePrefix = '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+      
       final keys = prefs.getKeys().where((key) => key.startsWith(sessionPrefix));
-
+      
       for (final key in keys) {
         final jsonString = prefs.getString(key);
         if (jsonString != null) {
-          final session = ReadingSession.fromJson(
-            jsonDecode(jsonString) as Map<String, dynamic>,
-          );
-          if (session.dateString == date) {
+          final session = ReadingSession.fromJson(jsonDecode(jsonString));
+          // Check if session ended on this date (using local time for display)
+          final sessionDate = session.endTime.toLocal();
+          final sessionDateString = '${sessionDate.year}-${sessionDate.month.toString().padLeft(2, '0')}-${sessionDate.day.toString().padLeft(2, '0')}';
+          
+          if (sessionDateString == datePrefix) {
             sessions.add(session);
           }
         }
       }
-
-      // Sort by start time
-      sessions.sort((a, b) => a.startTime.compareTo(b.startTime));
+      
+      // Sort by end time descending
+      sessions.sort((a, b) => b.endTime.compareTo(a.endTime));
     } catch (e) {
-      debugPrint('Error loading sessions for $date: $e');
+      debugPrint('Error loading sessions for date: $e');
     }
-
+    
     return sessions;
   }
 
@@ -644,6 +777,54 @@ class StatisticsService {
         'sessions': 0,
         'dailyStats': 0,
       };
+    }
+  }
+
+  // ===========================
+  // SETTINGS
+  // ===========================
+
+  /// Get daily reading goal in minutes
+  Future<int> getDailyGoal() async {
+    try {
+      final prefs = await _preferences;
+      return prefs.getInt(dailyGoalKey) ?? 30; // Default 30 minutes
+    } catch (e) {
+      debugPrint('Error loading daily goal: $e');
+      return 30;
+    }
+  }
+
+  /// Set daily reading goal
+  Future<void> setDailyGoal(int minutes) async {
+    try {
+      final prefs = await _preferences;
+      await prefs.setInt(dailyGoalKey, minutes);
+      debugPrint('📊 Daily goal updated to $minutes minutes');
+    } catch (e) {
+      debugPrint('Error saving daily goal: $e');
+    }
+  }
+
+  /// Check if streak should be shown
+  Future<bool> getShowStreak() async {
+    try {
+      final prefs = await _preferences;
+      return prefs.getBool(showStreakKey) ?? true; // Default true
+    } catch (e) {
+      debugPrint('Error loading show streak setting: $e');
+      return true;
+    }
+  }
+
+  /// Set streak visibility
+  Future<void> setShowStreak(bool show) async {
+    try {
+      final prefs = await _preferences;
+      await prefs.setBool(showStreakKey, show);
+      debugPrint('📊 Streak visibility updated to $show');
+    } catch (e) {
+      debugPrint('Error saving show streak setting: $e');
     }
   }
 }

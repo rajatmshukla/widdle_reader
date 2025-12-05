@@ -18,6 +18,7 @@ import 'screens/statistics_screen.dart';
 import 'theme.dart';
 import 'services/storage_service.dart';
 import 'services/simple_audio_service.dart';
+import 'services/statistics_service.dart';
 
 // Define a global navigator key to access context from anywhere
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
@@ -106,6 +107,11 @@ Future<void> _initializeDataIntegrity() async {
     
     // Force persist any cached data from previous sessions
     await storageService.forcePersistCaches();
+    
+    // Initialize statistics service and recover any crashed sessions
+    final statisticsService = StatisticsService();
+    await statisticsService.initialize();
+    _logDebug("Statistics service initialized with session recovery");
     
     _logDebug("Data integrity system initialized successfully");
   } catch (e) {

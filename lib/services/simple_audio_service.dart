@@ -571,13 +571,30 @@ class SimpleAudioService {
         await _player.play();
         debugPrint('Playback started successfully');
         
+        // Start the auto-save timer for position and stats sync
+        _startAutoSaveTimer();
+        
         // Start statistics session tracking
-        final chapterName = _currentAudiobook!.chapters[_currentChapterIndex].title;
-        await _statsService.startSession(
-          audiobookId: _currentAudiobook!.id,
-          chapterName: chapterName,
-        );
-        debugPrint('Started statistics session tracking');
+        try {
+          final chapterName = _currentAudiobook!.chapters[_currentChapterIndex].title;
+          debugPrint('📊 Starting statistics session for: ${_currentAudiobook!.id}, chapter: $chapterName');
+          await _statsService.startSession(
+            audiobookId: _currentAudiobook!.id,
+            chapterName: chapterName,
+          );
+          debugPrint('📊 ✅ Statistics session started successfully');
+          
+          // Schedule first stats sync after 60 seconds for immediate feedback
+          Future.delayed(const Duration(seconds: 60), () {
+            if (_player.playing && _currentAudiobook != null) {
+              debugPrint('📊 First minute sync triggered');
+              _statsService.syncCurrentSession();
+            }
+          });
+        } catch (statsError, stackTrace) {
+          debugPrint('📊 ❌ ERROR starting statistics session: $statsError');
+          debugPrint('📊 Stack trace: $stackTrace');
+        }
         
         _notifyPlaybackChanged(nativeUpdate: true);
       } catch (error) {
@@ -597,11 +614,22 @@ class SimpleAudioService {
     await _player.pause();
     debugPrint('Playback paused');
     _userPaused = true;
+    
+    // Cancel the auto-save timer
+    _autoSaveTimer?.cancel();
+    _autoSaveTimer = null;
+    
     await saveCurrentPosition(); // Save position immediately on pause
     
     // End statistics session tracking
-    await _statsService.endSession();
-    debugPrint('Ended statistics session tracking');
+    try {
+      debugPrint('📊 Ending statistics session...');
+      await _statsService.endSession();
+      debugPrint('📊 ✅ Statistics session ended successfully');
+    } catch (statsError, stackTrace) {
+      debugPrint('📊 ❌ ERROR ending statistics session: $statsError');
+      debugPrint('📊 Stack trace: $stackTrace');
+    }
     
     _notifyPlaybackChanged(nativeUpdate: true);
   }

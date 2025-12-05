@@ -1178,13 +1178,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> with SingleTick
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Data backup option
+            // Data backup option (enhanced)
             ListTile(
               contentPadding: EdgeInsets.zero,
               leading: Icon(Icons.backup_rounded, color: colorScheme.primary),
               title: Text('Backup User Data', style: textTheme.bodyMedium),
               subtitle: Text(
-                'Export your bookmarks, progress and preferences',
+                'Export all your data including statistics & progress',
                 style: TextStyle(color: colorScheme.onSurfaceVariant),
               ),
               onTap: () => _backupUserData(context),

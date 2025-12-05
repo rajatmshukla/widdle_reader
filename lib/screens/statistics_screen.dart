@@ -3,15 +3,18 @@ import 'package:provider/provider.dart' as provider;
 import '../services/statistics_service.dart';
 import '../providers/theme_provider.dart';
 import '../widgets/app_logo.dart';
-import '../widgets/monthly_heatmap.dart';
-import '../widgets/weekly_bar_chart.dart';
+import '../widgets/progress_ring_widget.dart';
+import '../widgets/reading_timeline_widget.dart';
+import '../widgets/enhanced_heatmap_widget.dart';
 import '../widgets/stat_card.dart';
-import '../widgets/reading_history_list.dart';
 import '../models/reading_statistics.dart';
 import '../models/reading_session.dart';
 import '../theme.dart';
+import 'achievement_gallery_screen.dart';
+import '../widgets/personality_card.dart';
+import '../widgets/challenge_list_widget.dart';
 
-/// Main statistics screen showing reading activity and insights
+/// Revamped statistics screen with immersive reading journey visualization
 class StatisticsScreen extends StatefulWidget {
   const StatisticsScreen({super.key});
 
@@ -26,14 +29,16 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
   int _currentStreak = 0;
   int _longestStreak = 0;
   double _avgSessionTime = 0.0;
-  double _avgSessionsPerDay = 0.0;
+  int _minutesToday = 0;
   int _minutesThisWeek = 0;
-  int _sessionsThisWeek = 0;
   int _minutesThisMonth = 0;
-  int _sessionsThisMonth = 0;
-  List<int> _weeklyDailyMinutes = [];
+  int _sessionsThisWeek = 0;
   List<ReadingSession> _recentSessions = [];
   bool _loading = true;
+  
+  // Default daily goal (30 minutes)
+  int _dailyGoalMinutes = 30;
+  bool _showStreak = true;
 
   @override
   void initState() {
@@ -45,6 +50,10 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
     setState(() => _loading = true);
 
     try {
+      // Load settings
+      _dailyGoalMinutes = await _statsService.getDailyGoal();
+      _showStreak = await _statsService.getShowStreak();
+
       // Load streak data
       final streak = await _statsService.getStreak();
       _currentStreak = streak.currentStreak;
@@ -57,18 +66,20 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
 
       // Load insights
       _avgSessionTime = await _statsService.getAverageSessionDuration();
-      _avgSessionsPerDay = await _statsService.getAverageSessionsPerDay();
       _minutesThisWeek = await _statsService.getTotalMinutesThisWeek();
-      _sessionsThisWeek = await _statsService.getTotalSessionsThisWeek();
       _minutesThisMonth = await _statsService.getTotalMinutesThisMonth();
-      _sessionsThisMonth = await _statsService.getTotalSessionsThisMonth();
+      _sessionsThisWeek = await _statsService.getTotalSessionsThisWeek();
       
-      // Load new data for charts and history
-      _weeklyDailyMinutes = await _statsService.getWeeklyDailyMinutes();
-      _recentSessions = await _statsService.getRecentSessions(10);
+      // Get today's minutes
+      final today = DateTime.now();
+      final todayString = '${today.year}-${today.month.toString().padLeft(2, '0')}-${today.day.toString().padLeft(2, '0')}';
+      final todayStats = await _statsService.getDailyStats(todayString);
+      _minutesToday = todayStats.totalMinutes;
+      
+      // Load recent sessions
+      _recentSessions = await _statsService.getRecentSessions(20);
       
       debugPrint('📊 Loaded ${_recentSessions.length} recent sessions');
-      
     } catch (e) {
       debugPrint('Error loading statistics: $e');
     }
@@ -90,6 +101,70 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
     );
   }
 
+  Future<void> _showSettingsDialog() async {
+    int tempGoal = _dailyGoalMinutes;
+    bool tempShowStreak = _showStreak;
+
+    await showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          title: const Text('Statistics Settings'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Daily Reading Goal'),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: Slider(
+                      value: tempGoal.toDouble(),
+                      min: 5,
+                      max: 120,
+                      divisions: 23,
+                      label: '$tempGoal min',
+                      onChanged: (value) {
+                        setState(() => tempGoal = value.round());
+                      },
+                    ),
+                  ),
+                  Text('$tempGoal min', style: const TextStyle(fontWeight: FontWeight.bold)),
+                ],
+              ),
+              const SizedBox(height: 16),
+              SwitchListTile(
+                title: const Text('Show Streak'),
+                subtitle: const Text('Display your reading streak badge'),
+                value: tempShowStreak,
+                onChanged: (value) {
+                  setState(() => tempShowStreak = value);
+                },
+                contentPadding: EdgeInsets.zero,
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () async {
+                await _statsService.setDailyGoal(tempGoal);
+                await _statsService.setShowStreak(tempShowStreak);
+                Navigator.pop(context);
+                _loadStatistics(); // Reload to apply changes
+              },
+              child: const Text('Save'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildDayDetailsSheet(String dateString, DailyStats stats) {
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
@@ -100,7 +175,6 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Date header
           Row(
             children: [
               Icon(Icons.calendar_today_rounded, color: colorScheme.primary),
@@ -112,20 +186,14 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
             ],
           ),
           const SizedBox(height: 24),
-
-          // Stats
           _buildStatRow(Icons.timer_outlined, 'Total Reading Time',
               '${stats.totalMinutes} minutes', colorScheme, textTheme),
           const SizedBox(height: 12),
           _buildStatRow(Icons.auto_stories_rounded, 'Sessions',
               '${stats.sessionCount}', colorScheme, textTheme),
           const SizedBox(height: 12),
-          _buildStatRow(Icons.menu_book_rounded, 'Chapters Read',
-              '${stats.pagesRead}', colorScheme, textTheme),
-          const SizedBox(height: 12),
-          _buildStatRow(Icons.library_books_rounded, 'Books Touched',
+          _buildStatRow(Icons.library_books_rounded, 'Books',
               '${stats.audiobooksRead.length}', colorScheme, textTheme),
-
           const SizedBox(height: 24),
           SizedBox(
             width: double.infinity,
@@ -188,18 +256,16 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: Row(
+        title: const Row(
           children: [
-            Icon(Icons.warning_rounded,
-                color: Theme.of(context).colorScheme.error),
-            const SizedBox(width: 12),
-            const Text('Reset All Statistics?'),
+            Icon(Icons.warning_rounded, color: Colors.red),
+            SizedBox(width: 12),
+            Text('Reset Statistics?'),
           ],
         ),
         content: const Text(
-          'Are you sure you want to remove all your hard-earned stats?\n\n'
-          'This action cannot be undone. All your reading history, streaks, '
-          'and achievements will be permanently deleted.\n\n'
+          'This will permanently delete all your reading statistics, '
+          'sessions, streaks, and achievements. This action cannot be undone.\n\n'
           'A backup will be created before resetting.',
         ),
         actions: [
@@ -229,8 +295,6 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
               behavior: SnackBarBehavior.floating,
             ),
           );
-
-          // Reload statistics
           _loadStatistics();
         }
       } catch (e) {
@@ -264,7 +328,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
               child: AppLogo(size: 32, showTitle: false),
             ),
             const SizedBox(width: 12),
-            const Text('Reading Statistics'),
+            const Text('Reading Journey'),
           ],
         ),
         actions: [
@@ -278,9 +342,38 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
             onSelected: (value) {
               if (value == 'reset') {
                 _showResetDialog();
+              } else if (value == 'settings') {
+                _showSettingsDialog();
+              } else if (value == 'achievements') {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const AchievementGalleryScreen(),
+                  ),
+                );
               }
             },
             itemBuilder: (context) => [
+              const PopupMenuItem(
+                value: 'achievements',
+                child: Row(
+                  children: [
+                    Icon(Icons.emoji_events_rounded),
+                    SizedBox(width: 12),
+                    Text('Achievements'),
+                  ],
+                ),
+              ),
+              const PopupMenuItem(
+                value: 'settings',
+                child: Row(
+                  children: [
+                    Icon(Icons.settings_rounded),
+                    SizedBox(width: 12),
+                    Text('Settings'),
+                  ],
+                ),
+              ),
               const PopupMenuItem(
                 value: 'reset',
                 child: Row(
@@ -305,57 +398,95 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
                   physics: const AlwaysScrollableScrollPhysics(),
                   padding: const EdgeInsets.all(16),
                   child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                    crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
-                      // 1. Summary Header
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.baseline,
-                          textBaseline: TextBaseline.alphabetic,
-                          children: [
-                            Text(
-                              '${(_minutesThisWeek / 60).toStringAsFixed(1)}',
-                              style: textTheme.displayMedium?.copyWith(
-                                fontWeight: FontWeight.bold,
-                                color: colorScheme.primary,
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Text(
-                              'hours this week',
-                              style: textTheme.titleMedium?.copyWith(
-                                color: colorScheme.onSurfaceVariant,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          ],
-                        ),
+                      // Hero Progress Ring
+                      ProgressRingWidget(
+                        currentMinutes: _minutesToday,
+                        targetMinutes: _dailyGoalMinutes,
+                        metricLabel: 'Today',
                       ),
-                      const SizedBox(height: 16),
-
-                      // 2. Weekly Chart
-                      WeeklyBarChart(
-                        dailyMinutes: _weeklyDailyMinutes,
-                        barColor: seedColor,
-                      ),
+                      
                       const SizedBox(height: 24),
-
-                      // 3. Bento Grid (Insights)
+                      
+                      // Streak indicator
+                      if (_showStreak && _currentStreak > 0)
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 20,
+                            vertical: 12,
+                          ),
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              colors: [
+                                Colors.orange.shade400,
+                                Colors.deepOrange.shade600,
+                              ],
+                            ),
+                            borderRadius: BorderRadius.circular(24),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.orange.withOpacity(0.3),
+                                blurRadius: 12,
+                                offset: const Offset(0, 4),
+                              ),
+                            ],
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Text(
+                                '🔥',
+                                style: TextStyle(fontSize: 24),
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                '$_currentStreak Day Streak!',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      
+                      const SizedBox(height: 24),
+                      
+                      // Personality Card
+                      const PersonalityCard(),
+                      
+                      const SizedBox(height: 24),
+                      
+                      // Weekly Challenges
+                      const ChallengeListWidget(),
+                      
+                      const SizedBox(height: 32),
+                      
+                      // Reading Timeline
+                      ReadingTimelineWidget(
+                        sessions: _recentSessions,
+                        selectedDate: DateTime.now(),
+                      ),
+                      
+                      const SizedBox(height: 32),
+                      
+                      // Stats Grid
                       GridView.count(
                         crossAxisCount: 2,
                         shrinkWrap: true,
                         physics: const NeverScrollableScrollPhysics(),
-                        mainAxisSpacing: 16,
-                        crossAxisSpacing: 16,
-                        childAspectRatio: 1.5,
+                        mainAxisSpacing: 12,
+                        crossAxisSpacing: 12,
+                        childAspectRatio: 1.3,
                         children: [
                           StatCard(
-                            label: 'Current Streak',
-                            value: '$_currentStreak',
-                            unit: 'days',
-                            icon: Icons.local_fire_department_rounded,
-                            iconColor: Colors.orange,
+                            label: 'This Week',
+                            value: '$_minutesThisWeek',
+                            unit: 'minutes',
+                            icon: Icons.calendar_view_week_rounded,
+                            iconColor: Colors.blue,
                           ),
                           StatCard(
                             label: 'Longest Streak',
@@ -369,40 +500,30 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
                             value: '${_avgSessionTime.round()}',
                             unit: 'minutes',
                             icon: Icons.timer_outlined,
-                            iconColor: Colors.blue,
+                            iconColor: Colors.purple,
                           ),
                           StatCard(
-                            label: 'Books Read',
-                            value: '${_sessionsThisMonth > 0 ? 1 : 0}', // Simplified for now, ideally unique books
-                            unit: 'this month',
-                            icon: Icons.menu_book_rounded,
+                            label: 'This Month',
+                            value: '$_minutesThisMonth',
+                            unit: 'minutes',
+                            icon: Icons.calendar_month_rounded,
                             iconColor: Colors.green,
                           ),
                         ],
                       ),
-                      const SizedBox(height: 24),
-
-                      // 4. Monthly Heatmap
-                      Text(
-                        'Monthly Activity',
-                        style: textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      MonthlyHeatmap(
+                      
+                      const SizedBox(height: 32),
+                      
+                      // Enhanced Heatmap
+                      EnhancedHeatmapWidget(
                         dailyStats: _dailyStats,
                         currentMonth: _currentMonth,
                         onMonthChanged: _onMonthChanged,
                         onDayTapped: _onDayTapped,
                         seedColor: seedColor,
                       ),
-                      const SizedBox(height: 24),
-
-                      // 5. History Log
-                      ReadingHistoryList(sessions: _recentSessions),
                       
-                      const SizedBox(height: 40), // Bottom padding
+                      const SizedBox(height: 40),
                     ],
                   ),
                 ),
