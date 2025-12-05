@@ -67,6 +67,8 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
       _weeklyDailyMinutes = await _statsService.getWeeklyDailyMinutes();
       _recentSessions = await _statsService.getRecentSessions(10);
       
+      debugPrint('📊 Loaded ${_recentSessions.length} recent sessions');
+      
     } catch (e) {
       debugPrint('Error loading statistics: $e');
     }

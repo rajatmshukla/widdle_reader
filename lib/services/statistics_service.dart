@@ -282,18 +282,26 @@ class StatisticsService {
     try {
       final prefs = await _preferences;
       final keys = prefs.getKeys().where((key) => key.startsWith(sessionPrefix)).toList();
+      debugPrint('📊 Found ${keys.length} session keys in SharedPreferences');
 
       for (final key in keys) {
         final jsonString = prefs.getString(key);
         if (jsonString != null) {
-          sessions.add(ReadingSession.fromJson(
-            jsonDecode(jsonString) as Map<String, dynamic>,
-          ));
+          try {
+            final session = ReadingSession.fromJson(
+              jsonDecode(jsonString) as Map<String, dynamic>,
+            );
+            sessions.add(session);
+            debugPrint('📊 Loaded session: ${session.sessionId}, duration: ${session.durationMinutes}min');
+          } catch (e) {
+            debugPrint('📊 Error parsing session $key: $e');
+          }
         }
       }
 
       // Sort by end time (newest first)
       sessions.sort((a, b) => b.endTime.compareTo(a.endTime));
+      debugPrint('📊 Returning ${sessions.length > limit ? limit : sessions.length} out of ${sessions.length} total sessions');
 
       // Return limited number
       if (sessions.length > limit) {
