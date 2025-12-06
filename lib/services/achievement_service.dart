@@ -57,8 +57,16 @@ class AchievementService {
         }
       }
 
+      // Listen to statistics updates to trigger achievement checks
+      _statsService.onStatsUpdated.listen((_) {
+        checkAndUnlockAchievements();
+      });
+
       _initialized = true;
       debugPrint('🏆 AchievementService initialized with ${_unlockedAchievements.length} unlocked achievements');
+      
+      // Initial check
+      checkAndUnlockAchievements();
     } catch (e) {
       debugPrint('Error initializing AchievementService: $e');
     }

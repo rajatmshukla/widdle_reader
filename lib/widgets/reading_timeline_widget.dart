@@ -282,7 +282,9 @@ class _SessionBubbleState extends State<_SessionBubble>
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Text(
-                    '${widget.session.durationMinutes} min',
+                    widget.session.durationSeconds < 60
+                        ? '${widget.session.durationSeconds}s'
+                        : '${widget.session.durationMinutes} min',
                     style: textTheme.labelSmall?.copyWith(
                       color: colorScheme.onTertiaryContainer,
                       fontWeight: FontWeight.bold,
@@ -340,7 +342,9 @@ class _SessionBubbleState extends State<_SessionBubble>
             _DetailRow(
               icon: Icons.schedule,
               label: 'Duration',
-              value: '${widget.session.durationMinutes} minutes',
+              value: widget.session.durationSeconds < 60
+                  ? '${widget.session.durationSeconds} seconds'
+                  : '${widget.session.durationMinutes} minutes',
               color: colorScheme.primary,
             ),
             const SizedBox(height: 12),

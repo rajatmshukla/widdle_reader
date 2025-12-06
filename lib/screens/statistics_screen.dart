@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'dart:async';
 import 'package:provider/provider.dart' as provider;
 import '../services/statistics_service.dart';
 import '../providers/theme_provider.dart';
@@ -22,8 +23,10 @@ class StatisticsScreen extends StatefulWidget {
   State<StatisticsScreen> createState() => _StatisticsScreenState();
 }
 
-class _StatisticsScreenState extends State<StatisticsScreen> {
+class _StatisticsScreenState extends State<StatisticsScreen> with WidgetsBindingObserver {
   final StatisticsService _statsService = StatisticsService();
+  StreamSubscription? _statsSubscription;
+  
   DateTime _currentMonth = DateTime.now();
   Map<String, DailyStats> _dailyStats = {};
   int _currentStreak = 0;
@@ -33,6 +36,8 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
   int _minutesThisWeek = 0;
   int _minutesThisMonth = 0;
   int _sessionsThisWeek = 0;
+  // Changed to track seconds for live updates
+  int _secondsToday = 0;
   List<ReadingSession> _recentSessions = [];
   bool _loading = true;
   
@@ -43,11 +48,37 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _loadStatistics();
+    
+    // Listen for real-time updates
+    _statsSubscription = _statsService.onStatsUpdated.listen((_) {
+      if (mounted) {
+        debugPrint('📊 Received real-time stats update');
+        _loadStatistics(showLoading: false);
+      }
+    });
   }
 
-  Future<void> _loadStatistics() async {
-    setState(() => _loading = true);
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _statsSubscription?.cancel();
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      debugPrint('📊 App resumed - refreshing statistics');
+      _loadStatistics(showLoading: false);
+    }
+  }
+
+  Future<void> _loadStatistics({bool showLoading = true}) async {
+    if (showLoading) {
+      setState(() => _loading = true);
+    }
 
     try {
       // Load settings
@@ -74,7 +105,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
       final today = DateTime.now();
       final todayString = '${today.year}-${today.month.toString().padLeft(2, '0')}-${today.day.toString().padLeft(2, '0')}';
       final todayStats = await _statsService.getDailyStats(todayString);
-      _minutesToday = todayStats.totalMinutes;
+      _secondsToday = todayStats.totalSeconds;
       
       // Load recent sessions
       _recentSessions = await _statsService.getRecentSessions(20);
@@ -84,7 +115,9 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
       debugPrint('Error loading statistics: $e');
     }
 
-    setState(() => _loading = false);
+    if (mounted) {
+      setState(() => _loading = false);
+    }
   }
 
   void _onMonthChanged(DateTime newMonth) {
@@ -313,10 +346,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final themeProvider = provider.Provider.of<ThemeProvider>(context);
-    final seedColor = themeProvider.seedColor;
     final colorScheme = Theme.of(context).colorScheme;
-    final textTheme = Theme.of(context).textTheme;
 
     return Scaffold(
       appBar: AppBar(
@@ -402,7 +432,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
                     children: [
                       // Hero Progress Ring
                       ProgressRingWidget(
-                        currentMinutes: _minutesToday,
+                        currentSeconds: _secondsToday,
                         targetMinutes: _dailyGoalMinutes,
                         metricLabel: 'Today',
                       ),
@@ -426,7 +456,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
                             borderRadius: BorderRadius.circular(24),
                             boxShadow: [
                               BoxShadow(
-                                color: Colors.orange.withOpacity(0.3),
+                                color: Colors.orange.withAlpha(76),
                                 blurRadius: 12,
                                 offset: const Offset(0, 4),
                               ),
@@ -520,7 +550,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
                         currentMonth: _currentMonth,
                         onMonthChanged: _onMonthChanged,
                         onDayTapped: _onDayTapped,
-                        seedColor: seedColor,
+                        seedColor: colorScheme.primary,
                       ),
                       
                       const SizedBox(height: 40),

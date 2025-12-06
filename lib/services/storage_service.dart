@@ -10,8 +10,26 @@ import 'dart:async'; // For periodic cache persistence
 import '../models/audiobook.dart'; // Import Audiobook model
 
 class StorageService {
-  // Callback for notifying providers about data changes
-  static Function()? _onDataImported;
+  // Listeners for data restore events
+  final List<VoidCallback> _restoreListeners = [];
+
+  void addRestoreListener(VoidCallback listener) {
+    _restoreListeners.add(listener);
+  }
+
+  void removeRestoreListener(VoidCallback listener) {
+    _restoreListeners.remove(listener);
+  }
+
+  void _notifyRestoreListeners() {
+    for (final listener in _restoreListeners) {
+      try {
+        listener();
+      } catch (e) {
+        debugPrint('Error in restore listener: $e');
+      }
+    }
+  }
   // Key constants for SharedPreferences
   static const String foldersKey = 'audiobook_folders';
 
@@ -421,6 +439,9 @@ class StorageService {
         _customTitlesCache.clear();
         _foldersCache.clear();
         _playbackSpeedCache.clear();
+        
+        // Notify listeners that data has been restored
+        _notifyRestoreListeners();
         
         return true;
       } else {
@@ -1922,9 +1943,7 @@ class StorageService {
       _dirtyFoldersCache = false;
       
       // Notify providers to refresh their data
-      if (_onDataImported != null) {
-        _onDataImported!();
-      }
+      _notifyRestoreListeners();
       
       debugPrint('📦 ✅ Comprehensive backup imported successfully');
       return true;
@@ -1932,16 +1951,6 @@ class StorageService {
       debugPrint('📦 ❌ Error importing user data: $e');
       return false;
     }
-  }
-
-  /// Set callback for data import notifications
-  static void setDataImportCallback(Function() callback) {
-    _onDataImported = callback;
-  }
-
-  /// Clear the data import callback
-  static void clearDataImportCallback() {
-    _onDataImported = null;
   }
 
   /// ========================================

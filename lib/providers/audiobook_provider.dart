@@ -99,7 +99,21 @@ class AudiobookProvider extends ChangeNotifier {
 
   // Constructor: Load audiobooks when the provider is created
   AudiobookProvider() {
+    // Listen for data restore events to prevent stale state
+    _storageService.addRestoreListener(_onDataRestored);
+    
     _loadCustomTitles().then((_) => loadAudiobooks());
+  }
+  
+  void _onDataRestored() {
+    _logDebug("Restore detected, reloading audiobooks...");
+    loadAudiobooks();
+  }
+  
+  @override
+  void dispose() {
+    _storageService.removeRestoreListener(_onDataRestored);
+    super.dispose();
   }
 
   /// Loads saved custom titles from preferences

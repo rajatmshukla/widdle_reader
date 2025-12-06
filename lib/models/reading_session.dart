@@ -4,7 +4,7 @@ class ReadingSession {
   final String audiobookId;
   final DateTime startTime;
   final DateTime endTime;
-  final int durationMinutes;
+  final int durationSeconds; // Changed from minutes to seconds for precision
   final int pagesRead; // Number of chapters progressed
   final String? chapterName; // Optional chapter name for context
 
@@ -13,10 +13,13 @@ class ReadingSession {
     required this.audiobookId,
     required this.startTime,
     required this.endTime,
-    required this.durationMinutes,
+    required this.durationSeconds,
     this.pagesRead = 0,
     this.chapterName,
   });
+
+  /// Get duration in minutes (rounded)
+  int get durationMinutes => (durationSeconds / 60).round();
 
   /// Calculate duration from start/end times
   factory ReadingSession.fromTimes({
@@ -25,16 +28,17 @@ class ReadingSession {
     required DateTime endTime,
     int pagesRead = 0,
     String? chapterName,
+    String? sessionId, // Allow passing ID for continuous updates
   }) {
-    final duration = endTime.difference(startTime).inMinutes;
-    final sessionId = '${startTime.millisecondsSinceEpoch}';
+    final durationSec = endTime.difference(startTime).inSeconds;
+    final id = sessionId ?? '${startTime.millisecondsSinceEpoch}';
     
     return ReadingSession(
-      sessionId: sessionId,
+      sessionId: id,
       audiobookId: audiobookId,
       startTime: startTime,
       endTime: endTime,
-      durationMinutes: duration.clamp(0, 1440), // Max 24 hours
+      durationSeconds: durationSec < 0 ? 0 : durationSec,
       pagesRead: pagesRead,
       chapterName: chapterName,
     );
@@ -47,7 +51,7 @@ class ReadingSession {
       'audiobookId': audiobookId,
       'startTime': startTime.millisecondsSinceEpoch,
       'endTime': endTime.millisecondsSinceEpoch,
-      'durationMinutes': durationMinutes,
+      'durationSeconds': durationSeconds,
       'pagesRead': pagesRead,
       'chapterName': chapterName,
     };
@@ -55,12 +59,20 @@ class ReadingSession {
 
   /// Create from JSON
   factory ReadingSession.fromJson(Map<String, dynamic> json) {
+    // Handle migration from old minutes-based data
+    int seconds;
+    if (json.containsKey('durationSeconds')) {
+      seconds = json['durationSeconds'] as int;
+    } else {
+      seconds = (json['durationMinutes'] as int) * 60;
+    }
+
     return ReadingSession(
       sessionId: json['sessionId'] as String,
       audiobookId: json['audiobookId'] as String,
       startTime: DateTime.fromMillisecondsSinceEpoch(json['startTime'] as int),
       endTime: DateTime.fromMillisecondsSinceEpoch(json['endTime'] as int),
-      durationMinutes: json['durationMinutes'] as int,
+      durationSeconds: seconds,
       pagesRead: json['pagesRead'] as int? ?? 0,
       chapterName: json['chapterName'] as String?,
     );
@@ -74,6 +86,6 @@ class ReadingSession {
 
   @override
   String toString() {
-    return 'ReadingSession(id: $sessionId, book: $audiobookId, duration: ${durationMinutes}min, date: $dateString)';
+    return 'ReadingSession(id: $sessionId, book: $audiobookId, duration: ${durationSeconds}s, date: $dateString)';
   }
 }

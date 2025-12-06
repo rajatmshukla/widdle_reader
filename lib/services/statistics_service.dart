@@ -36,8 +36,17 @@ class StatisticsService {
   DateTime? _sessionStartTime;
   String? _currentAudiobookId;
   String? _currentChapterName;
+  String? _currentSessionId; // Unique ID for the current continuous session
   int _sessionPagesRead = 0;
+  int _lastSyncedSeconds = 0; // Track accumulated seconds to calculate deltas
+  bool _isSessionCounted = false; // Track if session count has been incremented for current session
   Timer? _sessionPersistTimer;
+
+  // Stream controller for real-time updates
+  final _statsUpdatedController = StreamController<void>.broadcast();
+  
+  /// Stream that emits events when statistics are updated
+  Stream<void> get onStatsUpdated => _statsUpdatedController.stream;
 
   /// Initialize the service
   Future<SharedPreferences> get _preferences async {
@@ -61,29 +70,47 @@ class StatisticsService {
         final startMs = data['startTime'] as int?;
         final audiobookId = data['audiobookId'] as String?;
         final chapterName = data['chapterName'] as String?;
+        final sessionId = data['sessionId'] as String?;
         
         if (startMs != null && audiobookId != null) {
-          final startTime = DateTime.fromMillisecondsSinceEpoch(startMs);
-          final endTime = DateTime.now();
-          final duration = endTime.difference(startTime).inMinutes;
+          // Fix for continuous sessions:
+          // If we have a sessionId, we assume the session was being synced continuously.
+          // The file on disk and DailyStats are likely up to date (within 10s).
+          // We should NOT create a new session ending at DateTime.now(), as that would
+          // count the entire downtime as reading time (e.g. 8 hours of sleep).
           
-          // Only recover sessions < 24 hours old and > 1 minute
-          if (duration >= 1 && duration < 1440) {
-            _logStats('📊 Recovering crashed session: $duration minutes for $audiobookId');
+          if (sessionId != null) {
+             _logStats('📊 Recovering continuous session $sessionId. Clearing crash flag.');
+             // We assume the last sync was successful or acceptable.
+             // No further action needed other than clearing the flag.
+          } else {
+            // Legacy / Fallback recovery
+            final startTime = DateTime.fromMillisecondsSinceEpoch(startMs);
+            // Use lastUpdate if available, otherwise cap to reasonable max or now
+            final lastUpdateMs = data['lastUpdate'] as int?;
+            final endTime = lastUpdateMs != null 
+                ? DateTime.fromMillisecondsSinceEpoch(lastUpdateMs)
+                : DateTime.now(); // Fallback (risky but legacy)
+
+            final durationSec = endTime.difference(startTime).inSeconds;
             
-            final session = ReadingSession.fromTimes(
-              audiobookId: audiobookId,
-              startTime: startTime,
-              endTime: endTime,
-              pagesRead: data['pagesRead'] as int? ?? 0,
-              chapterName: chapterName,
-            );
-            
-            await _saveSession(session);
-            await _updateDailyStats(session);
-            await _updateStreak();
-            
-            _logStats('📊 ✅ Recovered session: ${session.durationMinutes} minutes');
+            if (durationSec >= 10 && durationSec < 86400) {
+               final session = ReadingSession.fromTimes(
+                audiobookId: audiobookId,
+                startTime: startTime,
+                endTime: endTime,
+                pagesRead: data['pagesRead'] as int? ?? 0,
+                chapterName: chapterName,
+                sessionId: sessionId, // likely null here
+              );
+              
+              await _saveSession(session);
+              // Only update daily stats if we are sure it wasn't counted (legacy)
+              // With continuous, we assume it's counted. 
+              // For legacy, we might double count if we aren't careful, 
+              // but saving data is better than losing it.
+              await _updateDailyStats(session, deltaSeconds: 0);
+            }
           }
           
           // Clear the active session marker
@@ -106,6 +133,7 @@ class StatisticsService {
         'audiobookId': _currentAudiobookId,
         'chapterName': _currentChapterName,
         'pagesRead': _sessionPagesRead,
+        'sessionId': _currentSessionId,
         'lastUpdate': DateTime.now().millisecondsSinceEpoch,
       };
       await prefs.setString(activeSessionKey, jsonEncode(data));
@@ -146,6 +174,9 @@ class StatisticsService {
       _currentAudiobookId = audiobookId;
       _currentChapterName = chapterName;
       _sessionPagesRead = 0;
+      _currentSessionId = '${_sessionStartTime!.millisecondsSinceEpoch}';
+      _lastSyncedSeconds = 0;
+      _isSessionCounted = false;
 
       // Persist immediately for crash recovery
       await _persistActiveSessionState();
@@ -157,7 +188,7 @@ class StatisticsService {
         (_) => _persistActiveSessionState(),
       );
 
-      _logStats('📊 ✅ Session started with crash recovery enabled');
+      _logStats('📊 ✅ Session started (Continuous Mode)');
     } catch (e, stackTrace) {
       _logStats('📊 ❌ EXCEPTION in startSession: $e');
       if (kDebugMode) debugPrint('📊 Stack trace: $stackTrace');
@@ -181,56 +212,38 @@ class StatisticsService {
 
   /// End the current reading session
   Future<void> endSession() async {
-    _logStats('📊 endSession called - sessionStartTime: $_sessionStartTime, audiobookId: $_currentAudiobookId');
+    _logStats('📊 endSession called');
     
     // Stop the persist timer
     _sessionPersistTimer?.cancel();
     _sessionPersistTimer = null;
     
     if (_sessionStartTime == null || _currentAudiobookId == null) {
-      _logStats('📊 ⚠️ No active session to end (start time or audiobook ID is null)');
+      _logStats('📊 ⚠️ No active session to end');
       await _clearActiveSessionMarker();
-      return; // No active session
+      return;
     }
 
     try {
-      final endTime = DateTime.now();
-      final duration = endTime.difference(_sessionStartTime!).inMinutes;
-      _logStats('📊 Session duration: $duration minutes');
-
-      // Only save sessions longer than 1 minute
-      if (duration >= 1) {
-        _logStats('📊 Duration >= 1 minute, saving session...');
-        
-        final session = ReadingSession.fromTimes(
-          audiobookId: _currentAudiobookId!,
-          startTime: _sessionStartTime!,
-          endTime: endTime,
-          pagesRead: _sessionPagesRead,
-          chapterName: _currentChapterName,
-        );
-        _logStats('📊 Created session object - ID: ${session.sessionId}, duration: ${session.durationMinutes}min');
-
-        await _saveSession(session);
-        await _updateDailyStats(session);
-        await _updateStreak();
-
-        _logStats('📊 ✅ Ended reading session: ${session.durationMinutes} minutes');
-      } else {
-        _logStats('📊 ⚠️ Session too short ($duration min), not saving');
-      }
+      // Perform final sync to capture any remaining seconds
+      await syncCurrentSession();
+      
+      _logStats('📊 ✅ Ended reading session');
 
       // Clear active session
       _sessionStartTime = null;
       _currentAudiobookId = null;
       _currentChapterName = null;
+      _currentSessionId = null;
       _sessionPagesRead = 0;
+      _lastSyncedSeconds = 0;
+      _isSessionCounted = false;
       _activeSession = null;
       
       // Clear persisted session marker
       await _clearActiveSessionMarker();
       
-      _logStats('📊 Session variables cleared');
+      _statsUpdatedController.add(null);
     } catch (e, stackTrace) {
       _logStats('📊 ❌ EXCEPTION in endSession: $e');
       if (kDebugMode) debugPrint('📊 Stack trace: $stackTrace');
@@ -246,35 +259,37 @@ class StatisticsService {
 
     try {
       final now = DateTime.now();
-      final duration = now.difference(_sessionStartTime!).inMinutes;
+      final totalSeconds = now.difference(_sessionStartTime!).inSeconds;
+      final deltaSeconds = totalSeconds - _lastSyncedSeconds;
 
-      // If session is > 1 min, we can consider saving a temporary snapshot
-      // But for simplicity, we'll just update the streak and daily stats
-      // by "ending" and "restarting" logically, OR we can just notify listeners if we had them.
-      // A better approach for persistent stats is to save the accumulated time and reset start time.
-      
-      if (duration >= 1) {
-        // Create a partial session
+      // Only update if at least 1 second has passed
+      if (deltaSeconds > 0) {
+        // Create/Update session object
         final session = ReadingSession.fromTimes(
           audiobookId: _currentAudiobookId!,
           startTime: _sessionStartTime!,
           endTime: now,
           pagesRead: _sessionPagesRead,
           chapterName: _currentChapterName,
+          sessionId: _currentSessionId,
         );
 
+        // Save session (overwrites existing entry for this ID)
         await _saveSession(session);
-        await _updateDailyStats(session);
+        
+        // Update daily stats with the DELTA (new seconds added)
+        await _updateDailyStats(session, deltaSeconds: deltaSeconds);
+        
         await _updateStreak();
 
-        // Reset start time to now to avoid double counting
-        _sessionStartTime = now;
-        _sessionPagesRead = 0; // Reset pages for next chunk
+        // Update tracking
+        _lastSyncedSeconds = totalSeconds;
         
         // Update persisted state
         await _persistActiveSessionState();
         
-        _logStats('📊 Synced reading session: ${session.durationMinutes} minutes');
+        _logStats('📊 Synced: +${deltaSeconds}s (Total: ${totalSeconds}s)');
+        _statsUpdatedController.add(null);
       }
     } catch (e) {
       _logStats('Error syncing session: $e');
@@ -297,22 +312,40 @@ class StatisticsService {
   }
 
   /// Update daily stats with new session
-  Future<void> _updateDailyStats(ReadingSession session) async {
+  Future<void> _updateDailyStats(ReadingSession session, {int deltaSeconds = 0}) async {
     try {
       final dateString = session.dateString;
       final currentStats = await getDailyStats(dateString);
 
+      // If deltaSeconds is provided (continuous sync), use it.
+      // Otherwise (legacy/full save), calculate from session duration.
+      // But for continuous sync, we MUST use delta to avoid double counting.
+      // If deltaSeconds is 0, it might be a full save of a new session?
+      // Actually, syncCurrentSession always passes deltaSeconds > 0.
+      // recoverCrashedSession passes session but no delta. In that case we might double count if we aren't careful.
+      // For recovery, we should probably assume the whole duration is new if it wasn't tracked?
+      // Or just use session.durationSeconds if delta is 0.
+      
+      final secondsToAdd = deltaSeconds > 0 ? deltaSeconds : session.durationSeconds;
+      
+      // Determine if we should increment session count
+      int sessionCountIncrement = 0;
+      if (!_isSessionCounted) {
+        sessionCountIncrement = 1;
+        _isSessionCounted = true;
+      }
+
       final updatedStats = DailyStats(
         date: dateString,
-        totalMinutes: currentStats.totalMinutes + session.durationMinutes,
-        sessionCount: currentStats.sessionCount + 1,
+        totalSeconds: currentStats.totalSeconds + secondsToAdd,
+        sessionCount: currentStats.sessionCount + sessionCountIncrement,
         pagesRead: currentStats.pagesRead + session.pagesRead,
         audiobooksRead: {
           ...currentStats.audiobooksRead,
           session.audiobookId,
         },
       );
-
+      
       await _saveDailyStats(updatedStats);
     } catch (e) {
       _logStats('Error updating daily stats: $e');
@@ -554,7 +587,9 @@ class StatisticsService {
 
       if (keys.isEmpty) return 0.0;
 
-      int totalMinutes = 0;
+      if (keys.isEmpty) return 0.0;
+
+      int totalSeconds = 0;
       int count = 0;
 
       for (final key in keys) {
@@ -563,12 +598,12 @@ class StatisticsService {
           final session = ReadingSession.fromJson(
             jsonDecode(jsonString) as Map<String, dynamic>,
           );
-          totalMinutes += session.durationMinutes;
+          totalSeconds += session.durationSeconds;
           count++;
         }
       }
 
-      return count > 0 ? totalMinutes / count : 0.0;
+      return count > 0 ? (totalSeconds / 60) / count : 0.0;
     } catch (e) {
       debugPrint('Error calculating average session duration: $e');
       return 0.0;
@@ -696,6 +731,7 @@ class StatisticsService {
       _activeSession = null;
 
       debugPrint('📊 All statistics reset successfully');
+      _statsUpdatedController.add(null);
     } catch (e) {
       debugPrint('Error resetting statistics: $e');
       rethrow;
@@ -745,6 +781,7 @@ class StatisticsService {
 
       if (restoredAny) {
         debugPrint('📊 Statistics restored from backup');
+        _statsUpdatedController.add(null);
       }
 
       return restoredAny;

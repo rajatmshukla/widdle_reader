@@ -1,24 +1,27 @@
 /// Model representing aggregated statistics for a single day
 class DailyStats {
   final String date; // YYYY-MM-DD format
-  final int totalMinutes;
+  final int totalSeconds; // Changed from minutes to seconds
   final int sessionCount;
   final int pagesRead;
   final Set<String> audiobooksRead; // Track which books were read
 
   DailyStats({
     required this.date,
-    required this.totalMinutes,
+    required this.totalSeconds,
     required this.sessionCount,
     required this.pagesRead,
     Set<String>? audiobooksRead,
   }) : audiobooksRead = audiobooksRead ?? {};
 
+  /// Get total minutes (rounded)
+  int get totalMinutes => (totalSeconds / 60).round();
+
   /// Convert to JSON for storage
   Map<String, dynamic> toJson() {
     return {
       'date': date,
-      'totalMinutes': totalMinutes,
+      'totalSeconds': totalSeconds,
       'sessionCount': sessionCount,
       'pagesRead': pagesRead,
       'audiobooksRead': audiobooksRead.toList(),
@@ -27,9 +30,17 @@ class DailyStats {
 
   /// Create from JSON
   factory DailyStats.fromJson(Map<String, dynamic> json) {
+    // Handle migration
+    int seconds;
+    if (json.containsKey('totalSeconds')) {
+      seconds = json['totalSeconds'] as int;
+    } else {
+      seconds = (json['totalMinutes'] as int) * 60;
+    }
+
     return DailyStats(
       date: json['date'] as String,
-      totalMinutes: json['totalMinutes'] as int,
+      totalSeconds: seconds,
       sessionCount: json['sessionCount'] as int,
       pagesRead: json['pagesRead'] as int? ?? 0,
       audiobooksRead: Set<String>.from(json['audiobooksRead'] as List? ?? []),
@@ -40,7 +51,7 @@ class DailyStats {
   factory DailyStats.empty(String date) {
     return DailyStats(
       date: date,
-      totalMinutes: 0,
+      totalSeconds: 0,
       sessionCount: 0,
       pagesRead: 0,
       audiobooksRead: {},
@@ -59,14 +70,14 @@ class DailyStats {
   /// Copy with updated values
   DailyStats copyWith({
     String? date,
-    int? totalMinutes,
+    int? totalSeconds,
     int? sessionCount,
     int? pagesRead,
     Set<String>? audiobooksRead,
   }) {
     return DailyStats(
       date: date ?? this.date,
-      totalMinutes: totalMinutes ?? this.totalMinutes,
+      totalSeconds: totalSeconds ?? this.totalSeconds,
       sessionCount: sessionCount ?? this.sessionCount,
       pagesRead: pagesRead ?? this.pagesRead,
       audiobooksRead: audiobooksRead ?? Set<String>.from(this.audiobooksRead),
@@ -75,7 +86,7 @@ class DailyStats {
 
   @override
   String toString() {
-    return 'DailyStats(date: $date, minutes: $totalMinutes, sessions: $sessionCount, pages: $pagesRead)';
+    return 'DailyStats(date: $date, seconds: $totalSeconds, sessions: $sessionCount, pages: $pagesRead)';
   }
 }
 

@@ -2,15 +2,18 @@ import 'package:flutter/material.dart';
 import 'dart:math' as math;
 
 /// Animated circular progress ring showing reading progress
+/// Animated circular progress ring showing reading progress
 class ProgressRingWidget extends StatefulWidget {
   final int currentMinutes;
+  final int currentSeconds; // Optional precise tracking
   final int targetMinutes;
   final String metricLabel;
   final VoidCallback? onTap;
 
   const ProgressRingWidget({
     super.key,
-    required this.currentMinutes,
+    this.currentMinutes = 0,
+    this.currentSeconds = 0,
     required this.targetMinutes,
     this.metricLabel = 'Today',
     this.onTap,
@@ -57,6 +60,7 @@ class _ProgressRingWidgetState extends State<ProgressRingWidget>
   void didUpdateWidget(ProgressRingWidget oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.currentMinutes != widget.currentMinutes ||
+        oldWidget.currentSeconds != widget.currentSeconds ||
         oldWidget.targetMinutes != widget.targetMinutes) {
       _progressAnimation = Tween<double>(
         begin: _progressAnimation.value,
@@ -77,6 +81,12 @@ class _ProgressRingWidgetState extends State<ProgressRingWidget>
 
   double _getProgressValue() {
     if (widget.targetMinutes == 0) return 0.0;
+    
+    // Use seconds if available for smoother progress
+    if (widget.currentSeconds > 0) {
+      return (widget.currentSeconds / (widget.targetMinutes * 60)).clamp(0.0, 1.5);
+    }
+    
     return (widget.currentMinutes / widget.targetMinutes).clamp(0.0, 1.5);
   }
 
@@ -98,6 +108,22 @@ class _ProgressRingWidgetState extends State<ProgressRingWidget>
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
+
+    // Determine display values
+    String displayValue;
+    String displayUnit;
+    
+    if (widget.currentSeconds > 0 && widget.currentSeconds < 60) {
+      displayValue = '${widget.currentSeconds}';
+      displayUnit = 'seconds';
+    } else {
+      // If seconds provided, calculate minutes (rounded)
+      final minutes = widget.currentSeconds > 0 
+          ? (widget.currentSeconds / 60).round()
+          : widget.currentMinutes;
+      displayValue = '$minutes';
+      displayUnit = 'minutes';
+    }
 
     return GestureDetector(
       onTap: widget.onTap,
@@ -145,7 +171,7 @@ class _ProgressRingWidgetState extends State<ProgressRingWidget>
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Text(
-                        '${widget.currentMinutes}',
+                        displayValue,
                         style: textTheme.displayLarge?.copyWith(
                           fontWeight: FontWeight.bold,
                           color: progressColor,
@@ -154,7 +180,7 @@ class _ProgressRingWidgetState extends State<ProgressRingWidget>
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        'minutes',
+                        displayUnit,
                         style: textTheme.bodyMedium?.copyWith(
                           color: colorScheme.onSurfaceVariant,
                           fontWeight: FontWeight.w500,

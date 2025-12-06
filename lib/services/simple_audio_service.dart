@@ -70,6 +70,26 @@ class SimpleAudioService {
   SimpleAudioService._internal() {
     _initStreams();
     _initAudioSession();
+    _storageService.addRestoreListener(_onDataRestored);
+  }
+
+  void _onDataRestored() {
+    debugPrint("Data restore detected! Emergency stopping playback...");
+    // Cancel auto-save to prevent overwriting restored data
+    _autoSaveTimer?.cancel();
+    _autoSaveTimer = null;
+    
+    // Stop player without saving
+    _player.stop();
+    
+    // Clear state
+    _currentAudiobook = null;
+    _currentChapterIndex = 0;
+    _userPaused = false;
+    
+    // Update streams to reflect 'stopped/empty' state
+    _currentChapterSubject.add(0);
+    _playingSubject.add(false);
   }
 
   // Public initialization method for explicit init when needed
@@ -422,10 +442,10 @@ class SimpleAudioService {
     // Cancel existing timer if any
     _autoSaveTimer?.cancel();
     
-    // Create a new timer that saves position every 30 seconds
-    _autoSaveTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+    // Create a new timer that saves position every 10 seconds
+    _autoSaveTimer = Timer.periodic(const Duration(seconds: 10), (_) {
       if (_currentAudiobook != null && isPlaying) {
-        debugPrint("Auto-saving playback position and syncing stats");
+        // debugPrint("Auto-saving playback position and syncing stats");
         saveCurrentPosition();
         _statsService.syncCurrentSession();
       }
@@ -741,6 +761,7 @@ class SimpleAudioService {
 
   // Cleanup
   Future<void> dispose() async {
+    _storageService.removeRestoreListener(_onDataRestored);
     _autoSaveTimer?.cancel();
     _mediaSessionUpdateTimer?.cancel();
     await _saveCurrentPosition(); // Save position one last time
