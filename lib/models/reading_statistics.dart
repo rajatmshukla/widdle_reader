@@ -5,6 +5,7 @@ class DailyStats {
   final int sessionCount;
   final int pagesRead;
   final Set<String> audiobooksRead; // Track which books were read
+  final Map<String, int> bookDurations; // Track duration per book (BookId -> Seconds)
 
   DailyStats({
     required this.date,
@@ -12,7 +13,9 @@ class DailyStats {
     required this.sessionCount,
     required this.pagesRead,
     Set<String>? audiobooksRead,
-  }) : audiobooksRead = audiobooksRead ?? {};
+    Map<String, int>? bookDurations,
+  }) : audiobooksRead = audiobooksRead ?? {},
+       bookDurations = bookDurations ?? {};
 
   /// Get total minutes (rounded)
   int get totalMinutes => (totalSeconds / 60).round();
@@ -25,6 +28,7 @@ class DailyStats {
       'sessionCount': sessionCount,
       'pagesRead': pagesRead,
       'audiobooksRead': audiobooksRead.toList(),
+      'bookDurations': bookDurations,
     };
   }
 
@@ -38,12 +42,20 @@ class DailyStats {
       seconds = (json['totalMinutes'] as int) * 60;
     }
 
+    // Handle bookDurations migration (if missing, empty map)
+    Map<String, int> durations = {};
+    if (json.containsKey('bookDurations')) {
+      final Map<String, dynamic> rawMap = json['bookDurations'];
+      durations = rawMap.map((key, value) => MapEntry(key, value as int));
+    }
+
     return DailyStats(
       date: json['date'] as String,
       totalSeconds: seconds,
       sessionCount: json['sessionCount'] as int,
       pagesRead: json['pagesRead'] as int? ?? 0,
       audiobooksRead: Set<String>.from(json['audiobooksRead'] as List? ?? []),
+      bookDurations: durations,
     );
   }
 
@@ -55,6 +67,7 @@ class DailyStats {
       sessionCount: 0,
       pagesRead: 0,
       audiobooksRead: {},
+      bookDurations: {},
     );
   }
 
@@ -74,6 +87,7 @@ class DailyStats {
     int? sessionCount,
     int? pagesRead,
     Set<String>? audiobooksRead,
+    Map<String, int>? bookDurations,
   }) {
     return DailyStats(
       date: date ?? this.date,
@@ -81,6 +95,7 @@ class DailyStats {
       sessionCount: sessionCount ?? this.sessionCount,
       pagesRead: pagesRead ?? this.pagesRead,
       audiobooksRead: audiobooksRead ?? Set<String>.from(this.audiobooksRead),
+      bookDurations: bookDurations ?? Map<String, int>.from(this.bookDurations),
     );
   }
 

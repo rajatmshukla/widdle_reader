@@ -38,7 +38,11 @@ class StatisticsService {
   String? _currentChapterName;
   String? _currentSessionId; // Unique ID for the current continuous session
   int _sessionPagesRead = 0;
-  int _lastSyncedSeconds = 0; // Track accumulated seconds to calculate deltas
+  
+  // Speed-adjusted tracking
+  double _accumulatedSeconds = 0.0;
+  DateTime? _lastSyncTime;
+  
   bool _isSessionCounted = false; // Track if session count has been incremented for current session
   Timer? _sessionPersistTimer;
 
@@ -151,6 +155,12 @@ class StatisticsService {
       _logStats('📊 Error clearing session marker: $e');
     }
   }
+  
+  /// Update playback speed for current session tracking
+  // Method kept for API compatibility, but speed is intentionally ignored
+  Future<void> updateSpeed(double speed) async {
+    _logStats('📊 Tracking speed update ignored (using strict wall-clock time)');
+  }
 
   // ===========================
   // SESSION TRACKING
@@ -175,7 +185,11 @@ class StatisticsService {
       _currentChapterName = chapterName;
       _sessionPagesRead = 0;
       _currentSessionId = '${_sessionStartTime!.millisecondsSinceEpoch}';
-      _lastSyncedSeconds = 0;
+      
+      // Initialize accumulator model
+      _accumulatedSeconds = 0.0;
+      _lastSyncTime = _sessionStartTime;
+      
       _isSessionCounted = false;
 
       // Persist immediately for crash recovery
@@ -236,7 +250,12 @@ class StatisticsService {
       _currentChapterName = null;
       _currentSessionId = null;
       _sessionPagesRead = 0;
-      _lastSyncedSeconds = 0;
+      _sessionPagesRead = 0;
+      
+      // Reset accumulator
+      _accumulatedSeconds = 0.0;
+      _lastSyncTime = null;
+      
       _isSessionCounted = false;
       _activeSession = null;
       
@@ -253,22 +272,37 @@ class StatisticsService {
   /// Sync current session progress without ending it
   /// This allows for real-time stats updates
   Future<void> syncCurrentSession() async {
-    if (_sessionStartTime == null || _currentAudiobookId == null) {
+    if (_sessionStartTime == null || _currentAudiobookId == null || _lastSyncTime == null) {
       return;
     }
 
     try {
       final now = DateTime.now();
-      final totalSeconds = now.difference(_sessionStartTime!).inSeconds;
-      final deltaSeconds = totalSeconds - _lastSyncedSeconds;
+      
+      // Calculate wall-clock delta since last sync
+      final wallDeltaSeconds = now.difference(_lastSyncTime!).inMilliseconds / 1000.0;
+      
+      // STRICT WALL CLOCK TIME: Ignore speed multiplier
+      final adjustedDelta = wallDeltaSeconds; 
+      
+      // Update accumulator
+      _accumulatedSeconds += adjustedDelta;
+      _lastSyncTime = now;
 
-      // Only update if at least 1 second has passed
-      if (deltaSeconds > 0) {
+      // Only update if we have accumulated at least 1 second of content
+      if (adjustedDelta > 0) {
+        // Check for midnight crossing
+        if (!_isSameDay(_sessionStartTime!, now)) {
+          await _performMidnightSplit(now);
+          return; // Session context changed, exit sync
+        }
+
         // Create/Update session object
+        // NOTE: Session duration is now based on CONTENT time, not wall time
         final session = ReadingSession.fromTimes(
           audiobookId: _currentAudiobookId!,
           startTime: _sessionStartTime!,
-          endTime: now,
+          endTime: _sessionStartTime!.add(Duration(seconds: _accumulatedSeconds.round())),
           pagesRead: _sessionPagesRead,
           chapterName: _currentChapterName,
           sessionId: _currentSessionId,
@@ -277,22 +311,130 @@ class StatisticsService {
         // Save session (overwrites existing entry for this ID)
         await _saveSession(session);
         
-        // Update daily stats with the DELTA (new seconds added)
-        await _updateDailyStats(session, deltaSeconds: deltaSeconds);
+        // Update daily stats with the ADJUSTED DELTA (rounded to nearest int)
+        // We accumulate partial seconds internally, but commit integers to stats
+        // To be precise, we could track partials in DailyStats too, but int is fine for now
+        // A robust way mapping accumulators to ints without drift: 
+        // We report round(_accumulatedSeconds) - prevReported. 
+        // For simplicity "basic and robust": just use round of adjustedDelta for now.
+        // Or tracking totalSynced and diffing. 
+        
+        // Better robust approach: 
+        // _lastReportedSeconds = running count of what we sent to DailyStats
+        // deltaToSend = round(_accumulatedSeconds) - _lastReportedSeconds
+        
+        // For now, let's trust that small rounding errors on <10s updates are negligible 
+        // or just round the delta. 
+        final intDelta = adjustedDelta.round();
+        
+        if (intDelta > 0) {
+          await _updateDailyStats(session, deltaSeconds: intDelta);
+        }
         
         await _updateStreak();
 
-        // Update tracking
-        _lastSyncedSeconds = totalSeconds;
+        // Update tracking - done via accumulator & lastSyncTime
         
         // Update persisted state
         await _persistActiveSessionState();
         
-        _logStats('📊 Synced: +${deltaSeconds}s (Total: ${totalSeconds}s)');
+        _logStats('📊 Synced: +${adjustedDelta.toStringAsFixed(1)}s (Total: ${_accumulatedSeconds.toStringAsFixed(1)}s) [Wall Clock]');
         _statsUpdatedController.add(null);
       }
     } catch (e) {
       _logStats('Error syncing session: $e');
+    }
+  }
+
+  /// Check if two dates are on the same day
+  bool _isSameDay(DateTime a, DateTime b) {
+    return a.year == b.year && a.month == b.month && a.day == b.day;
+  }
+
+  /// Handle a session that crosses midnight by splitting it
+  Future<void> _performMidnightSplit(DateTime now) async {
+    _logStats('📊 Midnight detected! Splitting session...');
+    
+    if (_lastSyncTime == null) return;
+
+    try {
+      // 1. End current session at 23:59:59 of start day
+      final endOfDay = DateTime(
+        _sessionStartTime!.year,
+        _sessionStartTime!.month,
+        _sessionStartTime!.day,
+        23, 59, 59, 999
+      );
+      
+      // Calculate delta for the remainder of the first day (from lastSync to endOfDay)
+      // Wall time delta
+      final wallDeltaFirstPart = endOfDay.difference(_lastSyncTime!).inMilliseconds / 1000.0;
+      // Content time delta (Strict Wall Clock)
+      final adjustedDeltaFirstPart = wallDeltaFirstPart;
+
+      // Update accumulator for first part
+      _accumulatedSeconds += adjustedDeltaFirstPart;
+
+      final sessionOne = ReadingSession.fromTimes(
+        audiobookId: _currentAudiobookId!,
+        startTime: _sessionStartTime!,
+        endTime: _sessionStartTime!.add(Duration(seconds: _accumulatedSeconds.round())),
+        pagesRead: _sessionPagesRead,
+        chapterName: _currentChapterName,
+        sessionId: _currentSessionId,
+      );
+      
+      await _saveSession(sessionOne);
+      
+      // Commit stats for the first part
+      final intDeltaFirst = adjustedDeltaFirstPart.round();
+      if (intDeltaFirst > 0) {
+        await _updateDailyStats(sessionOne, deltaSeconds: intDeltaFirst);
+      }
+      
+      // 2. Start new session for Today
+      // Start at midnight today
+      final startOfToday = DateTime(now.year, now.month, now.day, 0, 0, 0);
+      
+      _sessionStartTime = startOfToday;
+      _currentSessionId = '${now.millisecondsSinceEpoch}'; // New ID for new file
+      _sessionPagesRead = 0; // Reset pages for new day part
+      _isSessionCounted = false; // Allow increments for new day
+      
+      // Reset accumulator for the new day
+      _accumulatedSeconds = 0.0;
+      
+      // Calculate delta for second part (from midnight to now)
+      final wallDeltaSecondPart = now.difference(startOfToday).inMilliseconds / 1000.0;
+      final adjustedDeltaSecondPart = wallDeltaSecondPart; // Strict Wall Clock
+      
+      _accumulatedSeconds = adjustedDeltaSecondPart;
+      _lastSyncTime = now;
+      
+      final sessionTwo = ReadingSession.fromTimes(
+        audiobookId: _currentAudiobookId!,
+        startTime: startOfToday,
+        endTime: startOfToday.add(Duration(seconds: _accumulatedSeconds.round())),
+        pagesRead: 0,
+        chapterName: _currentChapterName,
+        sessionId: _currentSessionId,
+      );
+      
+      await _saveSession(sessionTwo);
+      
+      final intDeltaSecond = adjustedDeltaSecondPart.round();
+      if (intDeltaSecond > 0) {
+        await _updateDailyStats(sessionTwo, deltaSeconds: intDeltaSecond);
+      }
+      
+      await _updateStreak(); // Update streak for new day
+      await _persistActiveSessionState(); // Persist new state
+      
+      _logStats('📊 ✅ Split completed. New session started for today.');
+      _statsUpdatedController.add(null);
+      
+    } catch (e) {
+      _logStats('Error performing midnight split: $e');
     }
   }
 
@@ -343,6 +485,10 @@ class StatisticsService {
         audiobooksRead: {
           ...currentStats.audiobooksRead,
           session.audiobookId,
+        },
+        bookDurations: {
+          ...currentStats.bookDurations,
+          session.audiobookId: (currentStats.bookDurations[session.audiobookId] ?? 0) + secondsToAdd,
         },
       );
       

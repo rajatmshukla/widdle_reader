@@ -5,8 +5,7 @@ import '../services/statistics_service.dart';
 import '../providers/theme_provider.dart';
 import '../widgets/app_logo.dart';
 import '../widgets/progress_ring_widget.dart';
-import '../widgets/reading_timeline_widget.dart';
-import '../widgets/enhanced_heatmap_widget.dart';
+import '../widgets/daily_journal_widget.dart';
 import '../widgets/stat_card.dart';
 import '../models/reading_statistics.dart';
 import '../models/reading_session.dart';
@@ -28,6 +27,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> with WidgetsBinding
   StreamSubscription? _statsSubscription;
   
   DateTime _currentMonth = DateTime.now();
+  DateTime _focusedDate = DateTime.now();
   Map<String, DailyStats> _dailyStats = {};
   int _currentStreak = 0;
   int _longestStreak = 0;
@@ -38,7 +38,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> with WidgetsBinding
   int _sessionsThisWeek = 0;
   // Changed to track seconds for live updates
   int _secondsToday = 0;
-  List<ReadingSession> _recentSessions = [];
+
   bool _loading = true;
   
   // Default daily goal (30 minutes)
@@ -107,10 +107,8 @@ class _StatisticsScreenState extends State<StatisticsScreen> with WidgetsBinding
       final todayStats = await _statsService.getDailyStats(todayString);
       _secondsToday = todayStats.totalSeconds;
       
-      // Load recent sessions
-      _recentSessions = await _statsService.getRecentSessions(20);
+
       
-      debugPrint('📊 Loaded ${_recentSessions.length} recent sessions');
     } catch (e) {
       debugPrint('Error loading statistics: $e');
     }
@@ -120,19 +118,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> with WidgetsBinding
     }
   }
 
-  void _onMonthChanged(DateTime newMonth) {
-    setState(() {
-      _currentMonth = newMonth;
-    });
-    _loadStatistics();
-  }
 
-  void _onDayTapped(String dateString, DailyStats stats) {
-    showModalBottomSheet(
-      context: context,
-      builder: (context) => _buildDayDetailsSheet(dateString, stats),
-    );
-  }
 
   Future<void> _showSettingsDialog() async {
     int tempGoal = _dailyGoalMinutes;
@@ -198,92 +184,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> with WidgetsBinding
     );
   }
 
-  Widget _buildDayDetailsSheet(String dateString, DailyStats stats) {
-    final colorScheme = Theme.of(context).colorScheme;
-    final textTheme = Theme.of(context).textTheme;
 
-    return Container(
-      padding: const EdgeInsets.all(24),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(Icons.calendar_today_rounded, color: colorScheme.primary),
-              const SizedBox(width: 12),
-              Text(
-                _formatDate(dateString),
-                style: textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
-              ),
-            ],
-          ),
-          const SizedBox(height: 24),
-          _buildStatRow(Icons.timer_outlined, 'Total Reading Time',
-              '${stats.totalMinutes} minutes', colorScheme, textTheme),
-          const SizedBox(height: 12),
-          _buildStatRow(Icons.auto_stories_rounded, 'Sessions',
-              '${stats.sessionCount}', colorScheme, textTheme),
-          const SizedBox(height: 12),
-          _buildStatRow(Icons.library_books_rounded, 'Books',
-              '${stats.audiobooksRead.length}', colorScheme, textTheme),
-          const SizedBox(height: 24),
-          SizedBox(
-            width: double.infinity,
-            child: FilledButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Close'),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildStatRow(
-    IconData icon,
-    String label,
-    String value,
-    ColorScheme colorScheme,
-    TextTheme textTheme,
-  ) {
-    return Row(
-      children: [
-        Icon(icon, color: colorScheme.primary, size: 20),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Text(
-            label,
-            style: textTheme.bodyMedium?.copyWith(
-              color: colorScheme.onSurfaceVariant,
-            ),
-          ),
-        ),
-        Text(
-          value,
-          style: textTheme.titleMedium?.copyWith(
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-      ],
-    );
-  }
-
-  String _formatDate(String dateString) {
-    final parts = dateString.split('-');
-    if (parts.length != 3) return dateString;
-
-    final year = int.parse(parts[0]);
-    final month = int.parse(parts[1]);
-    final day = int.parse(parts[2]);
-
-    const months = [
-      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
-    ];
-
-    return '${months[month - 1]} $day, $year';
-  }
 
   Future<void> _showResetDialog() async {
     final confirm = await showDialog<bool>(
@@ -430,16 +331,78 @@ class _StatisticsScreenState extends State<StatisticsScreen> with WidgetsBinding
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
-                      // Hero Progress Ring
+                      // 1. Date Tracking (Daily Journal)
+                      DailyJournalWidget(
+                        dailyStats: _dailyStats,
+                        initialDate: _focusedDate,
+                        seedColor: colorScheme.primary,
+                        onDateChanged: (date) {
+                          setState(() {
+                            _focusedDate = date;
+                            
+                            // If we moved to a different month, reload stats
+                            if (date.year != _currentMonth.year || date.month != _currentMonth.month) {
+                              _currentMonth = date;
+                              _loadStatistics(showLoading: false);
+                            }
+                          });
+                        },
+                      ),
+                      
+                      const SizedBox(height: 24),
+
+                      // 2. Goal Progress (Hero Ring)
                       ProgressRingWidget(
                         currentSeconds: _secondsToday,
                         targetMinutes: _dailyGoalMinutes,
                         metricLabel: 'Today',
                       ),
                       
+                      const SizedBox(height: 32),
+
+                      // 3. Stats Overview
+                      GridView.count(
+                        crossAxisCount: 2,
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        mainAxisSpacing: 12,
+                        crossAxisSpacing: 12,
+                        childAspectRatio: 1.3,
+                        children: [
+                          StatCard(
+                            label: 'This Week',
+                            value: '$_minutesThisWeek',
+                            unit: 'minutes',
+                            icon: Icons.calendar_view_week_rounded,
+                            iconColor: colorScheme.primary,
+                          ),
+                          StatCard(
+                            label: 'Longest\nStreak',
+                            value: '$_longestStreak',
+                            unit: 'days',
+                            icon: Icons.emoji_events_rounded,
+                            iconColor: colorScheme.primary,
+                          ),
+                          StatCard(
+                            label: 'Avg Session',
+                            value: '${_avgSessionTime.round()}',
+                            unit: 'minutes',
+                            icon: Icons.timer_outlined,
+                            iconColor: colorScheme.primary,
+                          ),
+                          StatCard(
+                            label: 'This Month',
+                            value: '$_minutesThisMonth',
+                            unit: 'minutes',
+                            icon: Icons.calendar_month_rounded,
+                            iconColor: colorScheme.primary,
+                          ),
+                        ],
+                      ),
+                      
                       const SizedBox(height: 24),
                       
-                      // Streak indicator
+                      // 4. Streak
                       if (_showStreak && _currentStreak > 0)
                         Container(
                           padding: const EdgeInsets.symmetric(
@@ -449,14 +412,14 @@ class _StatisticsScreenState extends State<StatisticsScreen> with WidgetsBinding
                           decoration: BoxDecoration(
                             gradient: LinearGradient(
                               colors: [
-                                Colors.orange.shade400,
-                                Colors.deepOrange.shade600,
+                                colorScheme.primary,
+                                colorScheme.primary.withOpacity(0.7),
                               ],
                             ),
                             borderRadius: BorderRadius.circular(24),
                             boxShadow: [
                               BoxShadow(
-                                color: Colors.orange.withAlpha(76),
+                                color: colorScheme.primary.withOpacity(0.3),
                                 blurRadius: 12,
                                 offset: const Offset(0, 4),
                               ),
@@ -472,8 +435,8 @@ class _StatisticsScreenState extends State<StatisticsScreen> with WidgetsBinding
                               const SizedBox(width: 8),
                               Text(
                                 '$_currentStreak Day Streak!',
-                                style: const TextStyle(
-                                  color: Colors.white,
+                                style: TextStyle(
+                                  color: colorScheme.onPrimary,
                                   fontSize: 18,
                                   fontWeight: FontWeight.bold,
                                 ),
@@ -481,77 +444,16 @@ class _StatisticsScreenState extends State<StatisticsScreen> with WidgetsBinding
                             ],
                           ),
                         ),
-                      
+
                       const SizedBox(height: 24),
                       
-                      // Personality Card
-                      const PersonalityCard(),
-                      
-                      const SizedBox(height: 24),
-                      
-                      // Weekly Challenges
+                      // 5. Challenges
                       const ChallengeListWidget(),
                       
-                      const SizedBox(height: 32),
+                      const SizedBox(height: 24),
                       
-                      // Reading Timeline
-                      ReadingTimelineWidget(
-                        sessions: _recentSessions,
-                        selectedDate: DateTime.now(),
-                      ),
-                      
-                      const SizedBox(height: 32),
-                      
-                      // Stats Grid
-                      GridView.count(
-                        crossAxisCount: 2,
-                        shrinkWrap: true,
-                        physics: const NeverScrollableScrollPhysics(),
-                        mainAxisSpacing: 12,
-                        crossAxisSpacing: 12,
-                        childAspectRatio: 1.3,
-                        children: [
-                          StatCard(
-                            label: 'This Week',
-                            value: '$_minutesThisWeek',
-                            unit: 'minutes',
-                            icon: Icons.calendar_view_week_rounded,
-                            iconColor: Colors.blue,
-                          ),
-                          StatCard(
-                            label: 'Longest Streak',
-                            value: '$_longestStreak',
-                            unit: 'days',
-                            icon: Icons.emoji_events_rounded,
-                            iconColor: Colors.amber,
-                          ),
-                          StatCard(
-                            label: 'Avg Session',
-                            value: '${_avgSessionTime.round()}',
-                            unit: 'minutes',
-                            icon: Icons.timer_outlined,
-                            iconColor: Colors.purple,
-                          ),
-                          StatCard(
-                            label: 'This Month',
-                            value: '$_minutesThisMonth',
-                            unit: 'minutes',
-                            icon: Icons.calendar_month_rounded,
-                            iconColor: Colors.green,
-                          ),
-                        ],
-                      ),
-                      
-                      const SizedBox(height: 32),
-                      
-                      // Enhanced Heatmap
-                      EnhancedHeatmapWidget(
-                        dailyStats: _dailyStats,
-                        currentMonth: _currentMonth,
-                        onMonthChanged: _onMonthChanged,
-                        onDayTapped: _onDayTapped,
-                        seedColor: colorScheme.primary,
-                      ),
+                      // 6. Personality
+                      const PersonalityCard(),
                       
                       const SizedBox(height: 40),
                     ],

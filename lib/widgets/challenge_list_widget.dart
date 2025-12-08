@@ -90,7 +90,8 @@ class _ChallengeCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
-    final typeColor = challenge.type.color;
+    // Force seed color usage
+    final typeColor = colorScheme.primary;
 
     return Container(
       width: 150,
@@ -99,7 +100,7 @@ class _ChallengeCard extends StatelessWidget {
         color: colorScheme.surfaceContainerLow,
         borderRadius: BorderRadius.circular(16),
         border: challenge.isComplete
-            ? Border.all(color: Colors.green, width: 2)
+            ? Border.all(color: colorScheme.primary, width: 2)
             : null,
       ),
       child: Padding(
@@ -115,11 +116,11 @@ class _ChallengeCard extends StatelessWidget {
                     color: typeColor.withOpacity(0.15),
                     shape: BoxShape.circle,
                   ),
-                  child: Icon(
+                    child: Icon(
                     challenge.isComplete
                         ? Icons.check
                         : challenge.type.icon,
-                    color: challenge.isComplete ? Colors.green : typeColor,
+                    color: challenge.isComplete ? colorScheme.primary : typeColor,
                     size: 16,
                   ),
                 ),
@@ -169,7 +170,7 @@ class _ChallengeCard extends StatelessWidget {
                 value: challenge.progress,
                 backgroundColor: colorScheme.surfaceContainerHighest,
                 valueColor: AlwaysStoppedAnimation(
-                  challenge.isComplete ? Colors.green : typeColor,
+                  challenge.isComplete ? colorScheme.primary : typeColor,
                 ),
                 minHeight: 6,
               ),

@@ -51,6 +51,9 @@ class SimpleAudioService {
   // Add this flag to track user intent
   bool _userPaused = false;
 
+  // Add this flag to track restore state
+  bool _isRestoring = false;
+
   // Stream getters
   Stream<Duration> get positionStream => _positionSubject.stream;
   Stream<Duration> get durationStream => _durationSubject.stream;
@@ -75,6 +78,8 @@ class SimpleAudioService {
 
   void _onDataRestored() {
     debugPrint("Data restore detected! Emergency stopping playback...");
+    _isRestoring = true;
+    
     // Cancel auto-save to prevent overwriting restored data
     _autoSaveTimer?.cancel();
     _autoSaveTimer = null;
@@ -90,6 +95,11 @@ class SimpleAudioService {
     // Update streams to reflect 'stopped/empty' state
     _currentChapterSubject.add(0);
     _playingSubject.add(false);
+    
+    // Reset restoring flag after a short delay to ensure stop() events have processed
+    Future.delayed(const Duration(milliseconds: 500), () {
+      _isRestoring = false;
+    });
   }
 
   // Public initialization method for explicit init when needed
@@ -123,6 +133,11 @@ class SimpleAudioService {
         _startMediaSessionUpdates();
       } else {
         _stopMediaSessionUpdates();
+        // Auto-save when playback stops (covers notification pause, headset disconnect, etc.)
+        // But ONLY if we aren't in the middle of a restore!
+        if (!_isRestoring) {
+          saveCurrentPosition();
+        }
       }
       _updateMediaSessionPlaybackState();
     });
@@ -566,6 +581,7 @@ class SimpleAudioService {
   // Method to set playback speed
   Future<void> setSpeed(double speed) async {
     final normalizedSpeed = speed.clamp(0.5, 3.0);
+    // User requested wall-clock tracking, so stats update is removed
     await _player.setSpeed(normalizedSpeed);
     _speedSubject.add(normalizedSpeed);
     if (_currentAudiobook != null) {
@@ -602,6 +618,8 @@ class SimpleAudioService {
             audiobookId: _currentAudiobook!.id,
             chapterName: chapterName,
           );
+
+
           debugPrint('📊 ✅ Statistics session started successfully');
           
           // Schedule first stats sync after 60 seconds for immediate feedback

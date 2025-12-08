@@ -56,6 +56,8 @@ class _PersonalityCardState extends State<PersonalityCard>
     }
 
     final type = _personality!.type;
+    // Force seed color
+    final typeColor = colorScheme.primary;
 
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -64,14 +66,14 @@ class _PersonalityCardState extends State<PersonalityCard>
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
           colors: [
-            type.color,
-            type.color.withOpacity(0.7),
+            typeColor,
+            typeColor.withOpacity(0.7),
           ],
         ),
         borderRadius: BorderRadius.circular(24),
         boxShadow: [
           BoxShadow(
-            color: type.color.withOpacity(0.3),
+            color: typeColor.withOpacity(0.3),
             blurRadius: 12,
             offset: const Offset(0, 6),
           ),
