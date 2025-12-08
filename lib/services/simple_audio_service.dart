@@ -39,6 +39,7 @@ class SimpleAudioService {
   final _currentChapterSubject = BehaviorSubject<int>.seeded(0);
   final _playingSubject = BehaviorSubject<bool>.seeded(false);
   final _speedSubject = BehaviorSubject<double>.seeded(1.0);
+  final _audiobookSubject = BehaviorSubject<Audiobook?>.seeded(null);
 
   // Timer for auto-saving
   Timer? _autoSaveTimer;
@@ -60,6 +61,7 @@ class SimpleAudioService {
   Stream<int> get currentChapterStream => _currentChapterSubject.stream;
   Stream<bool> get playingStream => _playingSubject.stream;
   Stream<double> get speedStream => _speedSubject.stream;
+  Stream<Audiobook?> get audiobookStream => _audiobookSubject.stream;
 
   // Current state getters
   Duration get position => _player.position;
@@ -95,6 +97,7 @@ class SimpleAudioService {
     // Update streams to reflect 'stopped/empty' state
     _currentChapterSubject.add(0);
     _playingSubject.add(false);
+    _audiobookSubject.add(null); // Notify UI components to clear stale references
     
     // Reset restoring flag after a short delay to ensure stop() events have processed
     Future.delayed(const Duration(milliseconds: 500), () {
@@ -296,6 +299,7 @@ class SimpleAudioService {
       await stopCurrentPlayback();
 
       _currentAudiobook = audiobook;
+      _audiobookSubject.add(audiobook); // Notify UI components of new audiobook
       _currentChapterIndex = startChapter.clamp(
         0,
         audiobook.chapters.length - 1,

@@ -20,6 +20,7 @@ class _MiniPlayerWidgetState extends State<MiniPlayerWidget>
   
   StreamSubscription? _playingSubscription;
   StreamSubscription? _chapterSubscription;
+  StreamSubscription? _audiobookSubscription;
   
   bool _isPlaying = false;
   Audiobook? _currentAudiobook;
@@ -83,6 +84,29 @@ class _MiniPlayerWidgetState extends State<MiniPlayerWidget>
       }
     });
     
+    // Listen to audiobook changes (including null from backup restore)
+    _audiobookSubscription = _audioService.audiobookStream.listen((audiobook) {
+      debugPrint('MiniPlayer: audiobookStream update: ${audiobook?.title}');
+      if (mounted) {
+        final wasVisible = _currentAudiobook != null;
+        setState(() {
+          _currentAudiobook = audiobook;
+        });
+        
+        // Handle visibility transitions
+        if (audiobook == null && wasVisible) {
+          // Audiobook cleared (e.g., after restore), hide mini-player
+          debugPrint('MiniPlayer: Animate out (audiobook cleared)');
+          _slideController.reverse();
+        } else if (audiobook != null && !wasVisible) {
+          // New audiobook loaded, show mini-player
+          debugPrint('MiniPlayer: Animate in (new audiobook)');
+          _slideController.forward();
+          _startMarqueeScroll();
+        }
+      }
+    });
+    
     // Show with animation
     debugPrint('MiniPlayer: Initial state - audiobook: $_currentAudiobook, playing: $_isPlaying');
     if (_currentAudiobook != null) {
@@ -96,6 +120,7 @@ class _MiniPlayerWidgetState extends State<MiniPlayerWidget>
   void dispose() {
     _playingSubscription?.cancel();
     _chapterSubscription?.cancel();
+    _audiobookSubscription?.cancel();
     _slideController.dispose();
     _scrollController.dispose();
     _scrollTimer?.cancel();

@@ -22,6 +22,7 @@ import '../widgets/tag_assignment_dialog.dart';
 import '../widgets/search_bar_widget.dart';
 import '../widgets/detailed_loading_widget.dart';
 import '../widgets/mini_player_widget.dart';
+import '../widgets/xp_badge.dart';
 import '../models/audiobook.dart';
 import '../models/tag.dart';
 import '../services/storage_service.dart';
@@ -779,6 +780,12 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
                 ],
               ),
               actions: [
+                // XP Badge
+                const Padding(
+                  padding: EdgeInsets.only(right: 6),
+                  child: XPBadge(),
+                ),
+                
                 // Sleep Timer button
                 IconButton(
                   icon: CountdownTimerWidget(

@@ -19,6 +19,7 @@ import 'theme.dart';
 import 'services/storage_service.dart';
 import 'services/simple_audio_service.dart';
 import 'services/statistics_service.dart';
+import 'services/achievement_service.dart';
 
 // Define a global navigator key to access context from anywhere
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
@@ -112,6 +113,11 @@ Future<void> _initializeDataIntegrity() async {
     final statisticsService = StatisticsService();
     await statisticsService.initialize();
     _logDebug("Statistics service initialized with session recovery");
+    
+    // Initialize achievement service for gamification
+    final achievementService = AchievementService();
+    await achievementService.initialize();
+    _logDebug("Achievement service initialized");
     
     _logDebug("Data integrity system initialized successfully");
   } catch (e) {

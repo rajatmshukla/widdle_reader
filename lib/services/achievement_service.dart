@@ -5,6 +5,7 @@ import 'dart:async';
 import '../models/achievement.dart';
 import '../models/achievement_definitions.dart';
 import 'statistics_service.dart';
+import 'storage_service.dart';
 
 /// Service for managing achievements and badge unlocking
 class AchievementService {
@@ -20,6 +21,7 @@ class AchievementService {
   // Cached instance
   SharedPreferences? _prefs;
   final StatisticsService _statsService = StatisticsService();
+  final StorageService _storageService = StorageService();
 
   // Unlocked achievements cache
   final Map<String, Achievement> _unlockedAchievements = {};
@@ -92,6 +94,13 @@ class AchievementService {
       final todayString =
           '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
       final todayStats = await _statsService.getDailyStats(todayString);
+      
+      // Get completed books count
+      final completedBooks = await _storageService.getCompletedBooks();
+      final completedBooksCount = completedBooks.length;
+      
+      // Get unique books listened to
+      final uniqueBooks = todayStats.bookDurations.keys.length;
 
       // Check each achievement
       for (final definition in AchievementDefinitions.all.values) {
@@ -108,6 +117,8 @@ class AchievementService {
           todayMinutes: todayStats.totalMinutes,
           currentHour: now.hour,
           isWeekend: now.weekday == 6 || now.weekday == 7,
+          booksCompleted: completedBooksCount,
+          uniqueBooksListened: uniqueBooks,
         );
 
         if (shouldUnlock) {
@@ -140,6 +151,8 @@ class AchievementService {
     required int todayMinutes,
     required int currentHour,
     required bool isWeekend,
+    required int booksCompleted,
+    required int uniqueBooksListened,
   }) {
     final target = achievement.targetValue ?? 0;
 
@@ -151,7 +164,23 @@ class AchievementService {
         return longestStreak >= target;
 
       case AchievementCategory.sessions:
+        // Handle session length achievements
+        if (achievement.id == 'session_long_30' || achievement.id == 'session_long_60') {
+          // These are checked differently - need session duration tracking
+          // For now, approximate: if today's minutes >= target, assume a long session
+          return todayMinutes >= target;
+        }
         return sessionCount >= target;
+
+      case AchievementCategory.books:
+        return booksCompleted >= target;
+
+      case AchievementCategory.explorer:
+        if (achievement.id == 'explore_genres') {
+          return uniqueBooksListened >= target;
+        }
+        // explore_long requires finishing a long book - tracked separately
+        return false;
 
       case AchievementCategory.special:
         return _checkSpecialAchievement(
@@ -161,9 +190,6 @@ class AchievementService {
           currentHour: currentHour,
           isWeekend: isWeekend,
         );
-
-      default:
-        return false;
     }
   }
 
@@ -253,6 +279,31 @@ class AchievementService {
 
   /// Get total achievement count
   int get totalCount => AchievementDefinitions.totalCount;
+
+  /// Calculate total XP from unlocked achievements
+  int getTotalXP() {
+    int totalXP = 0;
+    for (final achievement in _unlockedAchievements.values) {
+      switch (achievement.tier) {
+        case AchievementTier.bronze:
+          totalXP += 10;
+          break;
+        case AchievementTier.silver:
+          totalXP += 25;
+          break;
+        case AchievementTier.gold:
+          totalXP += 50;
+          break;
+        case AchievementTier.platinum:
+          totalXP += 100;
+          break;
+        case AchievementTier.diamond:
+          totalXP += 250;
+          break;
+      }
+    }
+    return totalXP;
+  }
 
   /// Get achievements by category
   Future<Map<AchievementCategory, List<Achievement>>> getAchievementsByCategory() async {

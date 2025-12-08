@@ -181,6 +181,90 @@ class AchievementDefinitions {
       category: AchievementCategory.special,
       targetValue: 240,
     ),
+
+    // =========================
+    // BOOKS ACHIEVEMENTS
+    // =========================
+    'book_first': Achievement(
+      id: 'book_first',
+      name: 'First Finish',
+      description: 'Complete your first audiobook',
+      icon: Icons.menu_book,
+      tier: AchievementTier.bronze,
+      category: AchievementCategory.books,
+      targetValue: 1,
+    ),
+    'book_5': Achievement(
+      id: 'book_5',
+      name: 'Bookshelf Builder',
+      description: 'Complete 5 audiobooks',
+      icon: Icons.menu_book,
+      tier: AchievementTier.silver,
+      category: AchievementCategory.books,
+      targetValue: 5,
+    ),
+    'book_10': Achievement(
+      id: 'book_10',
+      name: 'Library Curator',
+      description: 'Complete 10 audiobooks',
+      icon: Icons.menu_book,
+      tier: AchievementTier.gold,
+      category: AchievementCategory.books,
+      targetValue: 10,
+    ),
+    'book_25': Achievement(
+      id: 'book_25',
+      name: 'Avid Reader',
+      description: 'Complete 25 audiobooks',
+      icon: Icons.menu_book,
+      tier: AchievementTier.platinum,
+      category: AchievementCategory.books,
+      targetValue: 25,
+    ),
+
+    // =========================
+    // EXPLORER ACHIEVEMENTS
+    // =========================
+    'explore_genres': Achievement(
+      id: 'explore_genres',
+      name: 'Genre Explorer',
+      description: 'Listen to 3 different books',
+      icon: Icons.explore,
+      tier: AchievementTier.bronze,
+      category: AchievementCategory.explorer,
+      targetValue: 3,
+    ),
+    'explore_long': Achievement(
+      id: 'explore_long',
+      name: 'Marathon Book',
+      description: 'Finish a book longer than 10 hours',
+      icon: Icons.explore,
+      tier: AchievementTier.silver,
+      category: AchievementCategory.explorer,
+      targetValue: 1,
+    ),
+
+    // =========================
+    // ENHANCED SESSION ACHIEVEMENTS
+    // =========================
+    'session_long_30': Achievement(
+      id: 'session_long_30',
+      name: 'Deep Diver',
+      description: 'Complete a 30+ minute session',
+      icon: Icons.timelapse,
+      tier: AchievementTier.bronze,
+      category: AchievementCategory.sessions,
+      targetValue: 30,
+    ),
+    'session_long_60': Achievement(
+      id: 'session_long_60',
+      name: 'Hour of Power',
+      description: 'Complete a 60+ minute session',
+      icon: Icons.hourglass_full,
+      tier: AchievementTier.silver,
+      category: AchievementCategory.sessions,
+      targetValue: 60,
+    ),
   };
 
   /// Get achievements by category

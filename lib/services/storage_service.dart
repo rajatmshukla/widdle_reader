@@ -309,6 +309,16 @@ class StorageService {
         }
       }
       
+      // Backup achievements (CRITICAL: was missing)
+      final achievements = prefs.getString('unlocked_achievements');
+      if (achievements != null) {
+        await prefs.setString('unlocked_achievements$backupSuffix', achievements);
+      }
+      final achievementTimestamp = prefs.getInt('achievement_last_check');
+      if (achievementTimestamp != null) {
+        await prefs.setInt('achievement_last_check$backupSuffix', achievementTimestamp);
+      }
+      
       debugPrint('Data backup created successfully.');
     } catch (e) {
       debugPrint('Error creating data backup: $e');
@@ -426,6 +436,18 @@ class StorageService {
             restoredAnyData = true;
           }
         }
+      }
+      
+      // Restore achievements (CRITICAL: was missing)
+      final achievementsBackup = prefs.getString('unlocked_achievements$backupSuffix');
+      if (achievementsBackup != null) {
+        await prefs.setString('unlocked_achievements', achievementsBackup);
+        restoredAnyData = true;
+      }
+      final achievementTimestampBackup = prefs.getInt('achievement_last_check$backupSuffix');
+      if (achievementTimestampBackup != null) {
+        await prefs.setInt('achievement_last_check', achievementTimestampBackup);
+        restoredAnyData = true;
       }
       
       if (restoredAnyData) {
@@ -1248,6 +1270,25 @@ class StorageService {
     } catch (e) {
       debugPrint("Error checking if audiobook is completed: $e");
       return false;
+    }
+  }
+
+  /// Gets all completed audiobook IDs
+  Future<List<String>> getCompletedBooks() async {
+    try {
+      // Return from cache if available
+      if (_completedBooksCache.isNotEmpty) {
+        return _completedBooksCache.toList();
+      }
+      
+      // Otherwise load from preferences
+      final prefs = await _preferences;
+      final completedBooks = prefs.getStringList(completedBooksKey) ?? [];
+      _completedBooksCache.addAll(completedBooks);
+      return completedBooks;
+    } catch (e) {
+      debugPrint("Error getting completed books: $e");
+      return [];
     }
   }
 
