@@ -13,6 +13,7 @@ import '../theme.dart';
 import 'achievement_gallery_screen.dart';
 import '../widgets/personality_card.dart';
 import '../widgets/challenge_list_widget.dart';
+import '../widgets/xp_badge.dart';
 
 /// Revamped statistics screen with immersive reading journey visualization
 class StatisticsScreen extends StatefulWidget {
@@ -107,8 +108,6 @@ class _StatisticsScreenState extends State<StatisticsScreen> with WidgetsBinding
       final todayStats = await _statsService.getDailyStats(todayString);
       _secondsToday = todayStats.totalSeconds;
       
-
-      
     } catch (e) {
       debugPrint('Error loading statistics: $e');
     }
@@ -117,8 +116,6 @@ class _StatisticsScreenState extends State<StatisticsScreen> with WidgetsBinding
       setState(() => _loading = false);
     }
   }
-
-
 
   Future<void> _showSettingsDialog() async {
     int tempGoal = _dailyGoalMinutes;
@@ -183,8 +180,6 @@ class _StatisticsScreenState extends State<StatisticsScreen> with WidgetsBinding
       ),
     );
   }
-
-
 
   Future<void> _showResetDialog() async {
     final confirm = await showDialog<bool>(
@@ -259,7 +254,14 @@ class _StatisticsScreenState extends State<StatisticsScreen> with WidgetsBinding
               child: AppLogo(size: 32, showTitle: false),
             ),
             const SizedBox(width: 12),
-            const Text('Reading Journey'),
+            Text(
+              'Reading Journey',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: colorScheme.primary,
+              ),
+            ),
           ],
         ),
         actions: [
@@ -311,7 +313,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> with WidgetsBinding
                   children: [
                     Icon(Icons.delete_forever_rounded, color: Colors.red),
                     SizedBox(width: 12),
-                    Text('Reset Statistics'),
+                    Text('Reset Stats', style: TextStyle(color: Colors.red)),
                   ],
                 ),
               ),
@@ -331,6 +333,13 @@ class _StatisticsScreenState extends State<StatisticsScreen> with WidgetsBinding
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
+                      // XP Badge - centered at top
+                      const Center(
+                        child: XPBadge(),
+                      ),
+                      
+                      const SizedBox(height: 16),
+                      
                       // 1. Date Tracking (Daily Journal)
                       DailyJournalWidget(
                         dailyStats: _dailyStats,

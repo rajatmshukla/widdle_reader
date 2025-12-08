@@ -270,6 +270,23 @@ class MainActivity: AudioServiceActivity() {
                         result.error("QUERY_ERROR", e.message, null)
                     }
                 }
+                "clearMediaSession" -> {
+                    try {
+                        // Update playback state to stopped/none
+                        bridge.updatePlaybackState(
+                            position = 0L,
+                            isPlaying = false,
+                            speed = 1.0f,
+                            hasNext = false,
+                            hasPrevious = false
+                        )
+                        Log.d(TAG, "MediaSession cleared for backup restore")
+                        result.success(true)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error clearing MediaSession: ${e.message}")
+                        result.error("CLEAR_ERROR", e.message, null)
+                    }
+                }
                 else -> result.notImplemented()
             }
         }

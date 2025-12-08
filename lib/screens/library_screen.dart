@@ -780,12 +780,6 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
                 ],
               ),
               actions: [
-                // XP Badge
-                const Padding(
-                  padding: EdgeInsets.only(right: 6),
-                  child: XPBadge(),
-                ),
-                
                 // Sleep Timer button
                 IconButton(
                   icon: CountdownTimerWidget(

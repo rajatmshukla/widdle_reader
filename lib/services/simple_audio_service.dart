@@ -78,7 +78,7 @@ class SimpleAudioService {
     _storageService.addRestoreListener(_onDataRestored);
   }
 
-  void _onDataRestored() {
+  void _onDataRestored() async {
     debugPrint("Data restore detected! Emergency stopping playback...");
     _isRestoring = true;
     
@@ -86,8 +86,20 @@ class SimpleAudioService {
     _autoSaveTimer?.cancel();
     _autoSaveTimer = null;
     
+    // Cancel MediaSession update timer
+    _mediaSessionUpdateTimer?.cancel();
+    _mediaSessionUpdateTimer = null;
+    
     // Stop player without saving
-    _player.stop();
+    await _player.stop();
+    
+    // Clear native MediaSession to prevent stale notification controls
+    try {
+      await _audioBridgeChannel.invokeMethod('clearMediaSession');
+      debugPrint("Native MediaSession cleared successfully");
+    } catch (e) {
+      debugPrint("Error clearing native MediaSession: $e - continuing anyway");
+    }
     
     // Clear state
     _currentAudiobook = null;
@@ -100,8 +112,9 @@ class SimpleAudioService {
     _audiobookSubject.add(null); // Notify UI components to clear stale references
     
     // Reset restoring flag after a short delay to ensure stop() events have processed
-    Future.delayed(const Duration(milliseconds: 500), () {
+    Future.delayed(const Duration(milliseconds: 1000), () {
       _isRestoring = false;
+      debugPrint("Restore flag cleared - ready for new playback");
     });
   }
 
@@ -599,6 +612,12 @@ class SimpleAudioService {
 
   // Playback controls with user intent tracking
   Future<void> play({bool propagateToNative = true}) async {
+    // Guard against playing during restore
+    if (_isRestoring) {
+      debugPrint('Ignoring play request - data restore in progress');
+      return;
+    }
+    
     if (_currentAudiobook == null) {
       debugPrint('Attempted to play with no audiobook loaded');
       return;

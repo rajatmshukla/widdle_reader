@@ -143,15 +143,23 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
       debugPrint("Loading audiobook: ${_audiobook!.title} with ${_audiobook!.chapters.length} chapters");
       debugPrint("Starting at chapter $startChapterIndex: ${_audiobook!.chapters[startChapterIndex].title}");
 
-      // Load the audiobook with better error context
-      try {
-      await _audioService.loadAudiobook(
-        _audiobook!,
-        startChapter: startChapterIndex,
-        startPosition: startPosition,
-        autoPlay: false,
-      );
-      } catch (audioError) {
+      // Check if the same audiobook is already loaded - skip reloading to preserve position
+      final currentlyLoadedBook = _audioService.currentAudiobook;
+      final isAlreadyLoaded = currentlyLoadedBook != null && currentlyLoadedBook.id == _audiobook!.id;
+      
+      if (isAlreadyLoaded) {
+        debugPrint("Audiobook ${_audiobook!.title} is already loaded - skipping reload to preserve position");
+        // Just enable notifications if needed, don't reload
+      } else {
+        // Load the audiobook with better error context
+        try {
+        await _audioService.loadAudiobook(
+          _audiobook!,
+          startChapter: startChapterIndex,
+          startPosition: startPosition,
+          autoPlay: false,
+        );
+        } catch (audioError) {
         // Handle specific audio loading errors
         String errorMessage = "Failed to load audiobook";
         if (audioError.toString().contains("not found")) {
@@ -168,6 +176,7 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
           errorMessage = "Failed to load audiobook: ${audioError.toString()}";
         }
         throw Exception(errorMessage);
+        }
       }
 
       // Enable notifications
