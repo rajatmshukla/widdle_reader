@@ -319,6 +319,16 @@ class StorageService {
         await prefs.setInt('achievement_last_check$backupSuffix', achievementTimestamp);
       }
       
+      // Backup statistics settings (daily goal, show streak)
+      final dailyGoal = prefs.getInt('daily_reading_goal');
+      if (dailyGoal != null) {
+        await prefs.setInt('daily_reading_goal$backupSuffix', dailyGoal);
+      }
+      final showStreak = prefs.getBool('show_reading_streak');
+      if (showStreak != null) {
+        await prefs.setBool('show_reading_streak$backupSuffix', showStreak);
+      }
+      
       debugPrint('Data backup created successfully.');
     } catch (e) {
       debugPrint('Error creating data backup: $e');
@@ -447,6 +457,18 @@ class StorageService {
       final achievementTimestampBackup = prefs.getInt('achievement_last_check$backupSuffix');
       if (achievementTimestampBackup != null) {
         await prefs.setInt('achievement_last_check', achievementTimestampBackup);
+        restoredAnyData = true;
+      }
+      
+      // Restore statistics settings (daily goal, show streak)
+      final dailyGoalBackup = prefs.getInt('daily_reading_goal$backupSuffix');
+      if (dailyGoalBackup != null) {
+        await prefs.setInt('daily_reading_goal', dailyGoalBackup);
+        restoredAnyData = true;
+      }
+      final showStreakBackup = prefs.getBool('show_reading_streak$backupSuffix');
+      if (showStreakBackup != null) {
+        await prefs.setBool('show_reading_streak', showStreakBackup);
         restoredAnyData = true;
       }
       

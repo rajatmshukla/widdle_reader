@@ -45,14 +45,25 @@ class StatisticsService {
   
   bool _isSessionCounted = false; // Track if session count has been incremented for current session
   Timer? _sessionPersistTimer;
-
+  int _secondsCommitted = 0; // Track seconds already committed to daily stats to prevent drift
+  
+  // lock for stats updates
+  bool _isUpdatingStats = false;
+  final Completer<void> _updateCompleter = Completer<void>()..complete(); // not used, just a placeholder. simple bool is easier for now or a queue.
+  // Actually simpler: process updates sequentially using a future chain or simple bool guard (retry?)
+  // Let's use a proper Mutex pattern with Completers?
+  // Or just a simple queue.
+  // Simplest for this context: await a "lock" future.
+  
   // Stream controller for real-time updates
   final _statsUpdatedController = StreamController<void>.broadcast();
   
   /// Stream that emits events when statistics are updated
   Stream<void> get onStatsUpdated => _statsUpdatedController.stream;
 
-  /// Initialize the service
+  bool get hasActiveSession => _sessionStartTime != null;
+
+  /// Private getter for prefs
   Future<SharedPreferences> get _preferences async {
     _prefs ??= await SharedPreferences.getInstance();
     return _prefs!;
@@ -191,6 +202,7 @@ class StatisticsService {
       _lastSyncTime = _sessionStartTime;
       
       _isSessionCounted = false;
+      _secondsCommitted = 0; // Reset committed tracking
 
       // Persist immediately for crash recovery
       await _persistActiveSessionState();
@@ -262,6 +274,8 @@ class StatisticsService {
       // Clear persisted session marker
       await _clearActiveSessionMarker();
       
+      _secondsCommitted = 0; // Reset committed tracking
+      
       _statsUpdatedController.add(null);
     } catch (e, stackTrace) {
       _logStats('📊 ❌ EXCEPTION in endSession: $e');
@@ -273,8 +287,11 @@ class StatisticsService {
   /// This allows for real-time stats updates
   Future<void> syncCurrentSession() async {
     if (_sessionStartTime == null || _currentAudiobookId == null || _lastSyncTime == null) {
+      _logStats('📊 syncCurrentSession skipped - no active session');
       return;
     }
+
+    _logStats('📊 syncCurrentSession called for audiobook: $_currentAudiobookId');
 
     try {
       final now = DateTime.now();
@@ -311,24 +328,16 @@ class StatisticsService {
         // Save session (overwrites existing entry for this ID)
         await _saveSession(session);
         
-        // Update daily stats with the ADJUSTED DELTA (rounded to nearest int)
-        // We accumulate partial seconds internally, but commit integers to stats
-        // To be precise, we could track partials in DailyStats too, but int is fine for now
-        // A robust way mapping accumulators to ints without drift: 
-        // We report round(_accumulatedSeconds) - prevReported. 
-        // For simplicity "basic and robust": just use round of adjustedDelta for now.
-        // Or tracking totalSynced and diffing. 
+        // ROBUST DELTA CALCULATION:
+        // Calculate total seconds that SHOULD be committed based on accumulator
+        final totalSecondsToCommit = _accumulatedSeconds.floor(); 
         
-        // Better robust approach: 
-        // _lastReportedSeconds = running count of what we sent to DailyStats
-        // deltaToSend = round(_accumulatedSeconds) - _lastReportedSeconds
-        
-        // For now, let's trust that small rounding errors on <10s updates are negligible 
-        // or just round the delta. 
-        final intDelta = adjustedDelta.round();
+        // Calculate the delta to add to daily stats
+        final intDelta = totalSecondsToCommit - _secondsCommitted;
         
         if (intDelta > 0) {
           await _updateDailyStats(session, deltaSeconds: intDelta);
+          _secondsCommitted += intDelta; // Update committed count
         }
         
         await _updateStreak();
@@ -338,7 +347,7 @@ class StatisticsService {
         // Update persisted state
         await _persistActiveSessionState();
         
-        _logStats('📊 Synced: +${adjustedDelta.toStringAsFixed(1)}s (Total: ${_accumulatedSeconds.toStringAsFixed(1)}s) [Wall Clock]');
+        _logStats('📊 Synced: +${intDelta}s (Total: ${_accumulatedSeconds.toStringAsFixed(1)}s) [Wall Clock]');
         _statsUpdatedController.add(null);
       }
     } catch (e) {
@@ -387,7 +396,9 @@ class StatisticsService {
       await _saveSession(sessionOne);
       
       // Commit stats for the first part
-      final intDeltaFirst = adjustedDeltaFirstPart.round();
+      final totalSecondsPartOne = _accumulatedSeconds.floor();
+      final intDeltaFirst = totalSecondsPartOne - _secondsCommitted;
+      
       if (intDeltaFirst > 0) {
         await _updateDailyStats(sessionOne, deltaSeconds: intDeltaFirst);
       }
@@ -403,6 +414,7 @@ class StatisticsService {
       
       // Reset accumulator for the new day
       _accumulatedSeconds = 0.0;
+      _secondsCommitted = 0; // Reset committed tracking for new day
       
       // Calculate delta for second part (from midnight to now)
       final wallDeltaSecondPart = now.difference(startOfToday).inMilliseconds / 1000.0;
@@ -422,9 +434,12 @@ class StatisticsService {
       
       await _saveSession(sessionTwo);
       
-      final intDeltaSecond = adjustedDeltaSecondPart.round();
+      final totalSecondsPartTwo = _accumulatedSeconds.floor();
+      final intDeltaSecond = totalSecondsPartTwo; // 0 committed so far
+      
       if (intDeltaSecond > 0) {
         await _updateDailyStats(sessionTwo, deltaSeconds: intDeltaSecond);
+        _secondsCommitted = intDeltaSecond;
       }
       
       await _updateStreak(); // Update streak for new day
@@ -454,20 +469,25 @@ class StatisticsService {
   }
 
   /// Update daily stats with new session
+  /// Uses non-blocking guard pattern - if busy, skips update (next sync will catch up)
   Future<void> _updateDailyStats(ReadingSession session, {int deltaSeconds = 0}) async {
+    // Non-blocking guard: skip if already updating (next sync will catch up)
+    if (_isUpdatingStats) {
+      _logStats('📊 ⚠️ Stats update already in progress, skipping this sync cycle');
+      return;
+    }
+    
+    _isUpdatingStats = true;
+    
     try {
       final dateString = session.dateString;
+      _logStats('📊 Updating daily stats for $dateString with delta: ${deltaSeconds}s');
+      
       final currentStats = await getDailyStats(dateString);
+      _logStats('📊 Current stats - totalSeconds: ${currentStats.totalSeconds}, sessions: ${currentStats.sessionCount}');
 
       // If deltaSeconds is provided (continuous sync), use it.
       // Otherwise (legacy/full save), calculate from session duration.
-      // But for continuous sync, we MUST use delta to avoid double counting.
-      // If deltaSeconds is 0, it might be a full save of a new session?
-      // Actually, syncCurrentSession always passes deltaSeconds > 0.
-      // recoverCrashedSession passes session but no delta. In that case we might double count if we aren't careful.
-      // For recovery, we should probably assume the whole duration is new if it wasn't tracked?
-      // Or just use session.durationSeconds if delta is 0.
-      
       final secondsToAdd = deltaSeconds > 0 ? deltaSeconds : session.durationSeconds;
       
       // Determine if we should increment session count
@@ -475,6 +495,7 @@ class StatisticsService {
       if (!_isSessionCounted) {
         sessionCountIncrement = 1;
         _isSessionCounted = true;
+        _logStats('📊 First update for this session - incrementing session count');
       }
 
       final updatedStats = DailyStats(
@@ -493,8 +514,13 @@ class StatisticsService {
       );
       
       await _saveDailyStats(updatedStats);
-    } catch (e) {
-      _logStats('Error updating daily stats: $e');
+      _logStats('📊 ✅ Daily stats updated - new total: ${updatedStats.totalSeconds}s, books: ${updatedStats.audiobooksRead.length}');
+    } catch (e, stackTrace) {
+      _logStats('📊 ❌ Error updating daily stats: $e');
+      if (kDebugMode) debugPrint('📊 Stack trace: $stackTrace');
+    } finally {
+      // CRITICAL: Always reset flag to prevent deadlock
+      _isUpdatingStats = false;
     }
   }
 

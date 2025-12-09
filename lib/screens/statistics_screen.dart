@@ -55,7 +55,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> with WidgetsBinding
     // Listen for real-time updates
     _statsSubscription = _statsService.onStatsUpdated.listen((_) {
       if (mounted) {
-        debugPrint('📊 Received real-time stats update');
+        debugPrint('📊 UI: Received real-time stats update - Refreshing display');
         _loadStatistics(showLoading: false);
       }
     });

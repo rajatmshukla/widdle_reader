@@ -92,15 +92,12 @@ class _ProgressRingWidgetState extends State<ProgressRingWidget>
 
   Color _getProgressColor(BuildContext context, double progress) {
     final colorScheme = Theme.of(context).colorScheme;
+    // Always use primary (seed) color - vary opacity based on progress
     if (progress >= 1.0) {
-      return colorScheme.primary; // Theme primary color for completion
+      return colorScheme.primary; // Full opacity for completion
     } else {
-      // Gradient from tertiary to primary based on progress
-      return Color.lerp(
-        colorScheme.tertiary,
-        colorScheme.primary,
-        progress,
-      )!;
+      // Slightly desaturated at low progress, full saturation at higher progress
+      return colorScheme.primary.withOpacity(0.7 + (0.3 * progress));
     }
   }
 

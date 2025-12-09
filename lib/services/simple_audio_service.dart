@@ -477,8 +477,19 @@ class SimpleAudioService {
     // Create a new timer that saves position every 10 seconds
     _autoSaveTimer = Timer.periodic(const Duration(seconds: 10), (_) {
       if (_currentAudiobook != null && isPlaying) {
-        // debugPrint("Auto-saving playback position and syncing stats");
+        debugPrint("📊 [AutoSave] Saving position and syncing stats...");
         saveCurrentPosition();
+        
+        // Self-healing: Ensure stats session is active
+        if (!_statsService.hasActiveSession) {
+          debugPrint("📊⚠️ No active stats session found during playback - Auto-Recovering...");
+          final chapterName = _currentAudiobook!.chapters[_currentChapterIndex].title;
+          _statsService.startSession(
+            audiobookId: _currentAudiobook!.id,
+            chapterName: chapterName,
+          );
+        }
+        
         _statsService.syncCurrentSession();
       }
     });
