@@ -191,19 +191,58 @@ class StatisticsService {
         await endSession();
       }
 
-      _sessionStartTime = DateTime.now();
-      _currentAudiobookId = audiobookId;
-      _currentChapterName = chapterName;
-      _sessionPagesRead = 0;
-      _currentSessionId = '${_sessionStartTime!.millisecondsSinceEpoch}';
-      
-      // Initialize accumulator model
-      _accumulatedSeconds = 0.0;
-      _lastSyncTime = _sessionStartTime;
-      
-      _isSessionCounted = false;
-      _secondsCommitted = 0; // Reset committed tracking
+      final now = DateTime.now();
+      bool isResumed = false;
 
+      // COALESCING LOGIC: Check for recent sessions to resume
+      try {
+        final recentSessions = await getRecentSessions(1);
+        if (recentSessions.isNotEmpty) {
+          final lastSession = recentSessions.first;
+          final gap = now.difference(lastSession.endTime).inSeconds;
+          
+          // If gap is less than 5 minutes and same book, resume session
+          if (gap < 300 && lastSession.audiobookId == audiobookId && _isSameDay(lastSession.startTime, now)) {
+             _logStats('📊 Resuming recent session (gap: ${gap}s) - ID: ${lastSession.sessionId}');
+             
+             _sessionStartTime = lastSession.startTime; // Keep original start time
+             _currentSessionId = lastSession.sessionId; // Keep original ID
+             _currentAudiobookId = audiobookId;
+             _currentChapterName = chapterName;
+             _sessionPagesRead = lastSession.pagesRead; // Continue page count
+             
+             // Initialize accumulator with previous duration so we don't start from 0
+             // But we DON'T add the gap time to the duration (honest accounting)
+             _accumulatedSeconds = lastSession.durationSeconds.toDouble();
+             
+             // Important: Set committed seconds to what's already in DB to avoid double counting
+             _secondsCommitted = lastSession.durationSeconds; 
+             
+             _lastSyncTime = now; // Start tracking new delta from NOW
+             _isSessionCounted = true; // Already counted this session
+             
+             isResumed = true;
+          }
+        }
+      } catch (e) {
+        _logStats('Error checking for session resumption: $e');
+      }
+
+      if (!isResumed) {
+        _sessionStartTime = now;
+        _currentAudiobookId = audiobookId;
+        _currentChapterName = chapterName;
+        _sessionPagesRead = 0;
+        _currentSessionId = '${_sessionStartTime!.millisecondsSinceEpoch}';
+        
+        // Initialize accumulator model
+        _accumulatedSeconds = 0.0;
+        _lastSyncTime = _sessionStartTime;
+        
+        _isSessionCounted = false;
+        _secondsCommitted = 0; // Reset committed tracking
+      }
+      
       // Persist immediately for crash recovery
       await _persistActiveSessionState();
       
@@ -214,7 +253,7 @@ class StatisticsService {
         (_) => _persistActiveSessionState(),
       );
 
-      _logStats('📊 ✅ Session started (Continuous Mode)');
+      _logStats('📊 ✅ Session started (${isResumed ? "Resumed" : "New"})');
     } catch (e, stackTrace) {
       _logStats('📊 ❌ EXCEPTION in startSession: $e');
       if (kDebugMode) debugPrint('📊 Stack trace: $stackTrace');
@@ -283,17 +322,23 @@ class StatisticsService {
     }
   }
 
+  // Sync lock to prevent race conditions (Timer vs Lifecycle)
+  bool _isSyncing = false;
+
   /// Sync current session progress without ending it
   /// This allows for real-time stats updates
   Future<void> syncCurrentSession() async {
+    // Guard against re-entry or concurrent execution
+    if (_isSyncing) return;
+    
     if (_sessionStartTime == null || _currentAudiobookId == null || _lastSyncTime == null) {
       _logStats('📊 syncCurrentSession skipped - no active session');
       return;
     }
 
-    _logStats('📊 syncCurrentSession called for audiobook: $_currentAudiobookId');
-
+    _isSyncing = true;
     try {
+      _logStats('📊 syncCurrentSession called for audiobook: $_currentAudiobookId');
       final now = DateTime.now();
       
       // Calculate wall-clock delta since last sync
@@ -352,6 +397,8 @@ class StatisticsService {
       }
     } catch (e) {
       _logStats('Error syncing session: $e');
+    } finally {
+      _isSyncing = false;
     }
   }
 
@@ -471,20 +518,14 @@ class StatisticsService {
   /// Update daily stats with new session
   /// Uses non-blocking guard pattern - if busy, skips update (next sync will catch up)
   Future<void> _updateDailyStats(ReadingSession session, {int deltaSeconds = 0}) async {
-    // Non-blocking guard: skip if already updating (next sync will catch up)
-    if (_isUpdatingStats) {
-      _logStats('📊 ⚠️ Stats update already in progress, skipping this sync cycle');
-      return;
-    }
-    
-    _isUpdatingStats = true;
+    // LOCK REMOVED: Preventing potential deadlock if a previous update threw silently or hung.
+    // Since syncCurrentSession is called by a 10s timer, overlap is rare and less dangerous than a permanent freeze.
     
     try {
       final dateString = session.dateString;
       _logStats('📊 Updating daily stats for $dateString with delta: ${deltaSeconds}s');
       
       final currentStats = await getDailyStats(dateString);
-      _logStats('📊 Current stats - totalSeconds: ${currentStats.totalSeconds}, sessions: ${currentStats.sessionCount}');
 
       // If deltaSeconds is provided (continuous sync), use it.
       // Otherwise (legacy/full save), calculate from session duration.
@@ -514,13 +555,10 @@ class StatisticsService {
       );
       
       await _saveDailyStats(updatedStats);
-      _logStats('📊 ✅ Daily stats updated - new total: ${updatedStats.totalSeconds}s, books: ${updatedStats.audiobooksRead.length}');
+      _logStats('📊 ✅ Daily stats updated - new total: ${updatedStats.totalSeconds}s');
     } catch (e, stackTrace) {
       _logStats('📊 ❌ Error updating daily stats: $e');
       if (kDebugMode) debugPrint('📊 Stack trace: $stackTrace');
-    } finally {
-      // CRITICAL: Always reset flag to prevent deadlock
-      _isUpdatingStats = false;
     }
   }
 

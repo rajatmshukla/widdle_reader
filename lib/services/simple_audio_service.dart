@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter/services.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:rxdart/rxdart.dart';
@@ -12,15 +13,13 @@ import '../models/audiobook.dart';
 import '../services/storage_service.dart';
 import '../services/statistics_service.dart';
 
-class SimpleAudioService {
+class SimpleAudioService with WidgetsBindingObserver {
   // Singleton instance
   static final SimpleAudioService _instance = SimpleAudioService._internal();
   factory SimpleAudioService() => _instance;
 
   // Method channel for Android Auto MediaSession updates
   static const _audioBridgeChannel = MethodChannel('com.widdlereader.app/audio_bridge');
-
-
 
   // Internal player
   final AudioPlayer _player = AudioPlayer();
@@ -73,9 +72,22 @@ class SimpleAudioService {
 
   // Private constructor
   SimpleAudioService._internal() {
+    WidgetsBinding.instance.addObserver(this);
     _initStreams();
     _initAudioSession();
     _storageService.addRestoreListener(_onDataRestored);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused || state == AppLifecycleState.detached) {
+      debugPrint('📱 App Lifecycle: $state - Forcing save...');
+      // Force synchronous-like save when app is backgrounded/killed
+      if (_currentAudiobook != null && _player.playing) {
+        saveCurrentPosition();
+        _statsService.syncCurrentSession();
+      }
+    }
   }
 
   void _onDataRestored() async {
@@ -142,17 +154,49 @@ class SimpleAudioService {
       }
     });
 
-    // Playing state updates
+    // Playing state updates - CENTRALIZED LOGIC FOR STATS & SAVING
     _player.playingStream.listen((playing) {
       _playingSubject.add(playing);
+      
       if (playing) {
         _startMediaSessionUpdates();
+        
+        // Start stats session if not already active and we have a book
+        // This handles "Play" from ANY source (UI, Notification, Headset)
+        if (_currentAudiobook != null && !_isRestoring) {
+             debugPrint('▶️ Playback detected (Stream) - ensuring stats session active');
+             
+             // 1. Start AutoSave Timer
+             _startAutoSaveTimer();
+             
+             // 2. Start Stats Session if needed
+             if (!_statsService.hasActiveSession) {
+                final chapterName = _currentAudiobook!.chapters[_currentChapterIndex].title;
+                _statsService.startSession(
+                  audiobookId: _currentAudiobook!.id,
+                  chapterName: chapterName,
+                );
+             }
+        }
       } else {
         _stopMediaSessionUpdates();
+        
+        // Handle Pause/Stop from ANY source
         // Auto-save when playback stops (covers notification pause, headset disconnect, etc.)
         // But ONLY if we aren't in the middle of a restore!
         if (!_isRestoring) {
+          debugPrint('⏸️ Pause detected (Stream) - saving and closing session');
+          
+          // 1. Save Position
           saveCurrentPosition();
+          
+          // 2. End Stats Session
+          // critical: ensure we close the session so time stops tracking
+          _statsService.endSession();
+          
+          // 3. Cancel Timer
+          _autoSaveTimer?.cancel();
+          _autoSaveTimer = null;
         }
       }
       _updateMediaSessionPlaybackState();
@@ -193,7 +237,7 @@ class SimpleAudioService {
       await _audioSession!.configure(const AudioSessionConfiguration.music());
 
       // Set up callbacks for audio interruptions
-      _audioSession!.interruptionEventStream.listen((event) {
+      _audioSession!.interruptionEventStream.listen((event) async {
         if (event.begin) {
           // Audio interrupted - pause playback
           if (event.type == AudioInterruptionType.duck) {
@@ -202,8 +246,18 @@ class SimpleAudioService {
           } else {
             // Store current state before pausing
             bool wasPlaying = _player.playing;
+            
+            // CRITICAL: Explicitly save everything BEFORE pausing
+            // This ensures data is safe even if app is backgrounded/killed shortly after
+            if (wasPlaying) {
+               debugPrint('🔊 Audio Interruption: Explicitly saving state...');
+               await saveCurrentPosition();
+               await _statsService.syncCurrentSession();
+            }
+
             // Pause playback
-            pause();
+            await pause();
+            
             // Remember if we were playing before the interruption
             _userPaused = !wasPlaying;
           }
@@ -285,7 +339,24 @@ class SimpleAudioService {
 
   // Add method to safely stop current playback
   Future<void> stopCurrentPlayback() async {
-    // If something is already playing, save state and pause
+    debugPrint('📊 [StopCurrentPlayback] Cleaning up session...');
+    
+    // 1. Force stop the stats timer
+    _autoSaveTimer?.cancel();
+    _autoSaveTimer = null;
+
+    // 2. Force end any active statistics session
+    // This is critical when switching books to prevent phantom time
+    try {
+      if (_statsService.hasActiveSession) {
+        debugPrint('📊 Force ending active stats session during stop/switch');
+        await _statsService.endSession();
+      }
+    } catch (e) {
+      debugPrint('Error ending stats session during stop: $e');
+    }
+
+    // 3. Stop player if playing
     if (_currentAudiobook != null && _player.playing) {
       await saveCurrentPosition();
       await _player.pause();
@@ -641,32 +712,8 @@ class SimpleAudioService {
         await _player.play();
         debugPrint('Playback started successfully');
         
-        // Start the auto-save timer for position and stats sync
-        _startAutoSaveTimer();
-        
-        // Start statistics session tracking
-        try {
-          final chapterName = _currentAudiobook!.chapters[_currentChapterIndex].title;
-          debugPrint('📊 Starting statistics session for: ${_currentAudiobook!.id}, chapter: $chapterName');
-          await _statsService.startSession(
-            audiobookId: _currentAudiobook!.id,
-            chapterName: chapterName,
-          );
-
-
-          debugPrint('📊 ✅ Statistics session started successfully');
-          
-          // Schedule first stats sync after 60 seconds for immediate feedback
-          Future.delayed(const Duration(seconds: 60), () {
-            if (_player.playing && _currentAudiobook != null) {
-              debugPrint('📊 First minute sync triggered');
-              _statsService.syncCurrentSession();
-            }
-          });
-        } catch (statsError, stackTrace) {
-          debugPrint('📊 ❌ ERROR starting statistics session: $statsError');
-          debugPrint('📊 Stack trace: $stackTrace');
-        }
+        // NOTE: Stats tracking and AutoSave are now handled in _initStreams
+        // by listening to _player.playingStream. This ensures notifications work too.
         
         _notifyPlaybackChanged(nativeUpdate: true);
       } catch (error) {
@@ -687,21 +734,7 @@ class SimpleAudioService {
     debugPrint('Playback paused');
     _userPaused = true;
     
-    // Cancel the auto-save timer
-    _autoSaveTimer?.cancel();
-    _autoSaveTimer = null;
-    
-    await saveCurrentPosition(); // Save position immediately on pause
-    
-    // End statistics session tracking
-    try {
-      debugPrint('📊 Ending statistics session...');
-      await _statsService.endSession();
-      debugPrint('📊 ✅ Statistics session ended successfully');
-    } catch (statsError, stackTrace) {
-      debugPrint('📊 ❌ ERROR ending statistics session: $statsError');
-      debugPrint('📊 Stack trace: $stackTrace');
-    }
+    // NOTE: Stats cleanup and AutoSave cancel are now handled in _initStreams
     
     _notifyPlaybackChanged(nativeUpdate: true);
   }
