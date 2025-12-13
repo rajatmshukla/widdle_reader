@@ -72,8 +72,10 @@ class AudiobookProvider extends ChangeNotifier {
   bool get permissionPermanentlyDenied => _permissionPermanentlyDenied;
 
   // Getters for filtered book lists
+  // Getters for filtered book lists
   List<Audiobook> get ongoingBooks => _audiobooks.where((book) => !(_completedBooks[book.id] ?? false)).toList();
   List<Audiobook> get completedBooksOnly => _audiobooks.where((book) => _completedBooks[book.id] ?? false).toList();
+  List<Audiobook> get reviewedBooks => _audiobooks.where((book) => book.rating != null || (book.review != null && book.review!.isNotEmpty)).toList();
   
   // Keep detailed loading getters for compatibility but they now just return default values
   bool get isDetailedLoading => _isLoading;
@@ -438,6 +440,29 @@ class AudiobookProvider extends ChangeNotifier {
     };
   }
 
+  /// Saves a review for an audiobook
+  Future<void> saveReview(String audiobookId, double rating, String? reviewContent) async {
+    try {
+      final now = DateTime.now();
+      // Save to storage with explicit timestamp to ensure consistency
+      await _storageService.saveAudiobookReview(audiobookId, rating, reviewContent, timestamp: now);
+      
+      // Update local state
+      final index = _audiobooks.indexWhere((b) => b.id == audiobookId);
+      if (index != -1) {
+        _audiobooks[index] = _audiobooks[index].copyWith(
+          rating: rating,
+          review: reviewContent,
+          reviewTimestamp: now,
+        );
+        notifyListeners();
+      }
+    } catch (e) {
+      _logDebug("Error saving review for $audiobookId: $e");
+      rethrow;
+    }
+  }
+
   /// Sorts audiobooks with completed books at the bottom and others by recently played (legacy method, now replaced by sortAudiobooks)
   void _sortAudiobooksByStatus() {
     // Use the current sort option if available, otherwise default to completion status
@@ -488,6 +513,29 @@ class AudiobookProvider extends ChangeNotifier {
     // Re-sort to move the book to the bottom
     _sortAudiobooksByStatus();
 
+    // Notify listeners to refresh UI
+    notifyListeners();
+  }
+
+  /// Toggles the completion status of a book manually
+  Future<void> toggleCompletionStatus(String audiobookId) async {
+    final isCompleted = _completedBooks[audiobookId] ?? false;
+    
+    if (isCompleted) {
+      // Mark as unfinished
+      _completedBooks[audiobookId] = false;
+      await _storageService.unmarkAsCompleted(audiobookId);
+      // We don't reset progress to 0 here, assuming user wants to keep progress but mark as "reading"
+    } else {
+      // Mark as finished
+      _completedBooks[audiobookId] = true;
+      await _storageService.markAsCompleted(audiobookId);
+      await _storageService.saveProgressCache(audiobookId, 1.0); // 100% progress
+    }
+    
+    // Re-sort to move the book accordingly
+    _sortAudiobooksByStatus();
+    
     // Notify listeners to refresh UI
     notifyListeners();
   }
@@ -651,7 +699,28 @@ class AudiobookProvider extends ChangeNotifier {
 
     
       // STEP 3: Update UI with loaded books in the stored order initially
-      _audiobooks = loadedBooks;
+      
+      // Load review data
+      final reviewsMap = await _storageService.loadAudiobookReviews();
+      
+      // Update books with review data
+      final booksWithReviews = loadedBooks.map((book) {
+        final reviewData = reviewsMap[book.id];
+        if (reviewData != null) {
+          DateTime? timestamp;
+          if (reviewData['timestamp'] != null) {
+            timestamp = DateTime.tryParse(reviewData['timestamp'] as String);
+          }
+          return book.copyWith(
+            rating: reviewData['rating'] != null ? (reviewData['rating'] as num).toDouble() : null,
+            review: reviewData['review'] as String?,
+            reviewTimestamp: timestamp,
+          );
+        }
+        return book;
+      }).toList();
+
+      _audiobooks = booksWithReviews;
       await _loadLastPlayedTimestamps();
       
       // The stored order represents the last sorted order, so we preserve it
@@ -1467,6 +1536,9 @@ class AudiobookProvider extends ChangeNotifier {
         coverArt: oldAudiobook.coverArt,
         tags: oldAudiobook.tags,
         isFavorited: oldAudiobook.isFavorited,
+        rating: oldAudiobook.rating,
+        review: oldAudiobook.review,
+        reviewTimestamp: oldAudiobook.reviewTimestamp,
       );
       
       _audiobooks[audiobookIndex] = updatedAudiobook;

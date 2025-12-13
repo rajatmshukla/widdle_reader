@@ -42,6 +42,7 @@ class StorageService {
   static const completedBooksKey =
       'completed_books'; // New key for completed books
   static const bookmarksKey = 'bookmarks'; // New key for bookmarks
+  static const reviewsKey = 'audiobook_reviews'; // Key for book reviews
   static const bookmarksPrefix = 'bookmarks_'; // Prefix for individual audiobook bookmarks
   static const backupSuffix = '_backup';
   static const dataVersionKey = 'data_version';
@@ -56,6 +57,10 @@ class StorageService {
   static const fileTrackingKey = 'file_tracking_v2';
   static const pathMigrationsKey = 'path_migrations';
   static const contentHashesKey = 'content_hashes';
+
+  // In-memory cache for reviews
+  Map<String, Map<String, dynamic>> _reviewsCache = {};
+  bool _reviewsLoaded = false;
 
 
   // Singleton instance for this service 
@@ -1333,20 +1338,77 @@ class StorageService {
     }
   }
 
-  /// Saves custom titles for audiobooks
-  Future<void> saveCustomTitles(Map<String, String> customTitles) async {
-    try {
-      // Update cache
-      _customTitlesCache = Map.from(customTitles);
-      _dirtyCustomTitlesCache = true;
-      
-      // Save to preferences
-      await _saveCustomTitlesToPrefs();
-      
-      debugPrint("Saved ${customTitles.length} custom titles");
-    } catch (e) {
-      debugPrint("Error saving custom titles: $e");
+  // Save custom titles
+  Future<void> saveCustomTitles(Map<String, String> titles) async {
+    final prefs = await _preferences;
+    _customTitlesCache = Map.from(titles);
+    _dirtyCustomTitlesCache = false;
+    await prefs.setString(customTitlesKey, jsonEncode(titles));
+  }
+
+  /// Save a review for an audiobook
+  Future<void> saveAudiobookReview(String audiobookId, double rating, String? reviewContent, {DateTime? timestamp}) async {
+    final prefs = await _preferences;
+    
+    // Ensure cache is loaded
+    if (!_reviewsLoaded) {
+      await loadAudiobookReviews();
     }
+    
+    final reviewTime = timestamp ?? DateTime.now();
+    
+    _reviewsCache[audiobookId] = {
+      'rating': rating,
+      'review': reviewContent,
+      'timestamp': reviewTime.toIso8601String(),
+    };
+    
+    await prefs.setString(reviewsKey, jsonEncode(_reviewsCache));
+  }
+  
+  /// Load all audiobook reviews
+  Future<Map<String, Map<String, dynamic>>> loadAudiobookReviews() async {
+    if (_reviewsLoaded) {
+      return Map.from(_reviewsCache);
+    }
+
+    final prefs = await _preferences;
+    final jsonString = prefs.getString(reviewsKey);
+    
+    if (jsonString == null) {
+      _reviewsCache = {};
+      _reviewsLoaded = true;
+      return {};
+    }
+    
+    try {
+      final Map<String, dynamic> decoded = jsonDecode(jsonString);
+      // Convert to expected types
+      final Map<String, Map<String, dynamic>> result = {};
+      decoded.forEach((key, value) {
+        if (value is Map) {
+          result[key] = Map<String, dynamic>.from(value);
+        }
+      });
+      
+      _reviewsCache = result;
+      _reviewsLoaded = true;
+      return result;
+    } catch (e) {
+      debugPrint('Error loading reviews: $e');
+      _reviewsCache = {};
+      _reviewsLoaded = true;
+      return {};
+    }
+  }
+  
+  /// Get review for specific audiobook
+  Future<Map<String, dynamic>?> getAudiobookReview(String audiobookId) async {
+    // Ensure cache is loaded
+    if (!_reviewsLoaded) {
+      await loadAudiobookReviews();
+    }
+    return _reviewsCache[audiobookId];
   }
 
   /// Loads custom titles for audiobooks
@@ -1741,6 +1803,13 @@ class StorageService {
         allData['data']['audiobook_tags'] = audiobookTagsJson;
       }
       
+      // ===== 10. REVIEWS (NEW) =====
+      await loadAudiobookReviews();
+      if (_reviewsCache.isNotEmpty) {
+        allData['data']['reviews'] = jsonEncode(_reviewsCache);
+        debugPrint('📦 Exported ${_reviewsCache.length} reviews');
+      }
+      
       // ===== 10. READING SESSIONS (NEW - Full Statistics) =====
       final sessionsData = <String, dynamic>{};
       for (final key in prefs.getKeys()) {
@@ -1914,7 +1983,19 @@ class StorageService {
         await prefs.setString(audiobookTagsKey, audiobookTagsJson);
       }
       
-      // ===== 10. READING SESSIONS (NEW) =====
+
+
+      // ===== 10. REVIEWS (NEW) =====
+      if (data['reviews'] != null) {
+        final reviewsJson = data['reviews'] as String;
+        await prefs.setString(reviewsKey, reviewsJson);
+        // Force reload reviews cache
+        _reviewsLoaded = false;
+        await loadAudiobookReviews();
+        debugPrint('📦 Imported reviews');
+      }
+
+      // ===== 11. READING SESSIONS (NEW) =====
       final sessionsData = data['reading_sessions'] as Map<String, dynamic>? ?? {};
       for (final entry in sessionsData.entries) {
         if (entry.value != null) {
@@ -2204,6 +2285,13 @@ class StorageService {
       await prefs.remove('basic_book_info_$audiobookId');
       await prefs.remove('detailed_metadata_$audiobookId');
       
+      // Remove review
+      await loadAudiobookReviews();
+      if (_reviewsCache.containsKey(audiobookId)) {
+        _reviewsCache.remove(audiobookId);
+        await prefs.setString(reviewsKey, jsonEncode(_reviewsCache));
+      }
+      
       // Remove cached cover art
       try {
         final directory = await getApplicationDocumentsDirectory();
@@ -2265,6 +2353,13 @@ class StorageService {
       if (bookmarksValue != null) {
         await prefs.setString(newBookmarksKey, bookmarksValue);
         await prefs.remove(oldBookmarksKey);
+      }
+      
+      // Update reviews
+      await loadAudiobookReviews();
+      if (_reviewsCache.containsKey(oldId)) {
+        _reviewsCache[newId] = _reviewsCache.remove(oldId)!;
+        await prefs.setString(reviewsKey, jsonEncode(_reviewsCache));
       }
       
       // Update timestamp data

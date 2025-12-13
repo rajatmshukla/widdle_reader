@@ -4,6 +4,8 @@ import 'package:flutter/foundation.dart'; // For kDebugMode
 import 'package:provider/provider.dart' as provider;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:flutter_quill/flutter_quill.dart'; // For FlutterQuillLocalizations
 import 'package:just_audio_background/just_audio_background.dart';
 
 import 'providers/audiobook_provider.dart';
@@ -179,6 +181,15 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
           theme: AppTheme.lightTheme(themeProvider.seedColor),
           darkTheme: AppTheme.darkTheme(themeProvider.seedColor),
           themeMode: themeProvider.themeMode,
+          
+          localizationsDelegates: const [
+            GlobalMaterialLocalizations.delegate,
+            GlobalWidgetsLocalizations.delegate,
+            GlobalCupertinoLocalizations.delegate,
+            FlutterQuillLocalizations.delegate,
+          ],
+          supportedLocales: FlutterQuillLocalizations.supportedLocales,
+          
           initialRoute: '/license', // Start with license check
           routes: {
             '/license': (context) => const LicenseCheckScreen(),

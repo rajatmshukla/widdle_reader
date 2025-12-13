@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart'; // For kDebugMode
+import 'package:widdle_reader/screens/review_editor_screen.dart'; // Import ReviewEditorScreen
+import 'package:widdle_reader/screens/reviews_list_screen.dart'; // Import ReviewsListScreen
 import 'package:provider/provider.dart' as provider;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
@@ -30,6 +32,7 @@ import '../services/simple_audio_service.dart';
 import '../services/android_auto_manager.dart';
 import '../theme.dart';
 import '../utils/responsive_utils.dart';
+import '../utils/helpers.dart';
 
 // CRITICAL FIX: Add release-safe logging for library screen
 void _logDebug(String message) {
@@ -320,7 +323,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
     }
   }
 
-  // Show the long-press actions menu
+  // Modern bottom sheet implementation for long-press menu
   void _showLongPressMenu(
     BuildContext context,
     Audiobook audiobook,
@@ -329,121 +332,163 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
     final title = provider.getTitleForAudiobook(audiobook);
     final colorScheme = Theme.of(context).colorScheme;
     
-    // Get tag information for this book
+    // Get tag information
     final audiobookTags = ref.watch(audiobookTagsProvider);
     final bookTags = audiobookTags[audiobook.id] ?? <String>{};
     final isFavorited = bookTags.contains('Favorites');
+    final isCompleted = provider.isCompletedBook(audiobook.id);
 
-
-
-    showDialog(
+    showModalBottomSheet(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Manage "$title"'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // Favorites toggle
-            ListTile(
-              leading: Icon(
-                isFavorited ? Icons.favorite : Icons.favorite_border,
-                color: isFavorited ? const Color(0xFFB71C1C) : colorScheme.onSurfaceVariant, // Deep red for favorites
-              ),
-              title: Text(isFavorited ? 'Remove from Favorites' : 'Add to Favorites'),
-              onTap: () {
-                Navigator.pop(context);
-                _toggleFavorite(audiobook.id);
-              },
-            ),
-            
-            // Manage tags
-            ListTile(
-              leading: Stack(
-                children: [
-                  Icon(
-                    Icons.label_outline,
-                    color: colorScheme.onSurfaceVariant,
-                  ),
-                  if (bookTags.length > 1 || (bookTags.length == 1 && !isFavorited))
-                    Positioned(
-                      right: 0,
-                      top: 0,
-                      child: Container(
-                        padding: const EdgeInsets.all(2),
-                        decoration: BoxDecoration(
-                          color: colorScheme.primary,
-                          shape: BoxShape.circle,
-                        ),
-                        constraints: const BoxConstraints(
-                          minWidth: 12,
-                          minHeight: 12,
-                        ),
-                        child: Text(
-                          '${bookTags.length - (isFavorited ? 1 : 0)}',
-                          style: TextStyle(
-                            color: colorScheme.onPrimary,
-                            fontSize: 8,
-                            fontWeight: FontWeight.bold,
-                          ),
-                          textAlign: TextAlign.center,
+      isScrollControlled: true,
+      backgroundColor: colorScheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (context) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.only(bottom: 16.0),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Header with Cover Art
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(24, 24, 24, 16),
+                  child: Row(
+                    children: [
+                      // Cover Art
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: buildCoverWidget(
+                          context,
+                          audiobook,
+                          size: 60,
+                          customTitle: title,
                         ),
                       ),
-                    ),
-                ],
-              ),
-              title: const Text('Manage Tags'),
-              subtitle: bookTags.isEmpty 
-                  ? const Text('No tags assigned')
-                  : Text('${bookTags.length - (isFavorited ? 1 : 0)} custom tags'),
-              onTap: () {
-                Navigator.pop(context);
-                _showTagAssignmentDialog(context, audiobook, title);
-              },
+                      const SizedBox(width: 16),
+                      // Title and Author
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              title,
+                              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                fontWeight: FontWeight.bold,
+                              ),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            if (audiobook.author != null) ...[
+                              const SizedBox(height: 4),
+                              Text(
+                                audiobook.author!,
+                                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                  color: colorScheme.onSurfaceVariant,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const Divider(indent: 24, endIndent: 24),
+                
+                // Actions List
+                // 1. Write Review
+                ListTile(
+                  leading: Icon(Icons.rate_review_outlined, color: colorScheme.onSurfaceVariant),
+                  title: const Text('Write Review'),
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => ReviewEditorScreen(audiobook: audiobook),
+                      ),
+                    );
+                  },
+                ),
+                
+                // 2. Edit Title
+                 ListTile(
+                  leading: Icon(Icons.edit_outlined, color: colorScheme.onSurfaceVariant),
+                  title: const Text('Edit Title'),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _showEditTitleDialog(context, audiobook, provider);
+                  },
+                ),
+                
+                // 3. Edit Tags
+                ListTile(
+                  leading: Icon(Icons.label_outline, color: colorScheme.onSurfaceVariant),
+                  title: const Text('Edit Tags'),
+                  onTap: () {
+                    Navigator.pop(context);
+                    // Pass specific audiobook using the dialog
+                    showDialog(
+                      context: context,
+                      builder: (context) => TagAssignmentDialog(
+                        audiobook: audiobook,
+                        customTitle: title,
+                      ),
+                    );
+                  },
+                ),
+                
+                // 4. Toggle Favorite
+                ListTile(
+                   leading: Icon(
+                      isFavorited ? Icons.favorite : Icons.favorite_border, 
+                      color: isFavorited ? Colors.red : colorScheme.onSurfaceVariant
+                   ),
+                   title: Text(isFavorited ? 'Remove from Favorites' : 'Add to Favorites'),
+                   onTap: () {
+                     _toggleFavorite(audiobook.id);
+                     Navigator.pop(context);
+                   },
+                 ),
+                 
+                 // 5. Toggle Complete
+                 ListTile(
+                   leading: Icon(
+                      isCompleted ? Icons.check_circle : Icons.check_circle_outline,
+                      color: isCompleted ? Colors.green : colorScheme.onSurfaceVariant,
+                   ),
+                   title: Text(isCompleted ? 'Mark as Unfinished' : 'Mark as Finished'),
+                   onTap: () {
+                      provider.toggleCompletionStatus(audiobook.id);
+                      Navigator.pop(context);
+                   },
+                 ),
+
+                const Divider(indent: 24, endIndent: 24),
+                
+                // 6. Delete (Destructive)
+                ListTile(
+                  leading: Icon(Icons.delete_outline, color: colorScheme.error),
+                  title: Text(
+                    'Remove from Library',
+                    style: TextStyle(color: colorScheme.error),
+                  ),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _showDeleteConfirmationDialog(context, audiobook, provider);
+                  },
+                ),
+              ],
             ),
-            
-            const Divider(),
-            
-            ListTile(
-              leading: Icon(
-                Icons.edit_rounded,
-                color: colorScheme.primary,
-              ),
-              title: const Text('Edit Title'),
-              onTap: () {
-                Navigator.pop(context);
-                _showEditTitleDialog(context, audiobook, provider);
-              },
-            ),
-            
-            const Divider(),
-            
-            ListTile(
-              leading: Icon(
-                Icons.delete_outline_rounded,
-                color: colorScheme.error,
-              ),
-              title: const Text('Remove from Library'),
-              subtitle: const Text(
-                'Files will not be deleted from your device',
-              ),
-              onTap: () {
-                Navigator.pop(context);
-                _showDeleteConfirmationDialog(
-                  context,
-                  audiobook,
-                  provider,
-                );
-              },
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 
@@ -858,7 +903,10 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
                                 final searchState = ref.watch(searchProvider);
                                 
                                 // Switch content based on selected tab
-                                if (_selectedIndex == 2) {
+                                if (_selectedIndex == 3) {
+                                  // Reviews Hub
+                                  return const ReviewsListScreen();
+                                } else if (_selectedIndex == 2) {
                                   // Tags view
                                   return const TagsView();
                                 } else if (_selectedIndex == 1) {
@@ -980,6 +1028,11 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
                 icon: Icon(Icons.local_offer_outlined),
                 selectedIcon: Icon(Icons.local_offer),
                 label: 'Tags',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.rate_review_outlined),
+                selectedIcon: Icon(Icons.rate_review),
+                label: 'Reviews',
               ),
             ],
           ),

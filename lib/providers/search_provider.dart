@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/foundation.dart';
+import 'dart:convert';
 import '../models/audiobook.dart';
 import '../models/tag.dart';
 
@@ -66,6 +67,14 @@ class SearchService {
         }
       }
       
+      // Search in review content (New!)
+      if (audiobook.review != null && audiobook.review!.isNotEmpty) {
+        final reviewText = _extractTextFromReview(audiobook.review!);
+        if (reviewText.isNotEmpty) {
+           score += _calculateMatchScore(reviewText.toLowerCase(), searchQuery) * 0.9;
+        }
+      }
+      
       // Search in folder name (for series detection)
       final folderName = audiobook.id.split('/').last.toLowerCase();
       score += _calculateMatchScore(folderName, searchQuery) * 0.6;
@@ -84,6 +93,27 @@ class SearchService {
     });
 
     return results;
+  }
+  
+  static String _extractTextFromReview(String jsonString) {
+    try {
+      final json = jsonDecode(jsonString);
+      if (json is List) {
+        final buffer = StringBuffer();
+        for (final item in json) {
+          if (item is Map && item.containsKey('insert')) {
+            buffer.write(item['insert']);
+          }
+        }
+        return buffer.toString();
+      }
+    } catch (e) {
+      // If parsing fails, treat as plain text if it looks like it
+      if (!jsonString.trim().startsWith('[')) {
+        return jsonString;
+      }
+    }
+    return '';
   }
 
   /// Calculate match score between text and query
@@ -174,6 +204,13 @@ class SearchService {
       }
     }
     
+    if (audiobook.review != null && audiobook.review!.isNotEmpty) {
+      final reviewText = _extractTextFromReview(audiobook.review!);
+      if (reviewText.isNotEmpty) {
+         score += _calculateMatchScore(reviewText.toLowerCase(), searchQuery) * 0.9;
+      }
+    }
+    
     return score;
   }
 }
@@ -229,4 +266,4 @@ class SearchState {
 /// Provider for search notifier
 final searchProvider = StateNotifierProvider<SearchNotifier, SearchState>((ref) {
   return SearchNotifier();
-}); 
+});

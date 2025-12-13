@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart' as cupertino;
 import 'package:provider/provider.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart'; // Import the package
+import 'package:widdle_reader/widgets/countdown_timer_widget.dart';
+import 'package:widdle_reader/screens/review_editor_screen.dart'; // Import ReviewEditorScreen
 import '../providers/audiobook_provider.dart';
 import '../providers/sleep_timer_provider.dart';
 import '../providers/theme_provider.dart';
@@ -666,6 +668,27 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
             onPressed: _showSleepTimerDialog,
           ),
           
+          // Review button
+          IconButton(
+            icon: Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: colorScheme.surfaceContainerHighest.withAlpha(
+                  (0.7 * 255).round(),
+                ),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Icon(Icons.rate_review_outlined),
+            ),
+            tooltip: 'Write Review',
+            onPressed: _audiobook != null ? () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => ReviewEditorScreen(audiobook: _audiobook!)),
+              );
+            } : null,
+          ),
+
           // Car Mode button
           IconButton(
             icon: Container(
