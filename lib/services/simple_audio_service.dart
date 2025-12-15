@@ -518,7 +518,18 @@ class SimpleAudioService with WidgetsBindingObserver {
       _speedSubject.add(speedToUse);
       
       debugPrint("Successfully loaded chapter: ${chapter.title} with speed: $speedToUse");
-      await _updateMediaSessionMetadata();
+      
+      // Pass the artUri string (convert from Uri object if available)
+      String? artUriString;
+      if (artUri != null) {
+        if (artUri.scheme == 'file') {
+          artUriString = artUri.toFilePath();
+        } else {
+          artUriString = artUri.toString();
+        }
+      }
+      
+      await _updateMediaSessionMetadata(overrideArtUri: artUriString);
       await _updateMediaSessionPlaybackState();
     } catch (e) {
       debugPrint("Error loading chapter $index: $e");
@@ -567,15 +578,18 @@ class SimpleAudioService with WidgetsBindingObserver {
   }
 
   // Update MediaSession metadata (call when chapter loads)
-  Future<void> _updateMediaSessionMetadata() async {
+  Future<void> _updateMediaSessionMetadata({String? overrideArtUri}) async {
     if (_currentAudiobook == null) return;
     
     try {
       final chapter = _currentAudiobook!.chapters[_currentChapterIndex];
       final duration = chapter.duration ?? _player.duration ?? Duration.zero;
       
-      // Get cover art URI from storage service (consistent with Android Auto Manager)
-      String? artUri = await _storageService.getCachedCoverArtPath(_currentAudiobook!.id);
+      // Get cover art URI: Use override if provided, otherwise check storage
+      String? artUri = overrideArtUri;
+      if (artUri == null) {
+         artUri = await _storageService.getCachedCoverArtPath(_currentAudiobook!.id);
+      }
       
       await _audioBridgeChannel.invokeMethod('updateMetadata', {
         'mediaId': _currentAudiobook!.id,
@@ -590,7 +604,7 @@ class SimpleAudioService with WidgetsBindingObserver {
         'displayDescription': _currentAudiobook!.author ?? _currentAudiobook!.title,
       });
       
-      debugPrint("Updated Android Auto metadata: ${chapter.title}");
+      debugPrint("Updated Android Auto metadata: ${chapter.title} (Art: $artUri)");
     } catch (e) {
       debugPrint("Error updating MediaSession metadata: $e");
     }

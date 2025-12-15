@@ -37,7 +37,7 @@ void _logCritical(String message) {
 
 // LibrarySortOption moved to models/tag.dart to avoid duplication
 
-class AudiobookProvider extends ChangeNotifier {
+class AudiobookProvider extends ChangeNotifier with WidgetsBindingObserver {
   final MetadataService _metadataService = MetadataService();
   final StorageService _storageService = StorageService();
   
@@ -101,10 +101,21 @@ class AudiobookProvider extends ChangeNotifier {
 
   // Constructor: Load audiobooks when the provider is created
   AudiobookProvider() {
+    // Register lifecycle observer
+    WidgetsBinding.instance.addObserver(this);
+    
     // Listen for data restore events to prevent stale state
     _storageService.addRestoreListener(_onDataRestored);
     
     _loadCustomTitles().then((_) => loadAudiobooks());
+  }
+  
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _logDebug("App resumed. Syncing library to remove deleted books...");
+      syncDeletedBooksOnly();
+    }
   }
   
   void _onDataRestored() {
@@ -114,8 +125,73 @@ class AudiobookProvider extends ChangeNotifier {
   
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _storageService.removeRestoreListener(_onDataRestored);
     super.dispose();
+  }
+  
+  // Guard to prevent concurrent sync operations
+  bool _isSyncing = false;
+  
+  /// Syncs library to remove deleted books without full reload
+  Future<void> syncDeletedBooksOnly() async {
+    // Prevent concurrent sync runs
+    if (_isSyncing) {
+      _logDebug("Sync already in progress, skipping...");
+      return;
+    }
+    _isSyncing = true;
+    
+    try {
+      final List<String> folderPaths = await _storageService.loadAudiobookFolders();
+      final List<String> validPaths = [];
+      final List<String> deletedPaths = [];
+      
+      for (final path in folderPaths) {
+        try {
+          if (await Directory(path).exists()) {
+            validPaths.add(path);
+          } else {
+            deletedPaths.add(path);
+          }
+        } catch (e) {
+          // If we can't check the path (permission issue?), assume it's valid to be safe
+          _logDebug("Error checking path existence: $path - $e");
+          validPaths.add(path);
+        }
+      }
+      
+      if (deletedPaths.isNotEmpty) {
+        _logDebug("Sync found ${deletedPaths.length} deleted audiobooks. Removing...");
+        
+        for (final path in deletedPaths) {
+          // Clean up storage service data
+          await _storageService.removeAudiobookData(path);
+          
+          // Clean up in-memory maps
+          _customTitles.remove(path);
+          _completedBooks.remove(path);
+          _newBooks.remove(path);
+          _lastPlayedTimestamps.remove(path);
+        }
+        
+        // Persist custom titles after removal
+        await _saveCustomTitles();
+        
+        // Update storage
+        await _storageService.saveAudiobookFolders(validPaths);
+        
+        // Update in-memory list
+        _audiobooks.removeWhere((book) => deletedPaths.contains(book.id));
+        
+        notifyListeners();
+        _logDebug("Successfully removed ${deletedPaths.length} deleted audiobooks.");
+      }
+    } catch (e) {
+      _logDebug("Error syncing deleted books: $e");
+    } finally {
+      _isSyncing = false;
+    }
   }
 
   /// Loads saved custom titles from preferences
@@ -656,16 +732,44 @@ class AudiobookProvider extends ChangeNotifier {
     
     try {
       // STEP 1: Load from storage super fast - this should be near-instant
-      final List<String> folderPaths = await _storageService.loadAudiobookFolders();
+      List<String> folderPaths = await _storageService.loadAudiobookFolders();
       _logDebug("Found ${folderPaths.length} cached audiobook paths");
       
+      // SYNC DELETED AUDIOBOOKS: Check if folders still exist
+      final List<String> validPaths = [];
+      final List<String> deletedPaths = [];
+      
+      for (final path in folderPaths) {
+        if (await Directory(path).exists()) {
+          validPaths.add(path);
+        } else {
+          deletedPaths.add(path);
+        }
+      }
+      
+      // Handle deletions if any found
+      if (deletedPaths.isNotEmpty) {
+        _logDebug("Found ${deletedPaths.length} deleted audiobooks. Cleaning up...");
+        for (final path in deletedPaths) {
+          // The ID is the folder path
+           await _storageService.removeAudiobookData(path);
+           _logDebug("Cleaned up data for missing book: $path");
+        }
+        
+        // Update the stored list of folders to reflect reality
+        await _storageService.saveAudiobookFolders(validPaths);
+        
+        // Use the valid list for loading
+        folderPaths = validPaths;
+      }
+
       if (folderPaths.isEmpty) {
         // No audiobooks cached, show empty state immediately
         _audiobooks = [];
-      notifyListeners();
+        notifyListeners();
         _logDebug("No cached audiobooks, showing empty library");
-      return;
-    }
+        return;
+      }
 
       // STEP 2: Load basic info from cache super fast
       final List<Audiobook> loadedBooks = [];

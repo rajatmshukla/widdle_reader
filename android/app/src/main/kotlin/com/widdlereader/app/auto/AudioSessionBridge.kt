@@ -478,8 +478,8 @@ class AudioSessionBridge(private val context: Context) {
             }
             BitmapFactory.decodeFile(file.absolutePath, options)
             
-            // Calculate inSampleSize for 320x320 (standard for Android Auto icons/metadata)
-            options.inSampleSize = calculateInSampleSize(options, 320, 320)
+            // Calculate inSampleSize for 512x512 (better for background art)
+            options.inSampleSize = calculateInSampleSize(options, 512, 512)
             
             // Decode bitmap with inSampleSize set
             options.inJustDecodeBounds = false

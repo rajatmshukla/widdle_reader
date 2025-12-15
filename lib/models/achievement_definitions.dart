@@ -265,6 +265,152 @@ class AchievementDefinitions {
       category: AchievementCategory.sessions,
       targetValue: 60,
     ),
+    'session_200': Achievement(
+      id: 'session_200',
+      name: 'Session Legend',
+      description: 'Complete 200 reading sessions',
+      icon: Icons.verified,
+      tier: AchievementTier.diamond,
+      category: AchievementCategory.sessions,
+      targetValue: 200,
+    ),
+
+    // =========================
+    // LIBRARY ACHIEVEMENTS
+    // =========================
+    'library_10': Achievement(
+      id: 'library_10',
+      name: 'Growing Collection',
+      description: 'Add 10 books to your library',
+      icon: Icons.library_books,
+      tier: AchievementTier.bronze,
+      category: AchievementCategory.explorer,
+      targetValue: 10,
+    ),
+    'library_25': Achievement(
+      id: 'library_25',
+      name: 'Book Hoarder',
+      description: 'Add 25 books to your library',
+      icon: Icons.library_books,
+      tier: AchievementTier.silver,
+      category: AchievementCategory.explorer,
+      targetValue: 25,
+    ),
+    'library_50': Achievement(
+      id: 'library_50',
+      name: 'Master Collector',
+      description: 'Add 50 books to your library',
+      icon: Icons.library_books,
+      tier: AchievementTier.gold,
+      category: AchievementCategory.explorer,
+      targetValue: 50,
+    ),
+
+    // =========================
+    // BOOK COMPLETION MILESTONES
+    // =========================
+    'book_50': Achievement(
+      id: 'book_50',
+      name: 'Half Century',
+      description: 'Complete 50 audiobooks',
+      icon: Icons.emoji_events,
+      tier: AchievementTier.diamond,
+      category: AchievementCategory.books,
+      targetValue: 50,
+    ),
+
+    // =========================
+    // REVIEW ACHIEVEMENTS
+    // =========================
+    'review_first': Achievement(
+      id: 'review_first',
+      name: 'First Thoughts',
+      description: 'Write your first book review',
+      icon: Icons.rate_review,
+      tier: AchievementTier.bronze,
+      category: AchievementCategory.special,
+      targetValue: 1,
+    ),
+    'review_5': Achievement(
+      id: 'review_5',
+      name: 'Thoughtful Reader',
+      description: 'Write 5 book reviews',
+      icon: Icons.rate_review,
+      tier: AchievementTier.silver,
+      category: AchievementCategory.special,
+      targetValue: 5,
+    ),
+    'review_10': Achievement(
+      id: 'review_10',
+      name: 'Critic\'s Corner',
+      description: 'Write 10 book reviews',
+      icon: Icons.rate_review,
+      tier: AchievementTier.gold,
+      category: AchievementCategory.special,
+      targetValue: 10,
+    ),
+
+    // =========================
+    // TIME MILESTONES (Extended)
+    // =========================
+    'time_250h': Achievement(
+      id: 'time_250h',
+      name: 'Dedicated Scholar',
+      description: 'Listen for 250 hours total',
+      icon: Icons.school,
+      tier: AchievementTier.platinum,
+      category: AchievementCategory.time,
+      targetValue: 15000, // 250 hours in minutes
+    ),
+    'time_1000h': Achievement(
+      id: 'time_1000h',
+      name: 'Audio Legend',
+      description: 'Listen for 1000 hours total',
+      icon: Icons.auto_awesome,
+      tier: AchievementTier.diamond,
+      category: AchievementCategory.time,
+      targetValue: 60000, // 1000 hours in minutes
+    ),
+
+    // =========================
+    // ADDITIONAL SPECIAL
+    // =========================
+    'speed_demon': Achievement(
+      id: 'speed_demon',
+      name: 'Speed Demon',
+      description: 'Listen at 2x speed or faster',
+      icon: Icons.speed,
+      tier: AchievementTier.bronze,
+      category: AchievementCategory.special,
+      isSecret: true,
+    ),
+    'slow_and_steady': Achievement(
+      id: 'slow_and_steady',
+      name: 'Slow and Steady',
+      description: 'Listen at 0.75x speed or slower',
+      icon: Icons.slow_motion_video,
+      tier: AchievementTier.bronze,
+      category: AchievementCategory.special,
+      isSecret: true,
+    ),
+    'favorite_fan': Achievement(
+      id: 'favorite_fan',
+      name: 'Favorite Fan',
+      description: 'Add 5 books to favorites',
+      icon: Icons.favorite,
+      tier: AchievementTier.silver,
+      category: AchievementCategory.special,
+      targetValue: 5,
+    ),
+    'completionist': Achievement(
+      id: 'completionist',
+      name: 'Completionist',
+      description: 'Complete all books in your library',
+      icon: Icons.check_circle,
+      tier: AchievementTier.diamond,
+      category: AchievementCategory.special,
+      isSecret: true,
+    ),
   };
 
   /// Get achievements by category

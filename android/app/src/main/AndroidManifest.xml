@@ -66,6 +66,14 @@
             </intent-filter>
         </service>
 
+        <!-- Media Button Receiver for handling headset and lock screen controls -->
+        <receiver android:name="com.ryanheise.audioservice.MediaButtonReceiver"
+            android:exported="true" tools:ignore="ExportedReceiver">
+            <intent-filter>
+                <action android:name="android.intent.action.MEDIA_BUTTON" />
+            </intent-filter>
+        </receiver>
+
         <!-- Keep audio_service service WITHOUT MediaBrowser intent filter -->
         <service
             android:name="com.ryanheise.audioservice.AudioService"

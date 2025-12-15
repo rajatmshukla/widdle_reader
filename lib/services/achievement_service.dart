@@ -101,6 +101,22 @@ class AchievementService {
       
       // Get unique books listened to
       final uniqueBooks = todayStats.bookDurations.keys.length;
+      
+      // Get library size (all audiobook paths)
+      final audiobooks = await _storageService.loadAudiobookFolders();
+      final librarySize = audiobooks.length;
+      
+      // Get reviews count
+      final reviewsMap = await _storageService.loadAudiobookReviews();
+      final reviewsCount = reviewsMap.values.where((r) => 
+          r['review'] != null && (r['review'] as String).isNotEmpty
+      ).length;
+      
+      // Get favorites count (from tag provider via shared prefs)
+      final favoritesCount = await _getFavoritesCount();
+      
+      // Get current playback speed (from SharedPreferences, stored per-book)
+      final currentSpeed = await _getCurrentPlaybackSpeed();
 
       // Check each achievement
       for (final definition in AchievementDefinitions.all.values) {
@@ -119,6 +135,10 @@ class AchievementService {
           isWeekend: now.weekday == 6 || now.weekday == 7,
           booksCompleted: completedBooksCount,
           uniqueBooksListened: uniqueBooks,
+          librarySize: librarySize,
+          reviewsCount: reviewsCount,
+          favoritesCount: favoritesCount,
+          playbackSpeed: currentSpeed,
         );
 
         if (shouldUnlock) {
@@ -140,6 +160,50 @@ class AchievementService {
 
     return newUnlocks;
   }
+  
+  /// Get count of favorited books
+  Future<int> _getFavoritesCount() async {
+    try {
+      final prefs = await _preferences;
+      final tagAssignmentsJson = prefs.getString('audiobook_tags');
+      if (tagAssignmentsJson == null) return 0;
+      
+      final Map<String, dynamic> assignments = Map<String, dynamic>.from(
+        jsonDecode(tagAssignmentsJson)
+      );
+      
+      int count = 0;
+      for (final entry in assignments.entries) {
+        final tags = List<String>.from(entry.value as List);
+        if (tags.contains('Favorites')) {
+          count++;
+        }
+      }
+      return count;
+    } catch (e) {
+      return 0;
+    }
+  }
+  
+  /// Get current playback speed (from last active book or default)
+  Future<double> _getCurrentPlaybackSpeed() async {
+    try {
+      final prefs = await _preferences;
+      // Try to find any saved playback speed
+      final allKeys = prefs.getKeys();
+      for (final key in allKeys) {
+        if (key.startsWith('playback_speed_')) {
+          final speed = prefs.getDouble(key);
+          if (speed != null && speed != 1.0) {
+            return speed;
+          }
+        }
+      }
+      return 1.0; // Default
+    } catch (e) {
+      return 1.0;
+    }
+  }
 
   /// Check if a specific achievement should be unlocked
   bool _checkAchievementCriteria(
@@ -153,6 +217,10 @@ class AchievementService {
     required bool isWeekend,
     required int booksCompleted,
     required int uniqueBooksListened,
+    required int librarySize,
+    required int reviewsCount,
+    required int favoritesCount,
+    required double playbackSpeed,
   }) {
     final target = achievement.targetValue ?? 0;
 
@@ -179,16 +247,26 @@ class AchievementService {
         if (achievement.id == 'explore_genres') {
           return uniqueBooksListened >= target;
         }
+        // Library size achievements
+        if (achievement.id.startsWith('library_')) {
+          return librarySize >= target;
+        }
         // explore_long requires finishing a long book - tracked separately
         return false;
 
       case AchievementCategory.special:
         return _checkSpecialAchievement(
           achievement.id,
+          target: target,
           totalMinutes: totalMinutes,
           todayMinutes: todayMinutes,
           currentHour: currentHour,
           isWeekend: isWeekend,
+          reviewsCount: reviewsCount,
+          favoritesCount: favoritesCount,
+          playbackSpeed: playbackSpeed,
+          booksCompleted: booksCompleted,
+          librarySize: librarySize,
         );
     }
   }
@@ -196,10 +274,16 @@ class AchievementService {
   /// Check special achievement criteria
   bool _checkSpecialAchievement(
     String id, {
+    required int target,
     required int totalMinutes,
     required int todayMinutes,
     required int currentHour,
     required bool isWeekend,
+    required int reviewsCount,
+    required int favoritesCount,
+    required double playbackSpeed,
+    required int booksCompleted,
+    required int librarySize,
   }) {
     switch (id) {
       case 'night_owl':
@@ -210,6 +294,24 @@ class AchievementService {
         return isWeekend && todayMinutes >= 120;
       case 'marathon':
         return todayMinutes >= 240;
+      // Review achievements
+      case 'review_first':
+        return reviewsCount >= 1;
+      case 'review_5':
+        return reviewsCount >= 5;
+      case 'review_10':
+        return reviewsCount >= 10;
+      // Speed achievements
+      case 'speed_demon':
+        return playbackSpeed >= 2.0;
+      case 'slow_and_steady':
+        return playbackSpeed <= 0.75 && playbackSpeed > 0;
+      // Favorites achievement
+      case 'favorite_fan':
+        return favoritesCount >= target;
+      // Completionist - all books in library completed
+      case 'completionist':
+        return librarySize > 0 && booksCompleted >= librarySize;
       default:
         return false;
     }
