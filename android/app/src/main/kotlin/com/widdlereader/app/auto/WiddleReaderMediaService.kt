@@ -401,7 +401,11 @@ class WiddleReaderMediaService : MediaBrowserServiceCompat() {
                 
                 // Validate file exists before attempting to decode
                 val file = java.io.File(filePath)
-                if (!file.exists() || !file.canRead()) {
+                val exists = file.exists()
+                val canRead = file.canRead()
+                Log.d(TAG, "🖼️ loadBitmap: Path=$filePath, Exists=$exists, CanRead=$canRead")
+
+                if (!exists || !canRead) {
                     Log.w(TAG, "⚠️ File does not exist or cannot be read: $filePath")
                     return null
                 }
@@ -413,7 +417,7 @@ class WiddleReaderMediaService : MediaBrowserServiceCompat() {
                 
                 // Validate bitmap dimensions are valid
                 if (options.outWidth <= 0 || options.outHeight <= 0) {
-                    Log.w(TAG, "⚠️ Invalid bitmap dimensions: ${options.outWidth}x${options.outHeight}")
+                    Log.w(TAG, "⚠️ Invalid bitmap dimensions: ${options.outWidth}x${options.outHeight} for $filePath")
                     return null
                 }
                 
@@ -423,6 +427,8 @@ class WiddleReaderMediaService : MediaBrowserServiceCompat() {
                 val bitmap = BitmapFactory.decodeFile(filePath, options)
                 if (bitmap == null) {
                     Log.w(TAG, "⚠️ BitmapFactory.decodeFile returned null for: $filePath")
+                } else {
+                    Log.d(TAG, "✅ Successfully loaded bitmap: ${bitmap.width}x${bitmap.height} from $filePath")
                 }
                 return bitmap
             }
@@ -441,7 +447,7 @@ class WiddleReaderMediaService : MediaBrowserServiceCompat() {
             
             // Decode bitmap with inSampleSize set
             options.inJustDecodeBounds = false
-            BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
+            return BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
         } catch (e: Exception) {
             Log.e(TAG, "Error loading bitmap: ${e.message}")
             null

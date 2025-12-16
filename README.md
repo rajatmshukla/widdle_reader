@@ -4,7 +4,7 @@
 
 **A beautiful, feature-rich audiobook player built with Flutter**
 
-[![Version](https://img.shields.io/badge/version-1.3.0-blue.svg)](https://github.com/rajatmshukla/widdle_reader)
+[![Version](https://img.shields.io/badge/version-1.4.0-blue.svg)](https://github.com/rajatmshukla/widdle_reader)
 [![Flutter](https://img.shields.io/badge/Flutter-3.7.2+-02569B.svg?logo=flutter)](https://flutter.dev)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
@@ -263,37 +263,15 @@ android/app/src/main/kotlin/com/widdlereader/app/
 - **Synchronization**: SharedPreferences + MethodChannel
 - **Resume Logic**: Automatic position restoration from storage
 
-## 🔄 Recent Updates (v1.3.0)
+## 🔄 Recent Updates (v1.4.0)
 
-### 🌟 New Features
+**A Major Aesthetic & Feature Update!**
 
-#### Book Review System
-- **Rich Text Editor**: Compose detailed reviews with bold, italic, and list formatting using `flutter_quill`.
-- **Star Ratings**: Rate audiobooks on a 5-star scale with half-star precision.
-- **Integrated Storage**: Reviews are persisted locally and linked to your audiobooks.
+*   **🏆 15+ New Achievements**: From "Session Legend" to "Speed Demon", we've greatly expanded the ways you can track your progress.
+*   **✍️ Beautiful Review Editor**: A completely redesigned, glassmorphic review experience with dynamic themes that match your book cover.
+*   **✨ Smart Sync**: Widdle Reader now automatically keeps your library in sync with your files.
 
-#### Reviews Hub
-- **Centralized Dashboard**: Access all your written reviews in one place.
-- **Search & Sort**: Quickly find reviews by book title or content.
-- **Visual Design**: Beautiful card layout displaying cover art, rating, and review snippets.
-
-#### UI Enhancements
-- **Modern Context Menu**: Replaced legacy dialogs with a sleek Material 3 Modal Bottom Sheet.
-- **Polished Visuals**: Enhanced "My Library" and "Reviews" tabs with consistent styling and empty states.
-- **Cover Art Overlays**: Improved list presentations with dynamic cover art badges.
-
-### 🐛 Critical Fixes
-
-#### Android Auto & Media
-- **Cover Art Visibility**: Fixed an issue where cover art was missing on Android Auto. We now ensure high-resolution (512x512) artwork is correctly passed to the media session, handling temporary file paths robustly.
-- **Lock Screen Controls (Android 9)**: Restored missing play/pause buttons on older Android versions by registering a `MediaButtonReceiver` in the manifest.
-- **Playback Reliability**: Improved state synchronization between the Flutter app and native Android media session.
-
-#### Stability & Data
-- **Build Configuration**: Resolved `flutter_localizations` and ProGuard configuration issues.
-- **Data Integrity**: Added fail-safe checks for review persistence and loading.
-
-See [RELEASE_NOTES_v1.3.0.md](./RELEASE_NOTES_v1.3.0.md) for full details.
+[👉 Check out the full Release Notes for details!](RELEASE_NOTES_v1.4.0.md)
 
 ## 🛣️ Roadmap
 

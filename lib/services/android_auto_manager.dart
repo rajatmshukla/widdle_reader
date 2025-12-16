@@ -1,9 +1,11 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:path_provider/path_provider.dart';
 
 import '../models/audiobook.dart';
 import '../providers/audiobook_provider.dart';
@@ -163,14 +165,34 @@ class AndroidAutoManager {
       };
       
       // Add cover art path if available (avoid base64 to prevent OOM)
-      final coverPath = await _storageService?.getCachedCoverArtPath(book.id);
+      String? coverPath = await _storageService?.getCachedCoverArtPath(book.id);
+      
+      // Fallback: If persistent cache is missing but we have bytes in memory, 
+      // write to a temporary file so Native can read it.
+      if (coverPath == null && book.coverArt != null) {
+        try {
+          final tempDir = await getTemporaryDirectory();
+          final start = DateTime.now().millisecondsSinceEpoch;
+          // Use sanitized ID for filename
+          final sanitizedId = book.id.hashCode.toString();
+          final file = File('${tempDir.path}/aa_cover_$sanitizedId.jpg');
+          
+          if (!await file.exists()) {
+             await file.writeAsBytes(book.coverArt!);
+             debugPrint("wrote temp cover for AA: ${file.path} (${book.coverArt!.length} bytes)");
+          }
+          coverPath = file.path;
+        } catch (e) {
+          debugPrint("Error creating temp cover art for AA: $e");
+        }
+      }
+
       if (coverPath != null) {
         bookData['coverArt'] = coverPath;
       } else if (book.coverArt != null) {
-        // Fallback to base64 only if file not found (but this should be rare)
-        // And maybe we should skip it to be safe? 
-        // Let's skip base64 entirely to be safe against TransactionTooLargeException
-        // bookData['coverArt'] = base64Encode(book.coverArt!);
+        // Only if file writing failed, maybe try base64 but for small images only?
+        // Risky. Let's just log warning.
+        debugPrint("Warning: Could not provide file path for cover art: ${book.title}");
       }
       
       audiobooksData.add(bookData);
