@@ -19,6 +19,10 @@ import '../widgets/add_bookmark_dialog.dart';
 import '../widgets/countdown_timer_widget.dart';
 import '../screens/bookmarks_screen.dart';
 import '../models/chapter.dart';
+import 'package:flutter/services.dart'; // Import for HapticFeedback
+import '../services/storage_service.dart'; // Import StorageServices
+
+
 
 class SimplePlayerScreen extends StatefulWidget {
   const SimplePlayerScreen({super.key});
@@ -33,12 +37,17 @@ class SimplePlayerScreen extends StatefulWidget {
 class _SimplePlayerScreenState extends State<SimplePlayerScreen>
     with WidgetsBindingObserver {
   final _audioService = SimpleAudioService();
+  final _storageService = StorageService();
+
   Audiobook? _audiobook;
   bool _isLoading = true;
   String? _errorMessage;
   bool _isSpeedControlExpanded = false;
   bool _canRetry = true;
   bool _isCarMode = false; // Add Car Mode state
+  bool _isTotalDurationMode = false; // Toggle between Chapter and Book duration
+  double? _dragValue; // For smooth seeking
+
 
   // Add ItemScrollController and ItemPositionsListener
   final ItemScrollController _itemScrollController = ItemScrollController();
@@ -119,6 +128,19 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
         throw Exception("Audiobook data is missing");
       }
       
+      // Load duration mode preference
+      try {
+        final savedMode = await _storageService.loadDurationMode(_audiobook!.id);
+        if (mounted) {
+           setState(() {
+             _isTotalDurationMode = savedMode;
+           });
+        }
+      } catch (e) {
+        debugPrint("Error loading duration mode: $e");
+      }
+      
+
       // Validate audiobook has chapters
       if (_audiobook!.chapters.isEmpty) {
         throw Exception("This audiobook has no playable chapters");
@@ -1307,10 +1329,19 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
                 }
                 cumulativePosition += position;
               } else {
-                // If index is invalid (e.g., -1), maybe just show current chapter position
+                // If index is invalid, just show current position
                 cumulativePosition = position;
               }
             }
+
+            // Determine which values to display based on mode
+            final displayPosition = _dragValue != null 
+                ? Duration(milliseconds: _dragValue!.round())
+                : (_isTotalDurationMode ? cumulativePosition : position);
+            
+            final displayDuration = _isTotalDurationMode 
+                ? totalDuration 
+                : duration;
 
             // Use responsive layout
             final isLandscape = context.isLandscape;
@@ -1318,8 +1349,8 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
 
             return Column(
               children: [
-                // Overall audiobook progress indicator
-                if (totalDuration.inMilliseconds > 0)
+                // Overall audiobook progress indicator (Only show in Chapter Mode to avoid redundancy)
+                if (!_isTotalDurationMode && totalDuration.inMilliseconds > 0)
                   Padding(
                     padding: EdgeInsets.fromLTRB(
                       16,
@@ -1346,7 +1377,7 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                "Listened",
+                                "Total Listened",
                                 style: TextStyle(
                                   fontSize: 10,
                                   color: colorScheme.onSurfaceVariant,
@@ -1374,7 +1405,9 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
                             ),
                             child: Text(
                               formatProgressPercentage(
-                                cumulativePosition.inMilliseconds / totalDuration.inMilliseconds,
+                                totalDuration.inMilliseconds > 0 
+                                  ? cumulativePosition.inMilliseconds / totalDuration.inMilliseconds
+                                  : 0.0,
                               ),
                               style: TextStyle(
                                 fontSize: 12,
@@ -1389,7 +1422,7 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
                             crossAxisAlignment: CrossAxisAlignment.end,
                             children: [
                               Text(
-                                "Remaining",
+                                "Total Remaining",
                                 style: TextStyle(
                                   fontSize: 10,
                                   color: colorScheme.onSurfaceVariant,
@@ -1412,72 +1445,154 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
                     ),
                   ),
 
+                // Active Mode Indicator (if in Book Mode)
+                if (_isTotalDurationMode)
+                   Padding(
+                    padding: const EdgeInsets.only(bottom: 8.0),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: colorScheme.tertiaryContainer,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        "Book Duration Mode",
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                          color: colorScheme.onTertiaryContainer,
+                        ),
+                      ),
+                    ),
+                  ),
+
                 // Progress bar
                 SliderTheme(
                   data: SliderThemeData(
                     trackHeight: 4,
-                    activeTrackColor: colorScheme.primary,
+                    activeTrackColor: _isTotalDurationMode ? colorScheme.tertiary : colorScheme.primary,
                     inactiveTrackColor: colorScheme.onSurface.withOpacity(0.2),
-                    thumbColor: colorScheme.primary,
+                    thumbColor: _isTotalDurationMode ? colorScheme.tertiary : colorScheme.primary,
                     thumbShape: RoundSliderThumbShape(
                       enabledThumbRadius: compactLayout ? 6 : 8,
                       elevation: 4,
                       pressedElevation: 8,
                     ),
-                    overlayColor: colorScheme.primary.withOpacity(0.2),
+                    overlayColor: (_isTotalDurationMode ? colorScheme.tertiary : colorScheme.primary).withOpacity(0.2),
                     overlayShape: RoundSliderOverlayShape(
                       overlayRadius: compactLayout ? 12 : 16,
                     ),
                   ),
                   child: Slider(
                     min: 0,
-                    max:
-                        duration.inMilliseconds > 0
-                            ? duration.inMilliseconds.toDouble()
-                            : 1.0, // Avoid division by zero if duration is 0
-                    value: position.inMilliseconds.toDouble().clamp(
+                    max: displayDuration.inMilliseconds > 0
+                            ? displayDuration.inMilliseconds.toDouble()
+                            : 1.0,
+                    value: displayPosition.inMilliseconds.toDouble().clamp(
                       0,
-                      duration.inMilliseconds > 0
-                          ? duration.inMilliseconds.toDouble()
-                          : 1.0, // Clamp value within valid range
+                      displayDuration.inMilliseconds > 0
+                          ? displayDuration.inMilliseconds.toDouble()
+                          : 1.0,
                     ),
                     onChanged: (value) {
-                      // Only seek if duration is valid
-                      if (duration.inMilliseconds > 0) {
+                      setState(() {
+                         _dragValue = value;
+                      });
+                      
+                      // For Chapter mode, we can seek immediately for responsiveness
+                      // For Book mode, we wait for end to avoid thrashing
+                      if (!_isTotalDurationMode && duration.inMilliseconds > 0) {
                         _audioService.seek(
                           Duration(milliseconds: value.round()),
                         );
                       }
                     },
                     onChangeEnd: (value) {
-                      // Save position when user manually seeks
-                      _audioService.saveCurrentPosition();
+                      if (_isTotalDurationMode) {
+                        // COMPLEX SEEK logic for Book Mode
+                        _seekToTotalPosition(Duration(milliseconds: value.round()));
+                      } else {
+                         // Ensure final seek is accurate
+                         if (duration.inMilliseconds > 0) {
+                           _audioService.seek(Duration(milliseconds: value.round()));
+                           _audioService.saveCurrentPosition();
+                         }
+                      }
+                      
+                      setState(() {
+                        _dragValue = null;
+                      });
                     },
                   ),
                 ),
 
-                // Time labels
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        formatDetailedDuration(position),
-                        style: TextStyle(
-                          fontSize: compactLayout ? 10 : 12,
-                          color: colorScheme.primary.withOpacity(0.8),
-                          fontWeight: FontWeight.w500,
+                // Time labels - Tappable to toggle mode
+                GestureDetector(
+                  onTap: () {
+                    HapticFeedback.selectionClick();
+                    setState(() {
+                      _isTotalDurationMode = !_isTotalDurationMode;
+                    });
+                    
+                    // Save preference
+                    if (_audiobook != null) {
+                      _storageService.saveDurationMode(_audiobook!.id, _isTotalDurationMode);
+                    }
+                    
+                    ScaffoldMessenger.of(context).clearSnackBars();
+
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(
+                          _isTotalDurationMode 
+                            ? "Switched to Book Duration" 
+                            : "Switched to Chapter Duration",
+                          style: TextStyle(color: colorScheme.onSurface),
                         ),
+                        duration: const Duration(seconds: 1),
+                        behavior: SnackBarBehavior.floating,
+                        backgroundColor: colorScheme.surfaceContainerHighest,
                       ),
-                      Text(
-                        formatDetailedDuration(duration),
-                        style: TextStyle(
-                          fontSize: compactLayout ? 10 : 12,
-                          color: colorScheme.onSurface.withOpacity(0.7),
-                        ),
+                    );
+                  },
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Container(
+                      color: Colors.transparent, // Hit test target
+                      padding: const EdgeInsets.symmetric(vertical: 8), // Touch area
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            formatDetailedDuration(displayPosition),
+                            style: TextStyle(
+                              fontSize: compactLayout ? 10 : 12,
+                              color: (_isTotalDurationMode ? colorScheme.tertiary : colorScheme.primary).withOpacity(0.8),
+                              fontWeight: FontWeight.w500,
+                              fontFeatures: const [FontFeature.tabularFigures()],
+                            ),
+                          ),
+                          Row(
+                            children: [
+                                Icon(
+                                  Icons.swap_horiz_rounded, 
+                                  size: 14, 
+                                  color: colorScheme.onSurfaceVariant.withOpacity(0.5)
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  formatDetailedDuration(displayDuration),
+                                  style: TextStyle(
+                                    fontSize: compactLayout ? 10 : 12,
+                                    color: colorScheme.onSurface.withOpacity(0.7),
+                                    fontFeatures: const [FontFeature.tabularFigures()],
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ],
                       ),
-                    ],
+                    ),
                   ),
                 ),
               ],
@@ -1487,6 +1602,59 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
       },
     );
   }
+
+  // Helper method to seek within the whole book
+  Future<void> _seekToTotalPosition(Duration targetTotalPos) async {
+    if (_audiobook == null) return;
+    
+    Duration accumulatedDuration = Duration.zero;
+    
+    for (int i = 0; i < _audiobook!.chapters.length; i++) {
+       final chapter = _audiobook!.chapters[i];
+       final chapterDuration = chapter.duration ?? Duration.zero;
+       
+       // Check if target is in this chapter
+       if (targetTotalPos <= accumulatedDuration + chapterDuration) {
+         // Found the chapter!
+         final relativePosition = targetTotalPos - accumulatedDuration;
+         
+         debugPrint("Seeking to Book Pos: $targetTotalPos -> Chapter ${i + 1}, Pos: $relativePosition");
+         
+         // If we are already in this chapter, just seek
+         if (i == _audioService.currentChapterIndex) {
+            _audioService.seek(relativePosition);
+            _audioService.saveCurrentPosition();
+         } else {
+            // Load new chapter
+            final wasPlaying = _audioService.isPlaying;
+            await _audioService.loadChapter(
+               i,
+               startPosition: relativePosition,
+            );
+            
+            // Resume if we were playing
+            if (wasPlaying) {
+               _audioService.play();
+            }
+         }
+         return;
+       }
+       
+       accumulatedDuration += chapterDuration;
+    }
+    
+    // If we went past the end (e.g. slight math error or rounding), go to last chapter end
+    if (_audiobook!.chapters.isNotEmpty) {
+       final lastIdx = _audiobook!.chapters.length - 1;
+       final lastChapter = _audiobook!.chapters[lastIdx];
+       // Go to slightly before end of last chapter
+       await _audioService.loadChapter(
+          lastIdx, 
+          startPosition: (lastChapter.duration ?? const Duration(seconds: 1)) - const Duration(seconds: 1)
+       );
+    }
+  }
+
 
   Widget _buildSpeedControl(ColorScheme colorScheme) {
     return StreamBuilder<double>(

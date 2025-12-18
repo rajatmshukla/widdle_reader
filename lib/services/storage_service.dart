@@ -48,6 +48,8 @@ class StorageService {
   static const dataVersionKey = 'data_version';
   static const cacheSyncTimestampKey = 'cache_sync_timestamp';
   static const playbackSpeedPrefix = 'playback_speed_';
+  static const durationModePrefix = 'duration_mode_'; // New key for duration mode preference
+
   
   // Tag-related keys (from tag provider)
   static const userTagsKey = 'user_tags';
@@ -1475,6 +1477,32 @@ class StorageService {
       debugPrint("Error saving progress cache for $audiobookId: $e");
     }
   }
+
+  /// Saves the duration mode preference for a specific audiobook
+  Future<void> saveDurationMode(String audiobookId, bool isTotalMode) async {
+    try {
+      final prefs = await _preferences;
+      final key = '$durationModePrefix$audiobookId';
+      await prefs.setBool(key, isTotalMode);
+      debugPrint("Saved duration mode for $audiobookId: $isTotalMode");
+    } catch (e) {
+      debugPrint("Error saving duration mode: $e");
+    }
+  }
+
+  /// Loads the duration mode preference for a specific audiobook
+  Future<bool> loadDurationMode(String audiobookId) async {
+    try {
+      final prefs = await _preferences;
+      final key = '$durationModePrefix$audiobookId';
+      // Default to false (Chapter Mode) if not found
+      return prefs.getBool(key) ?? false;
+    } catch (e) {
+      debugPrint("Error loading duration mode: $e");
+      return false;
+    }
+  }
+
 
   /// Loads a cached progress percentage if available
   Future<double?> loadProgressCache(String audiobookId) async {
