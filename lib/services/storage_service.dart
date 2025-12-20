@@ -86,6 +86,9 @@ class StorageService {
   bool _playbackSpeedLoaded = false;
   List<String> _foldersCache = [];
   
+  // EQ Settings Cache
+  final Map<String, Map<String, dynamic>> _eqSettingsCache = {};
+  
   // FILE TRACKING CACHES 🐛
   Map<String, Map<String, dynamic>> _fileTrackingCache = {}; // path -> metadata
   Map<String, String> _pathMigrationsCache = {}; // oldPath -> newPath
@@ -731,6 +734,157 @@ class StorageService {
       debugPrint("Error loading view mode preference: $e");
       return false;
     }
+  }
+
+  // Notifications
+  static const String _notificationsEnabledKey = 'notifications_enabled';
+
+  Future<bool> getNotificationsEnabled() async {
+    final prefs = await _preferences;
+    return prefs.getBool(_notificationsEnabledKey) ?? true;
+  }
+
+  Future<void> setNotificationsEnabled(bool enabled) async {
+    final prefs = await _preferences;
+    await prefs.setBool(_notificationsEnabledKey, enabled);
+  }
+
+  // Equalizer Settings (GLOBAL - kept for backwards compat, but deprecated)
+  static const String _eqEnabledKey = 'eq_enabled';
+  static const String _eqBoostKey = 'eq_boost';
+  static const String _eqBandsKey = 'eq_bands_gain';
+
+  // Per-Book Equalizer Settings
+  static const String _eqBookPrefix = 'eq_book_';
+
+  Future<bool> getEqualizerEnabled({String? audiobookId}) async {
+    if (audiobookId != null && _eqSettingsCache.containsKey(audiobookId)) {
+      return _eqSettingsCache[audiobookId]!['enabled'] as bool? ?? false;
+    }
+    final prefs = await _preferences;
+    if (audiobookId != null) {
+      return prefs.getBool('${_eqBookPrefix}${audiobookId}_enabled') ?? false;
+    }
+    return prefs.getBool(_eqEnabledKey) ?? false;
+  }
+
+  Future<void> saveEqualizerEnabled(bool enabled, {String? audiobookId}) async {
+    final prefs = await _preferences;
+    if (audiobookId != null) {
+      if (!_eqSettingsCache.containsKey(audiobookId)) {
+        await getBookEqualizerSettings(audiobookId); // Load full set first to ensure we don't partial-overwrite cache
+      }
+      _eqSettingsCache[audiobookId]!['enabled'] = enabled;
+      await prefs.setBool('${_eqBookPrefix}${audiobookId}_enabled', enabled);
+    } else {
+      await prefs.setBool(_eqEnabledKey, enabled);
+    }
+  }
+
+  Future<double> getVolumeBoost({String? audiobookId}) async {
+    if (audiobookId != null && _eqSettingsCache.containsKey(audiobookId)) {
+      return _eqSettingsCache[audiobookId]!['boost'] as double? ?? 0.0;
+    }
+    final prefs = await _preferences;
+    if (audiobookId != null) {
+      return prefs.getDouble('${_eqBookPrefix}${audiobookId}_boost') ?? 0.0;
+    }
+    return prefs.getDouble(_eqBoostKey) ?? 0.0;
+  }
+
+  Future<void> saveVolumeBoost(double boost, {String? audiobookId}) async {
+    final prefs = await _preferences;
+    if (audiobookId != null) {
+      if (!_eqSettingsCache.containsKey(audiobookId)) {
+        await getBookEqualizerSettings(audiobookId);
+      }
+      _eqSettingsCache[audiobookId]!['boost'] = boost;
+      await prefs.setDouble('${_eqBookPrefix}${audiobookId}_boost', boost);
+    } else {
+      await prefs.setDouble(_eqBoostKey, boost);
+    }
+  }
+
+  Future<void> saveEqualizerBandGain(int bandIndex, double gain, {String? audiobookId}) async {
+    final prefs = await _preferences;
+    if (audiobookId != null) {
+      if (!_eqSettingsCache.containsKey(audiobookId)) {
+        await getBookEqualizerSettings(audiobookId);
+      }
+      final bands = _eqSettingsCache[audiobookId]!['bands'] as Map<int, double>;
+      bands[bandIndex] = gain;
+      await prefs.setString('${_eqBookPrefix}${audiobookId}_bands', jsonEncode(bands.map((k, v) => MapEntry(k.toString(), v))));
+    } else {
+      final jsonString = prefs.getString(_eqBandsKey);
+      Map<String, dynamic> bands = {};
+      if (jsonString != null) {
+        try {
+          bands = jsonDecode(jsonString) as Map<String, dynamic>;
+        } catch (e) {}
+      }
+      bands[bandIndex.toString()] = gain;
+      await prefs.setString(_eqBandsKey, jsonEncode(bands));
+    }
+  }
+  
+  Future<Map<int, double>> getEqualizerBandGains({String? audiobookId}) async {
+    if (audiobookId != null && _eqSettingsCache.containsKey(audiobookId)) {
+      return _eqSettingsCache[audiobookId]!['bands'] as Map<int, double>? ?? {};
+    }
+    final prefs = await _preferences;
+    final key = audiobookId != null 
+        ? '${_eqBookPrefix}${audiobookId}_bands' 
+        : _eqBandsKey;
+    final jsonString = prefs.getString(key);
+    if (jsonString == null) return {};
+    
+    try {
+      final jsonMap = jsonDecode(jsonString) as Map<String, dynamic>;
+      final result = jsonMap.map((k, v) => MapEntry(int.parse(k), (v as num).toDouble())); 
+      
+      // If we loaded specifically for a book, we SHOULD NOT populate the whole cache here
+      // because getBookEqualizerSettings handles that more safely. 
+      // But we can return the result.
+      return result;
+    } catch (e) {
+      return {};
+    }
+  }
+
+  /// Save complete EQ settings for a book (for efficiency)
+  Future<void> saveBookEqualizerSettings(String audiobookId, {
+    required bool enabled,
+    required double boost,
+    required Map<int, double> bandGains,
+  }) async {
+    _eqSettingsCache[audiobookId] = {
+      'enabled': enabled,
+      'boost': boost,
+      'bands': bandGains,
+    };
+    
+    final prefs = await _preferences;
+    await prefs.setBool('${_eqBookPrefix}${audiobookId}_enabled', enabled);
+    await prefs.setDouble('${_eqBookPrefix}${audiobookId}_boost', boost);
+    final bandsJson = bandGains.map((k, v) => MapEntry(k.toString(), v));
+    await prefs.setString('${_eqBookPrefix}${audiobookId}_bands', jsonEncode(bandsJson));
+  }
+
+  /// Load complete EQ settings for a book
+  Future<Map<String, dynamic>> getBookEqualizerSettings(String audiobookId) async {
+    if (_eqSettingsCache.containsKey(audiobookId)) {
+      return _eqSettingsCache[audiobookId]!;
+    }
+    
+    final prefs = await _preferences;
+    final settings = {
+      'enabled': prefs.getBool('${_eqBookPrefix}${audiobookId}_enabled') ?? false,
+      'boost': prefs.getDouble('${_eqBookPrefix}${audiobookId}_boost') ?? 0.0,
+      'bands': await getEqualizerBandGains(audiobookId: audiobookId),
+    };
+    
+    _eqSettingsCache[audiobookId] = settings;
+    return settings;
   }
 
   /// Loads list of audiobook folder paths from shared preferences
@@ -1906,6 +2060,19 @@ class StorageService {
         allData['data']['path_migrations'] = pathMigrations;
       }
       
+      // ===== 19. EQUALIZER & VOLUME BOOST (NEW) =====
+      final eqData = <String, dynamic>{};
+      for (final key in prefs.getKeys()) {
+        if ((key.startsWith(_eqBookPrefix) || key.startsWith('eq_')) && !key.endsWith(backupSuffix)) {
+          final value = prefs.get(key);
+          if (value != null) {
+            eqData[key] = value;
+          }
+        }
+      }
+      allData['data']['equalizer'] = eqData;
+      debugPrint('📦 Exported ${eqData.length} equalizer settings');
+      
       // Write to a file in the app's documents directory
       final dir = await getApplicationDocumentsDirectory();
       final now = DateTime.now().toIso8601String().replaceAll(':', '_');
@@ -2097,6 +2264,25 @@ class StorageService {
         await prefs.setString('path_migrations', data['path_migrations'].toString());
       }
       
+      // ===== 19. EQUALIZER & VOLUME BOOST (NEW) =====
+      if (data['equalizer'] != null) {
+        final eqData = data['equalizer'] as Map<String, dynamic>;
+        for (final entry in eqData.entries) {
+          final key = entry.key;
+          final value = entry.value;
+          if (value is bool) {
+            await prefs.setBool(key, value);
+          } else if (value is double) {
+            await prefs.setDouble(key, value);
+          } else if (value is int) {
+            await prefs.setInt(key, value);
+          } else if (value is String) {
+            await prefs.setString(key, value);
+          }
+        }
+        debugPrint('📦 Imported ${eqData.length} equalizer settings');
+      }
+      
       // Clear all caches to force reload from imported data
       _progressCache.clear();
       _positionCache.clear();
@@ -2105,6 +2291,7 @@ class StorageService {
       _customTitlesCache.clear();
       _foldersCache.clear();
       _playbackSpeedCache.clear();
+      _eqSettingsCache.clear();
       
       // Clear all dirty flags
       _dirtyProgressCache.clear();

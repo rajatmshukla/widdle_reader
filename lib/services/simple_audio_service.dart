@@ -21,8 +21,10 @@ class SimpleAudioService with WidgetsBindingObserver {
   // Method channel for Android Auto MediaSession updates
   static const _audioBridgeChannel = MethodChannel('com.widdlereader.app/audio_bridge');
 
-  // Internal player
-  final AudioPlayer _player = AudioPlayer();
+  // Internal player & effects
+  late final AudioPlayer _player;
+  AndroidEqualizer? _equalizer;
+  AndroidLoudnessEnhancer? _loudnessEnhancer;
 
   // Audio session
   AudioSession? _audioSession;
@@ -72,6 +74,20 @@ class SimpleAudioService with WidgetsBindingObserver {
 
   // Private constructor
   SimpleAudioService._internal() {
+    // Initialize audio pipeline (Android only effects)
+    // Note: On iOS these will simply be ignored or need alternative implementation
+    _equalizer = AndroidEqualizer();
+    _loudnessEnhancer = AndroidLoudnessEnhancer();
+    
+    _player = AudioPlayer(
+      audioPipeline: AudioPipeline(
+        androidAudioEffects: [
+          if (_loudnessEnhancer != null) _loudnessEnhancer!,
+          if (_equalizer != null) _equalizer!,
+        ],
+      ),
+    );
+
     WidgetsBinding.instance.addObserver(this);
     _initStreams();
     _initAudioSession();
@@ -126,6 +142,7 @@ class SimpleAudioService with WidgetsBindingObserver {
     // Reset restoring flag after a short delay to ensure stop() events have processed
     Future.delayed(const Duration(milliseconds: 1000), () {
       _isRestoring = false;
+      _lastAppliedBookId = null; // Clear EQ cache to force re-apply after restore
       debugPrint("Restore flag cleared - ready for new playback");
     });
   }
@@ -289,6 +306,7 @@ class SimpleAudioService with WidgetsBindingObserver {
       });
 
       debugPrint("Audio session initialized successfully");
+      // EQ settings now restored per-book in loadAudiobook -> applyBookEqualizerSettings
     } catch (e) {
       debugPrint("Error initializing audio session: $e");
     }
@@ -397,6 +415,9 @@ class SimpleAudioService with WidgetsBindingObserver {
 
       await loadChapter(_currentChapterIndex, startPosition: startPosition);
       debugPrint("Loaded audiobook: ${audiobook.title}");
+      
+      // Apply per-book EQ settings
+      await applyBookEqualizerSettings();
 
       // Only auto-play if explicitly requested
       if (autoPlay) {
@@ -421,6 +442,9 @@ class SimpleAudioService with WidgetsBindingObserver {
     }
   }
 
+  // Tracking generation for robust EQ re-enabling during rapid chapter switches
+  int _eqLoadGeneration = 0;
+
   // Load a chapter by index
   Future<void> loadChapter(int index, {Duration? startPosition}) async {
     if (_currentAudiobook == null ||
@@ -428,6 +452,10 @@ class SimpleAudioService with WidgetsBindingObserver {
         index >= _currentAudiobook!.chapters.length) {
       throw Exception("Invalid chapter index: $index");
     }
+
+    // Increment generation to cancel any previous pending re-enables
+    _eqLoadGeneration++;
+    final currentGeneration = _eqLoadGeneration;
 
     try {
       final chapter = _currentAudiobook!.chapters[index];
@@ -494,7 +522,33 @@ class SimpleAudioService with WidgetsBindingObserver {
           audioSource = AudioSource.uri(Uri.file(chapter.sourcePath), tag: mediaItem);
         }
 
+        // IMPROVEMENT: Robustness fix for EQ muting/state issues.
+        final intendedEqEnabled = await _storageService.getEqualizerEnabled(audiobookId: _currentAudiobook!.id);
+        final intendedBoost = await _storageService.getVolumeBoost(audiobookId: _currentAudiobook!.id);
+        final shouldApplyEffects = intendedEqEnabled || intendedBoost > 0.01;
+
+        // ONLY disable briefly if it's a new book to avoid hardware glitches.
+        // For chapter skips in the same book, cycling Enable can cause playback to pause.
+        final isNewBook = _lastAppliedBookId != _currentAudiobook!.id;
+        if (shouldApplyEffects && isNewBook) {
+          debugPrint('📊 New book detected, briefly cycling EQ for hardware reset');
+          await _equalizer?.setEnabled(false);
+          await _loudnessEnhancer?.setEnabled(false);
+        }
+
         await _player.setAudioSource(audioSource, initialPosition: startPosition);
+        
+        // Re-enable and restore ALL parameters - Await this to ensure it finishes before we return
+        // and potentially call play() from the UI.
+        if (shouldApplyEffects) {
+          // A small delay is still needed for some Android DSPs to recognize the new session
+          await Future.delayed(const Duration(milliseconds: 100));
+          
+          if (_eqLoadGeneration == currentGeneration) {
+            debugPrint('📊 Restoring full EQ state (Chapter Skip)');
+            await applyBookEqualizerSettings(force: isNewBook);
+          }
+        }
       } catch (audioSourceError) {
         if (audioSourceError.toString().contains('FileSystemException')) {
           throw Exception("Cannot access audio file. Check file permissions.");
@@ -511,6 +565,12 @@ class SimpleAudioService with WidgetsBindingObserver {
       _currentChapterIndex = index;
       _currentChapterSubject.add(index);
       
+      // OPTIMIZATION: Skip non-essential updates during rapid skips
+      if (_eqLoadGeneration != currentGeneration) {
+        debugPrint("📊 Load generation $currentGeneration superseded before speed/metadata. Skipping.");
+        return;
+      }
+
       // Restore playback speed for this book
       final savedSpeed = await _storageService.getPlaybackSpeed(_currentAudiobook!.id);
       final speedToUse = savedSpeed ?? 1.0;
@@ -529,8 +589,11 @@ class SimpleAudioService with WidgetsBindingObserver {
         }
       }
       
-      await _updateMediaSessionMetadata(overrideArtUri: artUriString);
-      await _updateMediaSessionPlaybackState();
+      // FINAL CHECK before heavy metadata update
+      if (_eqLoadGeneration == currentGeneration) {
+        await _updateMediaSessionMetadata(overrideArtUri: artUriString);
+        await _updateMediaSessionPlaybackState();
+      }
     } catch (e) {
       debugPrint("Error loading chapter $index: $e");
       
@@ -726,6 +789,12 @@ class SimpleAudioService with WidgetsBindingObserver {
         await _player.play();
         debugPrint('Playback started successfully');
         
+        // Safety sync for EQ on play, especially after app relaunch
+        if (_lastAppliedBookId != _currentAudiobook?.id) {
+          debugPrint('📊 EQ safety sync on play...');
+          applyBookEqualizerSettings(force: true);
+        }
+        
         // NOTE: Stats tracking and AutoSave are now handled in _initStreams
         // by listening to _player.playingStream. This ensures notifications work too.
         
@@ -778,10 +847,9 @@ class SimpleAudioService with WidgetsBindingObserver {
 
     final nextIndex = _currentChapterIndex + 1;
     if (nextIndex >= (_currentAudiobook?.chapters.length ?? 0)) {
-      debugPrint('skipToNext: Already at last chapter, no action taken');
-      return;
+      debugPrint('skipToPrevious: Already at start, restarting chapter');
+      await seek(Duration.zero);
     }
-
     await loadChapter(nextIndex);
     _notifyPlaybackChanged(nativeUpdate: true);
   }
@@ -899,4 +967,162 @@ class SimpleAudioService with WidgetsBindingObserver {
     await _updateMediaSessionMetadata();
     await _updateMediaSessionPlaybackState();
   }
+
+  // ===========================
+  // EQUALIZER & AUDIO EFFECTS (Per-Book)
+  // ===========================
+
+  /// Get current audiobook ID for per-book EQ
+  String? get _currentEqBookId => _currentAudiobook?.id;
+
+  Future<void> setEqualizerEnabled(bool enabled) async {
+    if (_equalizer == null) return;
+    await _equalizer!.setEnabled(enabled);
+    await _storageService.saveEqualizerEnabled(enabled, audiobookId: _currentEqBookId);
+    
+    // Force a full re-apply to ensure bands and boost are in sync with settings
+    if (enabled) {
+      await applyBookEqualizerSettings(force: true);
+    }
+  }
+  
+  Future<bool> getEqualizerEnabled() async {
+    if (_currentAudiobook != null) {
+      return await _storageService.getEqualizerEnabled(audiobookId: _currentAudiobook!.id);
+    }
+    if (_equalizer == null) return false;
+    return await _equalizer!.enabled;
+  }
+
+  Future<List<AndroidEqualizerBand>> getEqualizerBands() async {
+    if (_equalizer == null) return [];
+    final parameters = await _equalizer!.parameters;
+    return parameters.bands;
+  }
+
+  Future<void> setBandGain(int bandIndex, double gain) async {
+    if (_equalizer == null) return;
+    try {
+      final parameters = await _equalizer!.parameters;
+      final bands = parameters.bands;
+      if (bandIndex >= 0 && bandIndex < bands.length) {
+        await bands[bandIndex].setGain(gain);
+        await _storageService.saveEqualizerBandGain(bandIndex, gain, audiobookId: _currentEqBookId);
+      }
+    } catch (e) {
+      debugPrint('Error setting band gain: $e');
+    }
+  }
+
+  /// Set generic volume boost (in decibels)
+  Future<void> setVolumeBoost(double db) async {
+    if (_loudnessEnhancer == null) return;
+    
+    final isEqEnabled = await getEqualizerEnabled();
+    
+    // Enable if boosting AND master switch is on, disable otherwise
+    if (db > 0.01 && isEqEnabled) {
+      if (!await _loudnessEnhancer!.enabled) {
+         await _loudnessEnhancer!.setEnabled(true);
+      }
+      await _loudnessEnhancer!.setTargetGain(db);
+    } else {
+      await _loudnessEnhancer!.setEnabled(false);
+      await _loudnessEnhancer!.setTargetGain(0.0);
+    }
+    
+    await _storageService.saveVolumeBoost(db, audiobookId: _currentEqBookId);
+  }
+  
+  Future<double> getVolumeBoost() async {
+    return await _storageService.getVolumeBoost(audiobookId: _currentEqBookId);
+  }
+
+  // Per-book EQ state cache to avoid redundant hardware calls
+  String? _lastAppliedBookId;
+  bool _isApplyingEq = false;
+
+  /// Apply saved EQ settings for the current audiobook
+  /// Extremely robust implementation to prevent mute/glitch on relaunch or transition
+  Future<void> applyBookEqualizerSettings({bool force = false}) async {
+    if (_currentAudiobook == null || _equalizer == null) return;
+    
+    final bookId = _currentAudiobook!.id;
+    
+    // Avoid redundant applications unless forced
+    if (!force && _lastAppliedBookId == bookId && !_isApplyingEq) {
+      return;
+    }
+
+    // Mutex to prevent concurrent EQ applications which can cause muting/crashes
+    if (_isApplyingEq) {
+      debugPrint('📊 EQ application in progress for $bookId, skipping redundant call');
+      return;
+    }
+    
+    _isApplyingEq = true;
+    
+    try {
+      final settings = await _storageService.getBookEqualizerSettings(bookId);
+      
+      final enabled = settings['enabled'] as bool;
+      final boost = settings['boost'] as double;
+      final bandGains = settings['bands'] as Map<int, double>;
+      
+      debugPrint('📊 [EQ SYNC] Book: $bookId | Enable: $enabled | Boost: $boost | CustomBands: ${bandGains.length}');
+
+      // 1. Prepare Hardware Parameters
+      final parameters = await _equalizer!.parameters;
+      final bands = parameters.bands;
+
+      // 2. ALWAYS reset all bands to 0.0 first to avoid ghost settings from other sessions/books
+      // We do this even if enabled is false, just to be clean.
+      for (var i = 0; i < bands.length; i++) {
+        await bands[i].setGain(0.0);
+      }
+
+      // 3. Apply Saved Band Gains
+      if (bandGains.isNotEmpty) {
+        for (var i = 0; i < bands.length; i++) {
+          if (bandGains.containsKey(i)) {
+            final gain = bandGains[i]!;
+            // Safety clamp
+            await bands[i].setGain(gain.clamp(-15.0, 15.0));
+          }
+        }
+      }
+
+      // 4. Handle Volume Boost (Loudness Enhancer)
+      if (_loudnessEnhancer != null) {
+        // Apply target gain before enabling to avoid pop/mute
+        await _loudnessEnhancer!.setTargetGain(boost.clamp(0.0, 20.0));
+        
+        if (boost > 0.01 && enabled) {
+          await _loudnessEnhancer!.setEnabled(true);
+        } else {
+          await _loudnessEnhancer!.setEnabled(false);
+        }
+      }
+      
+      // 5. SET ENABLED STATE LAST
+      // Only toggle if necessary to avoid unintended pauses/glitches
+      final currentEqEnabled = await _equalizer!.enabled;
+      if (currentEqEnabled != enabled || force) {
+        debugPrint('📊 [EQ SYNC] Setting hardware enabled: $enabled');
+        await _equalizer!.setEnabled(enabled);
+      }
+      
+      _lastAppliedBookId = bookId;
+      debugPrint('📊 [EQ SYNC] ✅ Success for $bookId');
+    } catch (e) {
+      debugPrint('📊 [EQ SYNC] ❌ Error: $e');
+      // On error, let's try to at least disable it to recover audio
+      try {
+        await _equalizer?.setEnabled(false);
+      } catch (_) {}
+    } finally {
+      _isApplyingEq = false;
+    }
+  }
+
 }

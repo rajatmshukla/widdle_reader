@@ -16,6 +16,8 @@ import '../services/storage_service.dart';
 import '../providers/audiobook_provider.dart';
 import '../providers/tag_provider.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../services/notification_service.dart';
+import '../services/engagement_manager.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
@@ -25,6 +27,7 @@ class SettingsScreen extends ConsumerStatefulWidget {
 }
 
 class _SettingsScreenState extends ConsumerState<SettingsScreen> with SingleTickerProviderStateMixin {
+  final StorageService _storageService = StorageService();
   Color _currentColor = Colors.blue;
   bool _showColorPicker = false;
   late AnimationController _animationController;
@@ -203,7 +206,22 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> with SingleTick
               ),
           ],
 
-          // Data Management section moved up
+          _buildSectionWithDelay(
+            'Notifications',
+            Icons.notifications_active_outlined,
+            textTheme,
+            colorScheme,
+            delay: 220,
+          ),
+          const SizedBox(height: 12),
+          _buildAnimatedCard(
+            _buildNotificationCard(textTheme, colorScheme),
+            delay: 240,
+          ),
+
+
+
+  // Data Management section moved up
           _buildSectionWithDelay(
             'Data Management',
             Icons.storage_rounded,
@@ -310,6 +328,20 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> with SingleTick
                   _buildAnimatedCard(
                     _buildDataManagementCard(colorScheme, textTheme),
                     delay: 125,
+                  ),
+
+                  // Notifications section for landscape
+                  _buildSectionWithDelay(
+                    'Notifications',
+                    Icons.notifications_active_outlined,
+                    textTheme,
+                    colorScheme,
+                    delay: 150,
+                  ),
+                  const SizedBox(height: 12),
+                  _buildAnimatedCard(
+                    _buildNotificationCard(textTheme, colorScheme),
+                    delay: 165,
                   ),
 
                   // About moved to the end
@@ -797,7 +829,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> with SingleTick
               child: AppLogo(size: isLandscape ? 60 : 80),
             ),
             SizedBox(height: isLandscape ? 12 : 16),
-
+            
             // App name
             Text(
               'Widdle Reader',
@@ -830,6 +862,66 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> with SingleTick
           ],
         ),
       ),
+    );
+  }
+
+
+  // Notifications UI
+  Widget _buildNotificationCard(
+    TextTheme textTheme,
+    ColorScheme colorScheme,
+  ) {
+    return FutureBuilder<bool>(
+      future: _storageService.getNotificationsEnabled(),
+      builder: (context, snapshot) {
+        final enabled = snapshot.data ?? true;
+        
+        return Card(
+          margin: const EdgeInsets.only(bottom: 16),
+          elevation: 0,
+          color: colorScheme.surfaceContainerLow,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          child: Padding(
+            padding: const EdgeInsets.all(0),
+            child: SwitchListTile(
+              contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+              title: Text(
+                'Enable Notifications',
+                style: textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              subtitle: Text(
+                'Get reminders and achievement alerts',
+                style: textTheme.bodySmall?.copyWith(
+                  color: colorScheme.onSurfaceVariant,
+                ),
+              ),
+              value: enabled,
+              onChanged: (value) async {
+                await _storageService.setNotificationsEnabled(value);
+                // Update local state to reflect change immediately
+                setState(() {});
+                
+                if (value) {
+                  // Re-schedule if enabled
+                  final engagementManager = EngagementManager();
+                  await engagementManager.initialize();
+                } else {
+                  // Cancel if disabled
+                  final notificationService = NotificationService();
+                  await notificationService.cancelAll();
+                }
+              },
+              secondary: Icon(
+                enabled ? Icons.notifications_active_rounded : Icons.notifications_off_outlined,
+                color: enabled ? colorScheme.primary : colorScheme.outline,
+                size: 28,
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 

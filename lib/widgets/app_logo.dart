@@ -32,25 +32,35 @@ class AppLogo extends StatelessWidget {
         Container(
           width: size,
           height: size,
-          padding: EdgeInsets.all(size * 0.06),
           decoration: BoxDecoration(
-            color: secondaryColor.withOpacity(0.15),
             borderRadius: BorderRadius.circular(size * 0.3),
             boxShadow: [
               BoxShadow(
-                color: seedColor.withOpacity(0.3),
-                blurRadius: size * 0.1,
-                offset: Offset(0, size * 0.05),
+                color: seedColor.withOpacity(0.2),
+                blurRadius: size * 0.08,
+                offset: Offset(0, size * 0.04),
               ),
             ],
           ),
-          child: CustomPaint(
-            size: Size(size * 0.88, size * 0.88),
-            painter: SmileyBookHeadphonesPainter(
-              primaryColor: primaryColor,
-              secondaryColor: secondaryColor,
-              accentColor: colorScheme.surface,
-              faceColor: colorScheme.onSurface,
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(size * 0.3),
+            child: Image.asset(
+              'assets/icons/app_logo_holidays.png',
+              width: size,
+              height: size,
+              fit: BoxFit.contain,
+              errorBuilder: (context, error, stackTrace) {
+                // Fallback to custom painter if image fails to load
+                return CustomPaint(
+                  size: Size(size * 0.88, size * 0.88),
+                  painter: SmileyBookHeadphonesPainter(
+                    primaryColor: primaryColor,
+                    secondaryColor: secondaryColor,
+                    accentColor: colorScheme.surface,
+                    faceColor: colorScheme.onSurface,
+                  ),
+                );
+              },
             ),
           ),
         ),

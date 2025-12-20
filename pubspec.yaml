@@ -66,15 +66,16 @@ dependencies:
   intl: any
   flutter_rating_bar: ^4.0.1
   flutter_quill: any
+  flutter_local_notifications: ^19.5.0
+  timezone: ^0.10.1
 
 # Add this section at the root level of your pubspec.yaml
 flutter_launcher_icons:
   android: true
   ios: true
-  image_path_android: "assets/icons/app_logo.png"  # For PNG
-  image_path_ios: "assets/icons/app_logo.png"      # For PNG
-  # OR for SVG (which is better for scaling)
-  image_path: "assets/icons/app_logo.svg"          # If using SVG
+  image_path_android: "assets/icons/app_logo_holidays.png"  # For PNG
+  image_path_ios: "assets/icons/app_logo_holidays.png"      # For PNG
+  image_path: "assets/icons/app_logo_holidays.png"
   adaptive_icon_background: "#FFFFFF"              # Background color for Android adaptive icons
   remove_alpha_ios: true                           # iOS doesn't support transparency in app icons
   
@@ -99,8 +100,8 @@ flutter:
   # the material Icons class.
   uses-material-design: true
   assets:
-    - assets/icons/app_logo.svg
     - assets/icons/app_logo.png
+    - assets/icons/app_logo_holidays.png
     - assets/images/
     - assets/images/us_flag.svg
   # To add assets to your application, add an assets section, like this:
