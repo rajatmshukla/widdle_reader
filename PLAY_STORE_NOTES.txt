@@ -1,0 +1,8 @@
+What's New in Widdle Reader 1.6.0:
+
+🎚️ Pro Audio Effects: 5-band Equalizer & Volume Boost for perfect sound.
+🎨 EQ Presets: One-tap profiles (Vocal Boost, Podcast, etc.) with active highlighting.
+🔢 Natural Sorting: Chapters now follow logical numeric order (e.g., 2 comes before 10).
+📁 Better Discovery: Support for scanning folders containing .nomedia files (requires All Files Access).
+🔇 Seamless Skips: Fixed audio pauses during chapter transitions.
+🎄 Festive app logo update!

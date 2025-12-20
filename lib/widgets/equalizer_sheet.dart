@@ -22,6 +22,7 @@ class _EqualizerSheetState extends State<EqualizerSheet> {
   
   // Local state for sliders to be responsive
   List<double> _bandGains = []; // Matches _bands length
+  String? _activePresetName;
 
   final Map<String, List<double>> _presets5Band = {
     'Flat': [0, 0, 0, 0, 0],
@@ -63,6 +64,7 @@ class _EqualizerSheetState extends State<EqualizerSheet> {
           });
           
           _isLoading = false;
+          _detectActivePreset();
         });
       }
     } catch (e) {
@@ -150,7 +152,14 @@ class _EqualizerSheetState extends State<EqualizerSheet> {
                   padding: const EdgeInsets.only(right: 8),
                   child: FilterChip(
                     label: Text(name),
-                    selected: false, // Could track selected preset logic
+                    selected: _activePresetName == name,
+                    selectedColor: theme.colorScheme.primaryContainer,
+                    labelStyle: TextStyle(
+                      color: _activePresetName == name 
+                        ? theme.colorScheme.onPrimaryContainer 
+                        : theme.colorScheme.onSurface,
+                      fontWeight: _activePresetName == name ? FontWeight.bold : FontWeight.normal,
+                    ),
                     onSelected: _isEnabled ? (_) => _applyPreset(name) : null,
                   ),
                 );
@@ -193,7 +202,10 @@ class _EqualizerSheetState extends State<EqualizerSheet> {
                               min: -10.0,
                               max: 10.0,
                               onChanged: _isEnabled ? (val) {
-                                setState(() => _bandGains[index] = val);
+                                setState(() {
+                                  _bandGains[index] = val;
+                                  _activePresetName = null; // Clear preset on manual tweak
+                                });
                                 _audioService.setBandGain(index, val);
                               } : null,
                             ),
@@ -254,7 +266,13 @@ class _EqualizerSheetState extends State<EqualizerSheet> {
                   divisions: 15,
                   label: "${_volumeBoost.round()} dB",
                   onChanged: _isEnabled ? (val) {
-                    setState(() => _volumeBoost = val);
+                    setState(() {
+                      _volumeBoost = val;
+                      // Volume boost doesn't necessarily break an EQ preset, 
+                      // but usually "Podcast" refers to the whole profile.
+                      // We'll keep it simple: manual slider movements clear the highlight.
+                      _activePresetName = null;
+                    });
                     _audioService.setVolumeBoost(val);
                   } : null,
                 ),
@@ -279,6 +297,7 @@ class _EqualizerSheetState extends State<EqualizerSheet> {
     final values = _presets5Band[name];
     if (values != null && values.length == _bands.length) {
       setState(() {
+        _activePresetName = name;
         for (int i = 0; i < values.length; i++) {
           _bandGains[i] = values[i];
           _audioService.setBandGain(i, values[i]);
@@ -289,6 +308,35 @@ class _EqualizerSheetState extends State<EqualizerSheet> {
         const SnackBar(content: Text("Preset not compatible with this device")),
       );
     }
+  }
+
+  /// Checks if current band gains match any known preset
+  void _detectActivePreset() {
+    if (_bands.isEmpty || _bandGains.isEmpty) return;
+    
+    String? detectedName;
+    for (final entry in _presets5Band.entries) {
+      final presetValues = entry.value;
+      if (presetValues.length != _bandGains.length) continue;
+      
+      bool matches = true;
+      for (int i = 0; i < presetValues.length; i++) {
+        // Use a small epsilon for double comparison
+        if ((presetValues[i] - _bandGains[i]).abs() > 0.1) {
+          matches = false;
+          break;
+        }
+      }
+      
+      if (matches) {
+        detectedName = entry.key;
+        break;
+      }
+    }
+    
+    setState(() {
+      _activePresetName = detectedName;
+    });
   }
 }
 
