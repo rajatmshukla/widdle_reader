@@ -48,7 +48,8 @@ class MetadataService {
       _logDebug("Scan completed. Found ${audiobookFolders.length} audiobook folders");
       
       // Sort the folders for consistent ordering
-      audiobookFolders.sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+      // Sort the folders for consistent ordering - using natural sort for better folder handling
+      audiobookFolders.sort((a, b) => _naturalCompare(a, b));
       
       return audiobookFolders;
     } catch (e) {
@@ -136,6 +137,48 @@ class MetadataService {
     }
   }
 
+  /// Natural sort comparator for alphanumeric strings (e.g. "Chapter 2" < "Chapter 10")
+  static int _naturalCompare(String a, String b) {
+    if (a == b) return 0;
+    
+    final aStr = a.toLowerCase();
+    final bStr = b.toLowerCase();
+    
+    if (aStr == bStr) return a.compareTo(b); // Tie-breaker for case sensitivity
+    
+    final re = RegExp(r'(\d+)|(\D+)');
+    final aMatches = re.allMatches(aStr).toList();
+    final bMatches = re.allMatches(bStr).toList();
+    
+    for (int i = 0; i < aMatches.length && i < bMatches.length; i++) {
+      final aRaw = aMatches[i].group(0)!;
+      final bRaw = bMatches[i].group(0)!;
+      
+      final aIsDigit = RegExp(r'^\d+$').hasMatch(aRaw);
+      final bIsDigit = RegExp(r'^\d+$').hasMatch(bRaw);
+      
+      if (aIsDigit && bIsDigit) {
+        final aNum = BigInt.parse(aRaw);
+        final bNum = BigInt.parse(bRaw);
+        if (aNum != bNum) return aNum.compareTo(bNum);
+        
+        // If numeric value is same but strings differ (e.g. "01" vs "1")
+        // use length or raw string as tie-breaker
+        if (aRaw.length != bRaw.length) return aRaw.length.compareTo(bRaw.length);
+      } else {
+        if (aRaw != bRaw) return aRaw.compareTo(bRaw);
+      }
+    }
+    
+    // If one is a prefix of the other, the shorter one comes first
+    if (aMatches.length != bMatches.length) {
+      return aMatches.length.compareTo(bMatches.length);
+    }
+    
+    // Ultimate fallback for any missed edge cases
+    return a.compareTo(b);
+  }
+
   /// Enhanced method to get audiobook details with better error handling and cover art detection
   Future<Audiobook> getAudiobookDetails(String folderPath) async {
     final directory = Directory(folderPath);
@@ -159,12 +202,8 @@ class MetadataService {
     try {
       final List<FileSystemEntity> files = await directory.list().toList();
       // Sort files alphabetically by base name for consistent chapter order
-      files.sort(
-        (a, b) => p
-            .basename(a.path)
-            .toLowerCase()
-            .compareTo(p.basename(b.path).toLowerCase()),
-      );
+      // Using natural sort so "Book 10" comes after "Book 2"
+      files.sort((a, b) => _naturalCompare(p.basename(a.path), p.basename(b.path)));
 
       // Use a single player instance for duration checks
       final audioPlayer = AudioPlayer();
@@ -326,8 +365,8 @@ class MetadataService {
 
       // Priority 2: If no embedded cover art found, use any image file in the folder
       if (coverArt == null && imageFiles.isNotEmpty) {
-        // Sort image files alphabetically for consistent selection
-        imageFiles.sort((a, b) => p.basename(a.path).toLowerCase().compareTo(p.basename(b.path).toLowerCase()));
+        // Sort image files naturally for consistent selection
+        imageFiles.sort((a, b) => _naturalCompare(p.basename(a.path), p.basename(b.path)));
         
         for (var imageFile in imageFiles) {
           try {
@@ -676,8 +715,8 @@ class MetadataService {
         );
       }).toList();
 
-      // Sort chapters by filename
-      basicChapters.sort((a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase()));
+      // Sort chapters naturally by title
+      basicChapters.sort((a, b) => _naturalCompare(a.title, b.title));
 
       return Audiobook(
         id: folderPath,
@@ -728,8 +767,8 @@ class MetadataService {
         }
       }
 
-      // Sort audio files to match basic chapters order
-      audioFiles.sort((a, b) => p.basename(a.path).toLowerCase().compareTo(p.basename(b.path).toLowerCase()));
+      // Sort audio files naturally to match basic chapters order
+      audioFiles.sort((a, b) => _naturalCompare(p.basename(a.path), p.basename(b.path)));
 
       Duration totalDuration = Duration.zero;
       final List<Chapter> detailedChapters = [];
@@ -803,9 +842,9 @@ class MetadataService {
           }
         }
 
-        // If no embedded cover art found, try image files
+        // If no embedded cover art found, try image files - use natural sort
         if (coverArt == null && imageFiles.isNotEmpty) {
-          imageFiles.sort((a, b) => p.basename(a.path).toLowerCase().compareTo(p.basename(b.path).toLowerCase()));
+          imageFiles.sort((a, b) => _naturalCompare(p.basename(a.path), p.basename(b.path)));
           
           for (var imageFile in imageFiles) {
             try {
