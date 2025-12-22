@@ -59,6 +59,7 @@ android {
 
     compileOptions {
         // Set source and target compatibility to Java 17
+        isCoreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
         // Enable core library desugaring for newer Java APIs (required by flutter_local_notifications)
@@ -131,6 +132,7 @@ flutter {
 // App dependencies
 dependencies {
     implementation(kotlin("stdlib-jdk8")) // Use Kotlin standard library
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
     implementation("androidx.multidex:multidex:2.0.1") // Add MultiDex support library
     
     // Core library desugaring for newer Java APIs (required by flutter_local_notifications)
