@@ -4,7 +4,6 @@ import 'dart:convert';
 import 'dart:async';
 import '../models/reading_session.dart';
 import '../models/reading_statistics.dart';
-import 'notification_service.dart';
 
 // Safe debug logging - only prints in debug mode
 void _logStats(String message) {
@@ -557,20 +556,6 @@ class StatisticsService {
       
       await _saveDailyStats(updatedStats);
       _logStats('📊 ✅ Daily stats updated - new total: ${updatedStats.totalSeconds}s');
-
-      // Check for daily goal completion
-      try {
-        final goalMinutes = await getDailyGoal();
-        final goalSeconds = goalMinutes * 60;
-        
-        // Notify if we crossed the threshold in this update
-        if (currentStats.totalSeconds < goalSeconds && updatedStats.totalSeconds >= goalSeconds) {
-          _logStats('🎯 Daily goal of $goalMinutes minutes reached!');
-          await NotificationService().showGoalReachedNotification(goalMinutes);
-        }
-      } catch (e) {
-        _logStats('Error checking daily goal: $e');
-      }
     } catch (e, stackTrace) {
       _logStats('📊 ❌ Error updating daily stats: $e');
       if (kDebugMode) debugPrint('📊 Stack trace: $stackTrace');

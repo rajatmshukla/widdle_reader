@@ -23,10 +23,6 @@ import 'services/simple_audio_service.dart';
 import 'services/statistics_service.dart';
 import 'services/achievement_service.dart';
 import 'services/notification_service.dart';
-<<<<<<< HEAD
-=======
-import 'services/engagement_manager.dart';
->>>>>>> 84f3836fde78466d902efd806d44214524725565
 
 // Define a global navigator key to access context from anywhere
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
@@ -129,16 +125,6 @@ Future<void> _initializeDataIntegrity() async {
     final achievementService = AchievementService();
     await achievementService.initialize();
     _logDebug("Achievement service initialized");
-
-    // Initialize notification service
-    final notificationService = NotificationService();
-    await notificationService.initialize();
-    _logDebug("Notification service initialized");
-
-    // Initialize engagement manager
-    final engagementManager = EngagementManager();
-    await engagementManager.initialize();
-    _logDebug("Engagement manager initialized");
     
     _logDebug("Data integrity system initialized successfully");
   } catch (e) {

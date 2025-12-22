@@ -693,7 +693,7 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
           
           // Equalizer button
           IconButton(
-             icon: Container(
+            icon: Container(
               padding: const EdgeInsets.all(6),
               decoration: BoxDecoration(
                 color: colorScheme.surfaceContainerHighest.withAlpha(
@@ -705,21 +705,12 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
             ),
             tooltip: 'Equalizer & Effects',
             onPressed: () {
-<<<<<<< HEAD
               showModalBottomSheet(
                 context: context,
                 backgroundColor: Colors.transparent,
                 isScrollControlled: true,
                 builder: (_) => const EqualizerSheet(),
               );
-=======
-               showModalBottomSheet(
-                 context: context,
-                 backgroundColor: Colors.transparent,
-                 isScrollControlled: true,
-                 builder: (_) => const EqualizerSheet(),
-               );
->>>>>>> 84f3836fde78466d902efd806d44214524725565
             },
           ),
 

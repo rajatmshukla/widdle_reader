@@ -1299,19 +1299,10 @@ class AudiobookProvider extends ChangeNotifier with WidgetsBindingObserver {
 
     if (Platform.isAndroid) {
       final androidInfo = await DeviceInfoPlugin().androidInfo;
-      if (androidInfo.version.sdkInt >= 30) {
-        // Android 11+ (API 30+) needs "All Files Access" to see .nomedia folders
-        // We request this instead of specific media permissions for maximum robustness
-        status = await Permission.manageExternalStorage.request();
-        
-        // Also request notification for playback controls on Android 13+
-        if (androidInfo.version.sdkInt >= 33) {
-          await Permission.notification.request();
-        }
-      } else if (androidInfo.version.sdkInt >= 33) {
-        // Fallback for API 33 if 30 branch was somehow skipped (impossible but safe)
+      if (androidInfo.version.sdkInt >= 33) {
+        // Android 13+
         status = await Permission.audio.request();
-        await Permission.notification.request();
+        await Permission.notification.request(); // Request notification permission too
       } else {
         // Older Android
         status = await Permission.storage.request();
