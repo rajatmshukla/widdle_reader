@@ -51,8 +51,8 @@ class ThemeProvider extends ChangeNotifier {
       // Load dynamic theme setting
       _isDynamicThemeEnabled = prefs.getBool(_dynamicThemeKey) ?? false;
 
-      // Load library view mode
-      _isGridView = prefs.getBool('library_is_grid_view') ?? false;
+      // Load library view mode (default to Grid View)
+      _isGridView = prefs.getBool('library_is_grid_view') ?? true;
 
       notifyListeners();
     } catch (e) {
@@ -184,8 +184,8 @@ class ThemeProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  // Library View Mode State
-  bool _isGridView = false;
+  // Library View Mode State (default to Grid View)
+  bool _isGridView = true;
   bool get isGridView => _isGridView;
 
   /// Set the library view mode

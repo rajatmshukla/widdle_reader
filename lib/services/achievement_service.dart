@@ -6,6 +6,7 @@ import '../models/achievement.dart';
 import '../models/achievement_definitions.dart';
 import 'statistics_service.dart';
 import 'storage_service.dart';
+import 'notification_service.dart';
 
 /// Service for managing achievements and badge unlocking
 class AchievementService {
@@ -146,6 +147,8 @@ class AchievementService {
           _unlockedAchievements[definition.id] = unlockedAchievement;
           newUnlocks.add(unlockedAchievement);
           _unlockController.add(unlockedAchievement);
+          // Show notification
+          NotificationService().showAchievementNotification(unlockedAchievement);
           debugPrint('🏆 Achievement unlocked: ${definition.name}');
         }
       }

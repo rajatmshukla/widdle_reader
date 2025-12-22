@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 
 import 'settings_screen.dart';
 import 'simple_player_screen.dart';
+import 'cover_selection_screen.dart';
 
 
 
@@ -470,6 +471,22 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
                    },
                  ),
 
+                 // 6. Change Cover Art
+                 ListTile(
+                   leading: Icon(Icons.image_outlined, color: colorScheme.onSurfaceVariant),
+                   title: const Text('Change Cover Art'),
+                   onTap: () {
+                     Navigator.pop(context);
+                     Navigator.push(
+                       context,
+                       MaterialPageRoute(
+                         builder: (context) => CoverArtSelectionScreen(audiobook: audiobook),
+                       ),
+                     );
+                   },
+                 ),
+
+
                 const Divider(indent: 24, endIndent: 24),
                 
                 // 6. Delete (Destructive)
@@ -530,7 +547,35 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
         ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // Root Folder System Tip
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: colorScheme.primaryContainer.withOpacity(0.4),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: colorScheme.primary.withOpacity(0.2)),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.tips_and_updates_rounded, color: colorScheme.primary, size: 20),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      'Tip: Select a root folder (like "Audiobooks") to automatically scan all subfolders for books at once.',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: colorScheme.onPrimaryContainer,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+            
             ListTile(
               leading: Icon(Icons.book, color: colorScheme.primary),
               title: const Text('Add Single Book'),
@@ -545,11 +590,22 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
             ListTile(
               leading: Icon(Icons.auto_stories, color: colorScheme.primary),
               title: const Text('Scan for Books'),
-              subtitle: const Text('Recursively scan for audiobooks in any folder structure'),
+              subtitle: const Text('Recursively scan for audiobooks (long press to force deep rescan)'),
               onTap: () async {
                 Navigator.pop(context);
                 await provider.addAudiobooksRecursively();
                 await _handleAutoTagCreation(provider);
+              },
+              onLongPress: () async {
+                Navigator.pop(context);
+                // Haptic feedback for long-press action
+                HapticFeedback.mediumImpact();
+                await provider.forceRefreshLibrary();
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Deep rescan completed')),
+                  );
+                }
               },
             ),
 
@@ -564,6 +620,32 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
                   Navigator.pop(context);
                   await _scanExistingLibraryForTags(provider);
                 },
+              ),
+            ],
+
+            // Show permission recovery button if denied
+            if (provider.permissionPermanentlyDenied) ...[
+              const Divider(),
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 16.0),
+                child: Column(
+                  children: [
+                    Text(
+                      provider.errorMessage ?? "Permission required.",
+                      style: TextStyle(color: colorScheme.error, fontSize: 12),
+                    ),
+                    const SizedBox(height: 8),
+                    ElevatedButton.icon(
+                      onPressed: () => provider.openSettings(),
+                      icon: const Icon(Icons.settings),
+                      label: const Text('Open App Settings'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: colorScheme.errorContainer,
+                        foregroundColor: colorScheme.onErrorContainer,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ],
           ],

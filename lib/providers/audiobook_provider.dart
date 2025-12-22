@@ -18,6 +18,7 @@ import '../models/tag.dart'; // Contains LibrarySortOption
 import '../services/metadata_service.dart';
 import '../services/storage_service.dart';
 import '../services/auto_tag_service.dart';
+import '../services/cover_art_service.dart';
 import '../providers/tag_provider.dart';
 
 // CRITICAL FIX: Add release-safe logging
@@ -235,6 +236,20 @@ class AudiobookProvider extends ChangeNotifier with WidgetsBindingObserver {
 
     // Update the display
     notifyListeners();
+  }
+
+  /// Updates the cover art for an audiobook
+  Future<void> updateAudiobookCover(String audiobookId, Uint8List coverData) async {
+    final index = _audiobooks.indexWhere((b) => b.id == audiobookId);
+    if (index != -1) {
+      // Update in-memory model
+      _audiobooks[index] = _audiobooks[index].copyWith(coverArt: coverData);
+      
+      // Update cache
+      await _storageService.saveCachedCoverArt(audiobookId, coverData);
+      
+      notifyListeners();
+    }
   }
 
   // Method to refresh UI without reloading audiobooks
@@ -1249,7 +1264,7 @@ class AudiobookProvider extends ChangeNotifier with WidgetsBindingObserver {
       
       // Cache cover art separately if available
       if (book.coverArt != null) {
-        await _storageService.cacheCoverArt(book.id, book.coverArt!);
+        await _storageService.saveCachedCoverArt(book.id, book.coverArt!);
       }
     } catch (e) {
       _logDebug("Error caching detailed metadata for ${book.id}: $e");
@@ -1275,6 +1290,7 @@ class AudiobookProvider extends ChangeNotifier with WidgetsBindingObserver {
       _logDebug("Error refreshing metadata for $audiobookId: $e");
     }
   }
+
 
   /// Requests necessary storage/media permissions for adding new books
   Future<bool> _requestPermissions() async {
@@ -1302,7 +1318,7 @@ class AudiobookProvider extends ChangeNotifier with WidgetsBindingObserver {
       _logDebug("Storage/Media permissions granted.");
       return true;
     } else if (status.isPermanentlyDenied) {
-      _errorMessage = "Permission denied. Please enable Storage/Media access in app settings.";
+      _errorMessage = "Permission permanently denied. Please enable Storage/Media access in App Settings to scan for books.";
       _permissionPermanentlyDenied = true;
       _logDebug("Storage/Media permissions permanently denied.");
       notifyListeners();
@@ -1805,6 +1821,66 @@ class AudiobookProvider extends ChangeNotifier with WidgetsBindingObserver {
       _logDebug("Error in comprehensive sync: $e");
       _isLoading = false;
       _errorMessage = "Error during library synchronization: $e";
+      notifyListeners();
+    }
+  }
+
+  /// Forces a complete re-scan of the library by clearing metadata caches
+  /// and re-examining all added folder paths.
+  Future<void> forceRefreshLibrary() async {
+    try {
+      _startLoading();
+      _logDebug("Starting DEEP RESCAN of the library...");
+      
+      // 1. Clear all metadata and cover art caches
+      await _storageService.clearAllBookMetadataCache();
+      
+      // 2. Load existing folder paths
+      final folderPaths = await _storageService.loadAudiobookFolders();
+      
+      if (folderPaths.isEmpty) {
+        _logDebug("Deep rescan: No folders to rescan.");
+        _stopLoading();
+        return;
+      }
+      
+      // 3. Clear existing in-memory list so we don't have duplicates
+      _audiobooks = [];
+      notifyListeners();
+      
+      // 4. Re-scan each folder thoroughly
+      for (final folderPath in folderPaths) {
+        if (await Directory(folderPath).exists()) {
+          _logDebug("Deep rescan: Processing $folderPath");
+          try {
+            // This will use fresh metadata because we cleared the cache above
+            final newBook = await _metadataService.getAudiobookDetails(folderPath);
+            
+            if (newBook.chapters.isNotEmpty) {
+              _audiobooks.add(newBook);
+              // Cache immediately
+              await _cacheBasicBookInfo(newBook, folderPath);
+              await _cacheDetailedMetadata(newBook);
+            }
+          } catch (e) {
+            _logDebug("Error rescanning folder $folderPath: $e");
+          }
+        } else {
+          _logDebug("Deep rescan: Skipping non-existent folder $folderPath");
+        }
+      }
+      
+      // 5. Final sort and save
+      _sortAudiobooksByStatus();
+      await _storageService.saveAudiobookFolders(_audiobooks.map((b) => b.id).toList());
+      
+      _stopLoading();
+      _logDebug("DEEP RESCAN completed successfully.");
+      
+    } catch (e) {
+      _logDebug("Error during deep rescan: $e");
+      _stopLoading();
+      _errorMessage = "An error occurred during deep rescan: $e";
       notifyListeners();
     }
   }

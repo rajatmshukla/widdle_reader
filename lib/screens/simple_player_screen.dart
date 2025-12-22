@@ -21,6 +21,7 @@ import '../screens/bookmarks_screen.dart';
 import '../models/chapter.dart';
 import 'package:flutter/services.dart'; // Import for HapticFeedback
 import '../services/storage_service.dart'; // Import StorageServices
+import '../widgets/equalizer_sheet.dart'; // Import EqualizerSheet
 
 
 
@@ -690,7 +691,7 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
             onPressed: _showSleepTimerDialog,
           ),
           
-          // Review button
+          // Equalizer button
           IconButton(
             icon: Container(
               padding: const EdgeInsets.all(6),
@@ -700,15 +701,17 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
                 ),
                 borderRadius: BorderRadius.circular(12),
               ),
-              child: const Icon(Icons.rate_review_outlined),
+              child: const Icon(Icons.candlestick_chart_rounded),
             ),
-            tooltip: 'Write Review',
-            onPressed: _audiobook != null ? () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => ReviewEditorScreen(audiobook: _audiobook!)),
+            tooltip: 'Equalizer & Effects',
+            onPressed: () {
+              showModalBottomSheet(
+                context: context,
+                backgroundColor: Colors.transparent,
+                isScrollControlled: true,
+                builder: (_) => const EqualizerSheet(),
               );
-            } : null,
+            },
           ),
 
           // Car Mode button
@@ -1452,7 +1455,7 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                       decoration: BoxDecoration(
-                        color: colorScheme.tertiaryContainer,
+                        color: colorScheme.primaryContainer,
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: Text(
@@ -1460,7 +1463,7 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
                         style: TextStyle(
                           fontSize: 10,
                           fontWeight: FontWeight.bold,
-                          color: colorScheme.onTertiaryContainer,
+                          color: colorScheme.onPrimaryContainer,
                         ),
                       ),
                     ),
@@ -1470,15 +1473,15 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
                 SliderTheme(
                   data: SliderThemeData(
                     trackHeight: 4,
-                    activeTrackColor: _isTotalDurationMode ? colorScheme.tertiary : colorScheme.primary,
+                    activeTrackColor: colorScheme.primary,
                     inactiveTrackColor: colorScheme.onSurface.withOpacity(0.2),
-                    thumbColor: _isTotalDurationMode ? colorScheme.tertiary : colorScheme.primary,
+                    thumbColor: colorScheme.primary,
                     thumbShape: RoundSliderThumbShape(
                       enabledThumbRadius: compactLayout ? 6 : 8,
                       elevation: 4,
                       pressedElevation: 8,
                     ),
-                    overlayColor: (_isTotalDurationMode ? colorScheme.tertiary : colorScheme.primary).withOpacity(0.2),
+                    overlayColor: colorScheme.primary.withOpacity(0.2),
                     overlayShape: RoundSliderOverlayShape(
                       overlayRadius: compactLayout ? 12 : 16,
                     ),
@@ -1567,7 +1570,7 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
                             formatDetailedDuration(displayPosition),
                             style: TextStyle(
                               fontSize: compactLayout ? 10 : 12,
-                              color: (_isTotalDurationMode ? colorScheme.tertiary : colorScheme.primary).withOpacity(0.8),
+                              color: colorScheme.primary.withOpacity(0.8),
                               fontWeight: FontWeight.w500,
                               fontFeatures: const [FontFeature.tabularFigures()],
                             ),

@@ -22,6 +22,7 @@ import 'services/storage_service.dart';
 import 'services/simple_audio_service.dart';
 import 'services/statistics_service.dart';
 import 'services/achievement_service.dart';
+import 'services/notification_service.dart';
 
 // Define a global navigator key to access context from anywhere
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
@@ -100,6 +101,10 @@ Future<void> _initializeDataIntegrity() async {
   try {
     _logDebug("Initializing data integrity system...");
     final storageService = StorageService();
+    
+    // Initialize notification service
+    await NotificationService().initialize();
+    _logDebug("Notification service initialized");
     
     // Check data health and attempt recovery if needed
     final healthCheck = await storageService.checkDataHealth();

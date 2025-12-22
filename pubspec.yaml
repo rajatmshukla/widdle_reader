@@ -57,6 +57,7 @@ dependencies:
   url_launcher: ^6.2.1
   scrollable_positioned_list: ^0.3.8
   share_plus: ^7.2.1  # Add this line for sharing backup files
+  http: ^1.1.0
   # For Google Play License Verification
   flutter_secure_storage: ^9.0.0  # For secure storage of license info
   crypto: ^3.0.3  # For cryptographic operations
@@ -66,13 +67,15 @@ dependencies:
   intl: any
   flutter_rating_bar: ^4.0.1
   flutter_quill: any
+  flutter_local_notifications: ^17.2.2
+  timezone: ^0.9.4
 
 # Add this section at the root level of your pubspec.yaml
 flutter_launcher_icons:
   android: true
   ios: true
-  image_path_android: "assets/icons/app_logo.png"  # For PNG
-  image_path_ios: "assets/icons/app_logo.png"      # For PNG
+  image_path_android: "assets/icons/app_logo_holidays.png"  # For PNG
+  image_path_ios: "assets/icons/app_logo_holidays.png"      # For PNG
   # OR for SVG (which is better for scaling)
   image_path: "assets/icons/app_logo.svg"          # If using SVG
   adaptive_icon_background: "#FFFFFF"              # Background color for Android adaptive icons
@@ -101,6 +104,7 @@ flutter:
   assets:
     - assets/icons/app_logo.svg
     - assets/icons/app_logo.png
+    - assets/icons/app_logo_holidays.png
     - assets/images/
     - assets/images/us_flag.svg
   # To add assets to your application, add an assets section, like this:

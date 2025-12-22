@@ -61,6 +61,8 @@ android {
         // Set source and target compatibility to Java 17
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+        // Enable core library desugaring for newer Java APIs (required by flutter_local_notifications)
+        isCoreLibraryDesugaringEnabled = true
     }
 
     kotlinOptions {
@@ -130,6 +132,9 @@ flutter {
 dependencies {
     implementation(kotlin("stdlib-jdk8")) // Use Kotlin standard library
     implementation("androidx.multidex:multidex:2.0.1") // Add MultiDex support library
+    
+    // Core library desugaring for newer Java APIs (required by flutter_local_notifications)
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.4")
     
     // Media and Audio Service dependencies
     implementation("androidx.media:media:1.7.0") // Updated Media support for audio service

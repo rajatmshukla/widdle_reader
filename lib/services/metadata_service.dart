@@ -10,6 +10,8 @@ import 'package:flutter_media_metadata/flutter_media_metadata.dart';
 import '../models/audiobook.dart';
 import '../models/chapter.dart';
 import 'ffmpeg_helper.dart';
+import 'cover_art_service.dart';
+import 'storage_service.dart';
 
 // CRITICAL FIX: Add release-safe logging for metadata service
 void _logDebug(String message) {
@@ -47,8 +49,8 @@ class MetadataService {
       await _scanDirectoryRecursively(rootDirectory, audiobookFolders);
       _logDebug("Scan completed. Found ${audiobookFolders.length} audiobook folders");
       
-      // Sort the folders for consistent ordering
-      audiobookFolders.sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+      // Sort the folders for consistent ordering - using natural sort for better folder handling
+      audiobookFolders.sort((a, b) => _naturalCompare(a, b));
       
       return audiobookFolders;
     } catch (e) {
@@ -136,6 +138,46 @@ class MetadataService {
     }
   }
 
+  /// Natural sort comparator for alphanumeric strings (e.g. "Chapter 2" < "Chapter 10")
+  static int _naturalCompare(String a, String b) {
+    if (a == b) return 0;
+    
+    final aStr = a.toLowerCase();
+    final bStr = b.toLowerCase();
+    
+    if (aStr == bStr) return a.compareTo(b); // Tie-breaker for case sensitivity
+    
+    final re = RegExp(r'(\d+)|(\D+)');
+    final aMatches = re.allMatches(aStr).toList();
+    final bMatches = re.allMatches(bStr).toList();
+    
+    for (int i = 0; i < aMatches.length && i < bMatches.length; i++) {
+      final aRaw = aMatches[i].group(0)!;
+      final bRaw = bMatches[i].group(0)!;
+      
+      final aIsDigit = RegExp(r'^\d+$').hasMatch(aRaw);
+      final bIsDigit = RegExp(r'^\d+$').hasMatch(bRaw);
+      
+      if (aIsDigit && bIsDigit) {
+        final aNum = BigInt.parse(aRaw);
+        final bNum = BigInt.parse(bRaw);
+        if (aNum != bNum) return aNum.compareTo(bNum);
+        
+        // If numeric value is same but strings differ (e.g. "01" vs "1")
+        if (aRaw.length != bRaw.length) return aRaw.length.compareTo(bRaw.length);
+      } else {
+        if (aRaw != bRaw) return aRaw.compareTo(bRaw);
+      }
+    }
+    
+    // If one is a prefix of the other
+    if (aMatches.length != bMatches.length) {
+      return aMatches.length.compareTo(bMatches.length);
+    }
+    
+    return a.compareTo(b);
+  }
+
   /// Enhanced method to get audiobook details with better error handling and cover art detection
   Future<Audiobook> getAudiobookDetails(String folderPath) async {
     final directory = Directory(folderPath);
@@ -158,13 +200,8 @@ class MetadataService {
 
     try {
       final List<FileSystemEntity> files = await directory.list().toList();
-      // Sort files alphabetically by base name for consistent chapter order
-      files.sort(
-        (a, b) => p
-            .basename(a.path)
-            .toLowerCase()
-            .compareTo(p.basename(b.path).toLowerCase()),
-      );
+      // Using natural sort so "Book 10" comes after "Book 2"
+      files.sort((a, b) => _naturalCompare(p.basename(a.path), p.basename(b.path)));
 
       // Use a single player instance for duration checks
       final audioPlayer = AudioPlayer();
@@ -326,8 +363,8 @@ class MetadataService {
 
       // Priority 2: If no embedded cover art found, use any image file in the folder
       if (coverArt == null && imageFiles.isNotEmpty) {
-        // Sort image files alphabetically for consistent selection
-        imageFiles.sort((a, b) => p.basename(a.path).toLowerCase().compareTo(p.basename(b.path).toLowerCase()));
+        // Sort image files naturally for consistent selection
+        imageFiles.sort((a, b) => _naturalCompare(p.basename(a.path), p.basename(b.path)));
         
         for (var imageFile in imageFiles) {
           try {
@@ -338,14 +375,26 @@ class MetadataService {
               debugPrint("Successfully loaded cover art from: $fileName");
               break; // Use the first valid image file
             } else {
-              coverArt = null; // Reset if file is empty
-              debugPrint("Image file $fileName is empty, trying next...");
             }
           } catch (e) {
             debugPrint("Error reading image file ${p.basename(imageFile.path)}: $e");
           }
         }
       }
+      
+      // Priority 3: Check internal cache for manually downloaded cover art
+      if (coverArt == null) {
+        coverArt = await StorageService().loadCachedCoverArt(folderPath);
+      }
+      
+      /*
+      // NEW: Priority 3: Try Open Library fetch if still nothing
+      if (coverArt == null) {
+        final title = p.basename(folderPath);
+        debugPrint('🎨 No local cover found for $title, attempting Open Library fetch...');
+        coverArt = await CoverArtService().fetchCoverFromOpenLibrary(title, author, folderPath);
+      }
+      */
       
       // Dispose the temporary player when done
       await audioPlayer.dispose();
@@ -419,38 +468,9 @@ class MetadataService {
   }
 
   /// Cleans and normalizes tag names
+  /// UPDATE: Now returns exact folder name (trimmed) to preserve case and special characters
   String _cleanTagName(String tagName) {
-    // Remove common prefixes and suffixes
-    String cleaned = tagName.trim();
-    
-    // Remove common patterns
-    cleaned = cleaned.replaceAll(RegExp(r'\s+'), ' '); // Multiple spaces to single
-    cleaned = cleaned.replaceAll(RegExp(r'[_\-]+'), ' '); // Underscores and dashes to spaces
-    
-    // Remove leading/trailing special characters
-    cleaned = cleaned.replaceAll(RegExp(r'^[^\w\s]+|[^\w\s]+$'), '');
-    
-    // Title case for better presentation
-    cleaned = _toTitleCase(cleaned);
-    
-    return cleaned.trim();
-  }
-
-  /// Converts string to title case
-  String _toTitleCase(String text) {
-    if (text.isEmpty) return text;
-    
-    return text.toLowerCase().split(' ').map((word) {
-      if (word.isEmpty) return word;
-      
-      // Handle special cases for common words
-      final lowerWord = word.toLowerCase();
-      if (['the', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by'].contains(lowerWord)) {
-        return lowerWord;
-      }
-      
-      return word[0].toUpperCase() + word.substring(1);
-    }).join(' ');
+    return tagName.trim();
   }
 
   /// Suggests tag names based on folder structure analysis with smart series consolidation
@@ -676,8 +696,8 @@ class MetadataService {
         );
       }).toList();
 
-      // Sort chapters by filename
-      basicChapters.sort((a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase()));
+      // Sort chapters naturally by title
+      basicChapters.sort((a, b) => _naturalCompare(a.title, b.title));
 
       return Audiobook(
         id: folderPath,
@@ -728,8 +748,8 @@ class MetadataService {
         }
       }
 
-      // Sort audio files to match basic chapters order
-      audioFiles.sort((a, b) => p.basename(a.path).toLowerCase().compareTo(p.basename(b.path).toLowerCase()));
+      // Sort audio files naturally to match basic chapters order
+      audioFiles.sort((a, b) => _naturalCompare(p.basename(a.path), p.basename(b.path)));
 
       Duration totalDuration = Duration.zero;
       final List<Chapter> detailedChapters = [];
@@ -803,9 +823,8 @@ class MetadataService {
           }
         }
 
-        // If no embedded cover art found, try image files
         if (coverArt == null && imageFiles.isNotEmpty) {
-          imageFiles.sort((a, b) => p.basename(a.path).toLowerCase().compareTo(p.basename(b.path).toLowerCase()));
+          imageFiles.sort((a, b) => _naturalCompare(p.basename(a.path), p.basename(b.path)));
           
           for (var imageFile in imageFiles) {
             try {
@@ -816,12 +835,16 @@ class MetadataService {
                 debugPrint("Successfully loaded cover art from: $fileName");
                 break;
               } else {
-                coverArt = null;
-              }
-            } catch (e) {
-              debugPrint("Error reading image file ${p.basename(imageFile.path)}: $e");
             }
+          } catch (e) {
+            debugPrint("Error reading image file ${p.basename(imageFile.path)}: $e");
           }
+        }
+      }
+
+        // Priority 3: Check internal cache for manually downloaded cover art
+        if (coverArt == null) {
+          coverArt = await StorageService().loadCachedCoverArt(folderPath);
         }
 
       } finally {
@@ -870,6 +893,7 @@ class MetadataService {
 
   /// Preload cover art for visible audiobooks in background
   Future<void> preloadCoverArt(List<String> audiobookIds) async {
+    /*
     for (final audiobookId in audiobookIds) {
       try {
         // This would run in background, so we don't await it
@@ -878,8 +902,10 @@ class MetadataService {
         debugPrint("Error starting background cover art load for $audiobookId: $e");
       }
     }
+    */
   }
 
+  /*
   /// Background method to load cover art without blocking UI
   Future<void> _loadCoverArtInBackground(String audiobookId) async {
     try {
@@ -893,7 +919,7 @@ class MetadataService {
           .toList();
 
       if (imageFiles.isNotEmpty) {
-        imageFiles.sort((a, b) => p.basename(a.path).toLowerCase().compareTo(p.basename(b.path).toLowerCase()));
+        imageFiles.sort((a, b) => _naturalCompare(p.basename(a.path), p.basename(b.path)));
         final coverArt = await imageFiles.first.readAsBytes();
         
         // Could cache this result here for future use
@@ -903,4 +929,5 @@ class MetadataService {
       debugPrint("Error in background cover art loading for $audiobookId: $e");
     }
   }
+  */
 }

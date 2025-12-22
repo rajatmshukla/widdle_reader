@@ -721,7 +721,6 @@ class StorageService {
     }
   }
 
-  /// Loads the library view mode preference
   Future<bool> loadViewModePreference() async {
     try {
       final prefs = await _preferences;
@@ -731,6 +730,149 @@ class StorageService {
       debugPrint("Error loading view mode preference: $e");
       return false;
     }
+  }
+
+  // Generic Storage Methods for Engagement / Preferences
+  Future<void> saveString(String key, String value) async {
+    final prefs = await _preferences;
+    await prefs.setString(key, value);
+  }
+
+  Future<String?> getString(String key) async {
+    final prefs = await _preferences;
+    return prefs.getString(key);
+  }
+
+  Future<void> saveInt(String key, int value) async {
+    final prefs = await _preferences;
+    await prefs.setInt(key, value);
+  }
+
+  Future<int?> getInt(String key) async {
+    final prefs = await _preferences;
+    return prefs.getInt(key);
+  }
+
+  // Notification Settings
+  static const String _notificationsEnabledKey = 'notifications_enabled';
+
+  /// Get whether notifications are enabled
+  Future<bool> getNotificationsEnabled() async {
+    final prefs = await _preferences;
+    return prefs.getBool(_notificationsEnabledKey) ?? true; // Default to true
+  }
+
+  /// Set whether notifications are enabled
+  Future<void> setNotificationsEnabled(bool enabled) async {
+    final prefs = await _preferences;
+    await prefs.setBool(_notificationsEnabledKey, enabled);
+    debugPrint('Notifications enabled set to: $enabled');
+  }
+
+  // Equalizer Settings (GLOBAL - kept for backwards compat, but deprecated)
+  static const String _eqEnabledKey = 'eq_enabled';
+  static const String _eqBoostKey = 'eq_boost';
+  static const String _eqBandsKey = 'eq_bands_gain';
+
+  // Per-Book Equalizer Settings
+  static const String _eqBookPrefix = 'eq_book_';
+
+  Future<bool> getEqualizerEnabled({String? audiobookId}) async {
+    final prefs = await _preferences;
+    if (audiobookId != null) {
+      return prefs.getBool('${_eqBookPrefix}${audiobookId}_enabled') ?? false;
+    }
+    return prefs.getBool(_eqEnabledKey) ?? false;
+  }
+
+  Future<void> saveEqualizerEnabled(bool enabled, {String? audiobookId}) async {
+    final prefs = await _preferences;
+    if (audiobookId != null) {
+      await prefs.setBool('${_eqBookPrefix}${audiobookId}_enabled', enabled);
+    } else {
+      await prefs.setBool(_eqEnabledKey, enabled);
+    }
+  }
+
+  Future<double> getVolumeBoost({String? audiobookId}) async {
+    final prefs = await _preferences;
+    if (audiobookId != null) {
+      return prefs.getDouble('${_eqBookPrefix}${audiobookId}_boost') ?? 0.0;
+    }
+    return prefs.getDouble(_eqBoostKey) ?? 0.0;
+  }
+
+  Future<void> saveVolumeBoost(double boost, {String? audiobookId}) async {
+    final prefs = await _preferences;
+    if (audiobookId != null) {
+      await prefs.setDouble('${_eqBookPrefix}${audiobookId}_boost', boost);
+    } else {
+      await prefs.setDouble(_eqBoostKey, boost);
+    }
+  }
+
+  Future<void> saveEqualizerBandGain(int bandIndex, double gain, {String? audiobookId}) async {
+    final prefs = await _preferences;
+    if (audiobookId != null) {
+      final jsonString = prefs.getString('${_eqBookPrefix}${audiobookId}_bands');
+      Map<String, dynamic> bands = {};
+      if (jsonString != null) {
+        try {
+          bands = jsonDecode(jsonString) as Map<String, dynamic>;
+        } catch (e) {}
+      }
+      bands[bandIndex.toString()] = gain;
+      await prefs.setString('${_eqBookPrefix}${audiobookId}_bands', jsonEncode(bands));
+    } else {
+      final jsonString = prefs.getString(_eqBandsKey);
+      Map<String, dynamic> bands = {};
+      if (jsonString != null) {
+        try {
+          bands = jsonDecode(jsonString) as Map<String, dynamic>;
+        } catch (e) {}
+      }
+      bands[bandIndex.toString()] = gain;
+      await prefs.setString(_eqBandsKey, jsonEncode(bands));
+    }
+  }
+  
+  Future<Map<int, double>> getEqualizerBandGains({String? audiobookId}) async {
+    final prefs = await _preferences;
+    final key = audiobookId != null 
+        ? '${_eqBookPrefix}${audiobookId}_bands' 
+        : _eqBandsKey;
+    final jsonString = prefs.getString(key);
+    if (jsonString == null) return {};
+    
+    try {
+      final jsonMap = jsonDecode(jsonString) as Map<String, dynamic>;
+      return jsonMap.map((k, v) => MapEntry(int.parse(k), (v as num).toDouble())); 
+    } catch (e) {
+      return {};
+    }
+  }
+
+  Future<void> saveEqualizerPreset(String presetName, {String? audiobookId}) async {
+    final prefs = await _preferences;
+    final key = audiobookId != null ? '${_eqBookPrefix}${audiobookId}_preset' : 'eq_preset';
+    await prefs.setString(key, presetName);
+  }
+
+  Future<String?> getEqualizerPreset({String? audiobookId}) async {
+    final prefs = await _preferences;
+    final key = audiobookId != null ? '${_eqBookPrefix}${audiobookId}_preset' : 'eq_preset';
+    return prefs.getString(key);
+  }
+
+  /// Load complete EQ settings for a book
+  Future<Map<String, dynamic>> getBookEqualizerSettings(String audiobookId) async {
+    final prefs = await _preferences;
+    return {
+      'enabled': prefs.getBool('${_eqBookPrefix}${audiobookId}_enabled') ?? false,
+      'boost': prefs.getDouble('${_eqBookPrefix}${audiobookId}_boost') ?? 0.0,
+      'bands': await getEqualizerBandGains(audiobookId: audiobookId),
+      'preset': prefs.getString('${_eqBookPrefix}${audiobookId}_preset'),
+    };
   }
 
   /// Loads list of audiobook folder paths from shared preferences
@@ -1906,6 +2048,19 @@ class StorageService {
         allData['data']['path_migrations'] = pathMigrations;
       }
       
+      // ===== 19. EQUALIZER & VOLUME BOOST (NEW) =====
+      final eqData = <String, dynamic>{};
+      for (final key in prefs.getKeys()) {
+        if ((key.startsWith(_eqBookPrefix) || key.startsWith('eq_') || key == 'eq_preset') && !key.endsWith(backupSuffix)) {
+          final value = prefs.get(key);
+          if (value != null) {
+            eqData[key] = value;
+          }
+        }
+      }
+      allData['data']['equalizer'] = eqData;
+      debugPrint('📦 Exported ${eqData.length} equalizer settings');
+      
       // Write to a file in the app's documents directory
       final dir = await getApplicationDocumentsDirectory();
       final now = DateTime.now().toIso8601String().replaceAll(':', '_');
@@ -1983,16 +2138,40 @@ class StorageService {
       debugPrint('📦 Imported ${bookmarksData.length} bookmark sets');
       
       // ===== 5. COMPLETED BOOKS =====
-      final completedBooks = (data['completed_books'] as List?)?.map((e) => e.toString()).toList() ?? [];
-      await prefs.setStringList(completedBooksKey, completedBooks);
+      final currentCompletedBooks = (prefs.getStringList(completedBooksKey) ?? []).toSet();
+      final backupCompletedBooks = (data['completed_books'] as List?)?.map((e) => e.toString()).toList() ?? [];
+      currentCompletedBooks.addAll(backupCompletedBooks);
+      await prefs.setStringList(completedBooksKey, currentCompletedBooks.toList());
       
       // ===== 6. FOLDERS =====
-      final folders = (data['folders'] as List?)?.map((e) => e.toString()).toList() ?? [];
-      await prefs.setStringList(foldersKey, folders);
+      final currentFolders = (prefs.getStringList(foldersKey) ?? []).toSet();
+      final backupFolders = (data['folders'] as List?)?.map((e) => e.toString()).toList() ?? [];
+      currentFolders.addAll(backupFolders);
+      final mergedFolders = currentFolders.toList();
+      await prefs.setStringList(foldersKey, mergedFolders);
+      _foldersCache = mergedFolders; // Update cache
       
       // ===== 7. CUSTOM TITLES =====
-      final customTitles = (data['custom_titles'] as List?)?.map((e) => e.toString()).toList() ?? [];
-      await prefs.setStringList(customTitlesKey, customTitles);
+      final currentCustomTitlesString = prefs.getString(customTitlesKey);
+      Map<String, String> mergedTitles = {};
+      if (currentCustomTitlesString != null) {
+        try {
+          mergedTitles = Map<String, String>.from(jsonDecode(currentCustomTitlesString));
+        } catch (e) {
+          debugPrint('📦 Error decoding current custom titles: $e');
+        }
+      }
+      
+      final backupCustomTitles = data['custom_titles'];
+      if (backupCustomTitles is Map) {
+        mergedTitles.addAll(Map<String, String>.from(backupCustomTitles));
+      } else if (backupCustomTitles is List) {
+        // Legacy support if it was a list in older versions
+        debugPrint('📦 Note: Backup custom titles found as list, skipping merge');
+      }
+      
+      await prefs.setString(customTitlesKey, jsonEncode(mergedTitles));
+      _customTitlesCache = mergedTitles;
       
       // ===== 8. TIMESTAMPS =====
       final timestampData = data['timestamps'] as Map<String, dynamic>? ?? {};
@@ -2002,25 +2181,70 @@ class StorageService {
       }
       
       // ===== 9. TAGS =====
-      final userTagsJson = data['user_tags'] as String?;
-      if (userTagsJson != null) {
-        await prefs.setString(userTagsKey, userTagsJson);
+      // User Tags
+      final currentUserTagsJson = prefs.getString(userTagsKey);
+      final backupUserTagsJson = data['user_tags'] as String?;
+      
+      if (backupUserTagsJson != null) {
+        if (currentUserTagsJson == null) {
+          await prefs.setString(userTagsKey, backupUserTagsJson);
+        } else {
+          try {
+            final currentList = (jsonDecode(currentUserTagsJson) as List).cast<Map<String, dynamic>>();
+            final backupList = (jsonDecode(backupUserTagsJson) as List).cast<Map<String, dynamic>>();
+            
+            // Merge by tag ID/name
+            final mergedMap = { for (var item in currentList) item['id'] ?? item['name']: item };
+            for (var item in backupList) {
+              mergedMap[item['id'] ?? item['name']] = item;
+            }
+            await prefs.setString(userTagsKey, jsonEncode(mergedMap.values.toList()));
+          } catch (e) {
+            debugPrint('📦 Error merging user tags: $e');
+          }
+        }
       }
-      final audiobookTagsJson = data['audiobook_tags'] as String?;
-      if (audiobookTagsJson != null) {
-        await prefs.setString(audiobookTagsKey, audiobookTagsJson);
+
+      // Audiobook Tags
+      final currentAudiobookTagsJson = prefs.getString(audiobookTagsKey);
+      final backupAudiobookTagsJson = data['audiobook_tags'] as String?;
+
+      if (backupAudiobookTagsJson != null) {
+        if (currentAudiobookTagsJson == null) {
+          await prefs.setString(audiobookTagsKey, backupAudiobookTagsJson);
+        } else {
+          try {
+            final currentMap = Map<String, dynamic>.from(jsonDecode(currentAudiobookTagsJson));
+            final backupMap = Map<String, dynamic>.from(jsonDecode(backupAudiobookTagsJson));
+            
+            // Merge maps
+            currentMap.addAll(backupMap);
+            await prefs.setString(audiobookTagsKey, jsonEncode(currentMap));
+          } catch (e) {
+            debugPrint('📦 Error merging audiobook tags: $e');
+          }
+        }
       }
       
 
 
       // ===== 10. REVIEWS (NEW) =====
       if (data['reviews'] != null) {
-        final reviewsJson = data['reviews'] as String;
-        await prefs.setString(reviewsKey, reviewsJson);
-        // Force reload reviews cache
-        _reviewsLoaded = false;
-        await loadAudiobookReviews();
-        debugPrint('📦 Imported reviews');
+        final backupReviewsJson = data['reviews'] as String;
+        
+        // Ensure cache is loaded
+        if (!_reviewsLoaded) {
+          await loadAudiobookReviews();
+        }
+        
+        try {
+          final backupReviews = Map<String, dynamic>.from(jsonDecode(backupReviewsJson));
+          _reviewsCache.addAll(backupReviews.cast<String, Map<String, dynamic>>());
+          await prefs.setString(reviewsKey, jsonEncode(_reviewsCache));
+          debugPrint('📦 Merged reviews successfully');
+        } catch (e) {
+          debugPrint('📦 Error merging reviews: $e');
+        }
       }
 
       // ===== 11. READING SESSIONS (NEW) =====
@@ -2095,6 +2319,25 @@ class StorageService {
       }
       if (data['path_migrations'] != null) {
         await prefs.setString('path_migrations', data['path_migrations'].toString());
+      }
+      
+      // ===== 19. EQUALIZER & VOLUME BOOST (NEW) =====
+      if (data['equalizer'] != null) {
+        final eqData = data['equalizer'] as Map<String, dynamic>;
+        for (final entry in eqData.entries) {
+          final key = entry.key;
+          final value = entry.value;
+          if (value is bool) {
+            await prefs.setBool(key, value);
+          } else if (value is double) {
+            await prefs.setDouble(key, value);
+          } else if (value is int) {
+            await prefs.setInt(key, value);
+          } else if (value is String) {
+            await prefs.setString(key, value);
+          }
+        }
+        debugPrint('📦 Imported ${eqData.length} equalizer settings');
       }
       
       // Clear all caches to force reload from imported data
@@ -2181,41 +2424,17 @@ class StorageService {
     return null;
   }
 
-  /// Cache cover art separately (can be large)
-  Future<void> cacheCoverArt(String audiobookId, Uint8List coverArt) async {
-    try {
-      final directory = await getApplicationDocumentsDirectory();
-      final file = File('${directory.path}/cover_${audiobookId.hashCode}.jpg');
-      await file.writeAsBytes(coverArt);
-    } catch (e) {
-      debugPrint("Error caching cover art for $audiobookId: $e");
-    }
-  }
-
   /// Get the file path for cached cover art
   Future<String?> getCachedCoverArtPath(String audiobookId) async {
     try {
       final directory = await getApplicationDocumentsDirectory();
-      final file = File('${directory.path}/cover_${audiobookId.hashCode}.jpg');
+      final fileName = _getSafeFileName(audiobookId);
+      final file = File(path.join(directory.path, 'covers', '$fileName.jpg'));
       if (await file.exists()) {
         return file.path;
       }
     } catch (e) {
       debugPrint("Error getting cached cover art path for $audiobookId: $e");
-    }
-    return null;
-  }
-
-  /// Load cached cover art
-  Future<Uint8List?> loadCachedCoverArt(String audiobookId) async {
-    try {
-      final directory = await getApplicationDocumentsDirectory();
-      final file = File('${directory.path}/cover_${audiobookId.hashCode}.jpg');
-      if (await file.exists()) {
-        return await file.readAsBytes();
-      }
-    } catch (e) {
-      debugPrint("Error loading cached cover art for $audiobookId: $e");
     }
     return null;
   }
@@ -2235,15 +2454,15 @@ class StorageService {
 
       // Clear cover art cache
       final directory = await getApplicationDocumentsDirectory();
-      final files = await directory.list().where((entity) => 
-        entity is File && entity.path.contains('cover_')
-      ).toList();
-      
-      for (final file in files) {
-        try {
-          await file.delete();
-        } catch (e) {
-          debugPrint("Error deleting cached cover art: $e");
+      final coversDir = Directory(path.join(directory.path, 'covers'));
+      if (await coversDir.exists()) {
+        final files = await coversDir.list().where((entity) => entity is File).toList();
+        for (final file in files) {
+          try {
+            await file.delete();
+          } catch (e) {
+            debugPrint("Error deleting cached cover art: $e");
+          }
         }
       }
       
@@ -2251,6 +2470,15 @@ class StorageService {
     } catch (e) {
       debugPrint("Error clearing metadata cache: $e");
     }
+  }
+
+  /// Comprehensive metadata clearing for deep rescans
+  Future<void> clearAllBookMetadataCache() async {
+    await clearMetadataCache();
+    // Also clear content hashes to ensure we re-examine folder structure
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('content_hashes');
+    debugPrint("Comprehensive metadata and content hashes cleared for deep rescan");
   }
 
   /// Check if basic book info is cached and up-to-date
@@ -2323,7 +2551,8 @@ class StorageService {
       // Remove cached cover art
       try {
         final directory = await getApplicationDocumentsDirectory();
-        final file = File('${directory.path}/cover_${audiobookId.hashCode}.jpg');
+        final fileName = _getSafeFileName(audiobookId);
+        final file = File(path.join(directory.path, 'covers', '$fileName.jpg'));
         if (await file.exists()) {
           await file.delete();
         }
@@ -2639,5 +2868,46 @@ class StorageService {
     _customTitlesCache = {};
     _playbackSpeedCache.clear();
     _playbackSpeedLoaded = false;
+  }
+
+  /// Save cover art bytes to internal storage to avoid permission issues
+  Future<void> saveCachedCoverArt(String audiobookId, Uint8List coverData) async {
+    try {
+      final directory = await getApplicationDocumentsDirectory();
+      final coverDir = Directory(path.join(directory.path, 'covers'));
+      if (!await coverDir.exists()) {
+        await coverDir.create(recursive: true);
+      }
+      
+      // Use a safe filename from audiobookId (which is a path)
+      final fileName = _getSafeFileName(audiobookId);
+      final file = File(path.join(coverDir.path, '$fileName.jpg'));
+      await file.writeAsBytes(coverData);
+      debugPrint("Saved cached cover art for: $audiobookId to ${file.path}");
+    } catch (e) {
+      debugPrint("Error saving cached cover art: $e");
+    }
+  }
+
+  /// Load cover art bytes from internal storage
+  Future<Uint8List?> loadCachedCoverArt(String audiobookId) async {
+    try {
+      final directory = await getApplicationDocumentsDirectory();
+      final fileName = _getSafeFileName(audiobookId);
+      final file = File(path.join(directory.path, 'covers', '$fileName.jpg'));
+      
+      if (await file.exists()) {
+        return await file.readAsBytes();
+      }
+    } catch (e) {
+      debugPrint("Error loading cached cover art: $e");
+    }
+    return null;
+  }
+
+  /// Helper to convert a path to a safe filename
+  String _getSafeFileName(String input) {
+    // Replace non-alphanumeric characters with underscores
+    return input.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_');
   }
 }

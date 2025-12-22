@@ -5,6 +5,7 @@ import '../utils/helpers.dart';
 import '../services/storage_service.dart';
 import '../providers/audiobook_provider.dart';
 import '../utils/responsive_utils.dart';
+import '../screens/cover_selection_screen.dart';
 
 class AudiobookTile extends StatefulWidget {
   final Audiobook audiobook;
@@ -282,87 +283,82 @@ class _AudiobookTileState extends State<AudiobookTile>
             ),
 
           // Main content
-          InkWell(
-            onTap: widget.onTap,
-            splashColor: colorScheme.primary.withOpacity(0.3),
-            highlightColor: colorScheme.primaryContainer.withOpacity(0.3),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                // Cover image area (expanded)
-                Expanded(
-                  flex: 3,
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      // Background blur for cover
-                      buildCoverWidget(
-                        context,
-                        widget.audiobook,
-                        size: 200, // Large size for quality
-                        customTitle: displayTitle,
-                      ),
-                      // Gradient overlay for text readability at bottom
-                      Positioned(
-                        bottom: 0,
-                        left: 0,
-                        right: 0,
-                        height: 60,
-                        child: Container(
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              begin: Alignment.topCenter,
-                              end: Alignment.bottomCenter,
-                              colors: [
-                                Colors.transparent,
-                                Colors.black.withOpacity(0.7),
-                              ],
-                            ),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // Cover image area (expanded)
+              Expanded(
+                flex: 3,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    // Background blur for cover
+                    buildCoverWidget(
+                      context,
+                      widget.audiobook,
+                      size: 200, // Large size for quality
+                      customTitle: displayTitle,
+                    ),
+                    // Gradient overlay for text readability at bottom
+                    Positioned(
+                      bottom: 0,
+                      left: 0,
+                      right: 0,
+                      height: 60,
+                      child: Container(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [
+                              Colors.transparent,
+                              Colors.black.withOpacity(0.7),
+                            ],
                           ),
                         ),
                       ),
+                    ),
+                  ],
+                ),
+              ),
+
+              // Details area
+              Expanded(
+                flex: 2,
+                child: Padding(
+                  padding: const EdgeInsets.all(8.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        displayTitle,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 13,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 4),
+                      if (widget.audiobook.author != null)
+                        Text(
+                          widget.audiobook.author!,
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: colorScheme.onSurfaceVariant,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      const Spacer(),
+                      _buildCompactMetadataRow(context, colorScheme),
+                      const SizedBox(height: 6),
+                      _buildCompactProgressIndicator(context, colorScheme),
                     ],
                   ),
                 ),
-
-                // Details area
-                Expanded(
-                  flex: 2,
-                  child: Padding(
-                    padding: const EdgeInsets.all(8.0),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          displayTitle,
-                          style: const TextStyle(
-                            fontWeight: FontWeight.w600,
-                            fontSize: 13,
-                          ),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        const SizedBox(height: 4),
-                        if (widget.audiobook.author != null)
-                          Text(
-                            widget.audiobook.author!,
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: colorScheme.onSurfaceVariant,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        const Spacer(),
-                        _buildCompactMetadataRow(context, colorScheme),
-                        const SizedBox(height: 6),
-                        _buildCompactProgressIndicator(context, colorScheme),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ),
+              ),
+            ],
           ),
 
           // Status badge
@@ -417,59 +413,54 @@ class _AudiobookTileState extends State<AudiobookTile>
               ),
 
             // Main content
-            InkWell(
-              onTap: widget.onTap,
-              splashColor: colorScheme.primary.withOpacity(0.3),
-              highlightColor: colorScheme.primaryContainer.withOpacity(0.3),
-              child: Padding(
-                padding: const EdgeInsets.all(12.0),
-                child: Row(
-                  children: [
-                    // Cover image
-                    _buildCoverImage(context, displayTitle, 80.0),
+            Padding(
+              padding: const EdgeInsets.all(12.0),
+              child: Row(
+                children: [
+                  // Cover image
+                  _buildCoverImage(context, displayTitle, 80.0),
 
-                    const SizedBox(width: 16),
+                  const SizedBox(width: 16),
 
-                    // Book details
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          // Title
-                          Text(
-                            displayTitle,
-                            style: Theme.of(
-                              context,
-                            ).textTheme.titleMedium?.copyWith(
-                              fontWeight: FontWeight.w600,
-                              letterSpacing: 0.3,
-                            ),
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
+                  // Book details
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Title
+                        Text(
+                          displayTitle,
+                          style: Theme.of(
+                            context,
+                          ).textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w600,
+                            letterSpacing: 0.3,
                           ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
 
-                          const SizedBox(height: 8),
+                        const SizedBox(height: 8),
 
-                          // Progress indicator
-                          _buildProgressIndicator(context, colorScheme),
+                        // Progress indicator
+                        _buildProgressIndicator(context, colorScheme),
 
-                          const SizedBox(height: 8),
+                        const SizedBox(height: 8),
 
-                          // Metadata row
-                          _buildMetadataRow(context, colorScheme),
-                        ],
-                      ),
+                        // Metadata row
+                        _buildMetadataRow(context, colorScheme),
+                      ],
                     ),
+                  ),
 
-                    // Right arrow - moved and made smaller to give more space for tags
-                    const SizedBox(width: 8),
-                    Icon(
-                      Icons.arrow_forward_ios_rounded,
-                      size: 14,
-                      color: Colors.grey.withOpacity(0.5),
-                    ),
-                  ],
-                ),
+                  // Right arrow
+                  const SizedBox(width: 8),
+                  Icon(
+                    Icons.arrow_forward_ios_rounded,
+                    size: 14,
+                    color: Colors.grey.withOpacity(0.5),
+                  ),
+                ],
               ),
             ),
 
@@ -524,56 +515,51 @@ class _AudiobookTileState extends State<AudiobookTile>
             ),
 
           // Main content
-          InkWell(
-            onTap: widget.onTap,
-            splashColor: colorScheme.primary.withOpacity(0.3),
-            highlightColor: colorScheme.primaryContainer.withOpacity(0.3),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                // Top section with cover and title
-                Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.all(8.0),
-                    child: Row(
-                      children: [
-                        // Cover image (smaller in landscape)
-                        _buildCoverImage(context, displayTitle, 60.0),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // Top section with cover and title
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.all(8.0),
+                  child: Row(
+                    children: [
+                      // Cover image (smaller in landscape)
+                      _buildCoverImage(context, displayTitle, 60.0),
 
-                        const SizedBox(width: 8),
+                      const SizedBox(width: 8),
 
-                        // Title and metadata
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                displayTitle,
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 14,
-                                ),
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
+                      // Title and metadata
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              displayTitle,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w600,
+                                fontSize: 14,
                               ),
-                              const Spacer(),
-                              // Compact metadata row
-                              _buildCompactMetadataRow(context, colorScheme),
-                            ],
-                          ),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            const Spacer(),
+                            // Compact metadata row
+                            _buildCompactMetadataRow(context, colorScheme),
+                          ],
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
                 ),
+              ),
 
-                // Bottom section with progress bar
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
-                  child: _buildCompactProgressIndicator(context, colorScheme),
-                ),
-              ],
-            ),
+              // Bottom section with progress bar
+              Padding(
+                padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+                child: _buildCompactProgressIndicator(context, colorScheme),
+              ),
+            ],
           ),
 
           // Status badge
@@ -915,6 +901,4 @@ class _AudiobookTileState extends State<AudiobookTile>
     // No badge
     return const SizedBox.shrink();
   }
-
-
 }

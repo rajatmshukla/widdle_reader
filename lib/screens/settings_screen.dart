@@ -13,6 +13,7 @@ import '../services/simple_audio_service.dart';
 
 import 'package:share_plus/share_plus.dart';
 import '../services/storage_service.dart';
+import '../services/notification_service.dart';
 import '../providers/audiobook_provider.dart';
 import '../providers/tag_provider.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -217,6 +218,20 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> with SingleTick
             delay: 300,
           ),
 
+          // Notifications section
+          _buildSectionWithDelay(
+            'Notifications',
+            Icons.notifications_rounded,
+            textTheme,
+            colorScheme,
+            delay: 350,
+          ),
+          const SizedBox(height: 12),
+          _buildAnimatedCard(
+            _buildNotificationCard(colorScheme, textTheme),
+            delay: 400,
+          ),
+
           // About section moved to the end
           _buildSectionWithDelay(
           'About',
@@ -312,18 +327,32 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> with SingleTick
                     delay: 125,
                   ),
 
+                  // Notifications section
+                  _buildSectionWithDelay(
+                    'Notifications',
+                    Icons.notifications_rounded,
+                    textTheme,
+                    colorScheme,
+                    delay: 150,
+                  ),
+                  const SizedBox(height: 12),
+                  _buildAnimatedCard(
+                    _buildNotificationCard(colorScheme, textTheme),
+                    delay: 175,
+                  ),
+
                   // About moved to the end
                   _buildSectionWithDelay(
                     'About',
                     Icons.info_outline_rounded,
                 textTheme,
                 colorScheme,
-                    delay: 175,
+                    delay: 200,
                   ),
                   const SizedBox(height: 12),
                   _buildAnimatedCard(
                     _buildAboutCard(colorScheme, textTheme),
-                    delay: 225,
+                    delay: 250,
                   ),
                 ],
               ),
@@ -1227,6 +1256,73 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> with SingleTick
             ),
             
 
+          ],
+        ),
+      ),
+    );
+  }
+
+  // Notification Settings card
+  Widget _buildNotificationCard(
+    ColorScheme colorScheme,
+    TextTheme textTheme,
+  ) {
+    final isLandscape = ResponsiveUtils.isLandscape(context);
+    final storageService = StorageService();
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 16),
+      elevation: 0,
+      color: colorScheme.surfaceContainerLow,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Padding(
+        padding: EdgeInsets.all(isLandscape ? 16 : 20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Notifications enabled toggle
+            FutureBuilder<bool>(
+              future: storageService.getNotificationsEnabled(),
+              builder: (context, snapshot) {
+                final notificationsEnabled = snapshot.data ?? true;
+                return ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(
+                    notificationsEnabled 
+                      ? Icons.notifications_active_rounded 
+                      : Icons.notifications_off_rounded,
+                    color: notificationsEnabled 
+                      ? colorScheme.primary 
+                      : colorScheme.onSurfaceVariant,
+                  ),
+                  title: Text('Enable Notifications', style: textTheme.bodyMedium),
+                  subtitle: Text(
+                    'Daily reading reminders and achievements',
+                    style: TextStyle(color: colorScheme.onSurfaceVariant),
+                  ),
+                  trailing: Switch(
+                    value: notificationsEnabled,
+                    onChanged: (value) async {
+                      await storageService.setNotificationsEnabled(value);
+                      setState(() {}); // Refresh to show updated state
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              value 
+                                ? 'Notifications enabled'
+                                : 'Notifications disabled',
+                            ),
+                            duration: const Duration(seconds: 2),
+                          ),
+                        );
+                      }
+                    },
+                  ),
+                );
+              },
+            ),
+            
           ],
         ),
       ),
