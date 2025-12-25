@@ -98,6 +98,25 @@ class WiddleReaderMediaService : MediaBrowserServiceCompat() {
             Log.d(TAG, "Local MediaSession initialized for Android Auto")
         }
     }
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action != null) {
+            val action = intent.action
+            Log.d(TAG, "onStartCommand action: $action")
+            when (action) {
+                "com.widdlereader.app.ACTION_PLAY" -> audioBridge.executeCommand("play")
+                "com.widdlereader.app.ACTION_PAUSE" -> audioBridge.executeCommand("pause")
+                "com.widdlereader.app.ACTION_SKIP_FORWARD" -> audioBridge.executeCommand("skipToNext")
+                "com.widdlereader.app.ACTION_SKIP_BACK" -> audioBridge.executeCommand("skipToPrevious")
+                "com.widdlereader.app.ACTION_PLAY_PAUSE" -> {
+                    // Toggle not strictly supported by bridge command, rely on specific play/pause logic
+                    // But if needed, we can try to guess.
+                    // Ideally WidgetProvider sends specific PLAY or PAUSE.
+                }
+            }
+        }
+        return super.onStartCommand(intent, flags, startId)
+    }
     
     override fun onDestroy() {
         serviceJob.cancel()

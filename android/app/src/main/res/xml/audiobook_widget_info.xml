@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Widget metadata for Audiobook Widget -->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:minWidth="110dp"
+    android:minHeight="40dp"
+    android:minResizeWidth="80dp"
+    android:minResizeHeight="40dp"
+    android:resizeMode="horizontal|vertical"
+    android:widgetCategory="home_screen"
+    android:initialLayout="@layout/widget_audiobook"
+    android:updatePeriodMillis="1800000"
+    android:previewLayout="@layout/widget_audiobook"
+    android:description="@string/widget_description"
+    android:targetCellWidth="3"
+    android:targetCellHeight="2" />

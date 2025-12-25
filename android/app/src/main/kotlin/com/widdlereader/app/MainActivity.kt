@@ -18,7 +18,9 @@ class MainActivity: AudioServiceActivity() {
     private val LICENSING_CHANNEL = "com.widdlereader.app/licensing"
     private val ANDROID_AUTO_CHANNEL = "com.widdlereader.app/android_auto"
     private val AUDIO_BRIDGE_CHANNEL = "com.widdlereader.app/audio_bridge"
+    private val WIDGET_CHANNEL = "com.widdlereader.app/widget"
     private lateinit var preferences: SharedPreferences
+    private var widgetChannel: MethodChannel? = null
     
     companion object {
         private const val TAG = "MainActivity"
@@ -41,6 +43,42 @@ class MainActivity: AudioServiceActivity() {
         
         // Setup Audio Bridge channel for MediaSession registration
         setupAudioBridgeChannel(flutterEngine)
+        
+        // Setup Widget channel for home screen widget actions
+        setupWidgetChannel(flutterEngine)
+    }
+    
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        
+        // Handle widget button clicks
+        when (intent.action) {
+            "WIDGET_PLAY_PAUSE" -> {
+                Log.d(TAG, "Widget: Play/Pause pressed")
+                widgetChannel?.invokeMethod("playPause", null)
+            }
+            "WIDGET_SKIP_FORWARD" -> {
+                Log.d(TAG, "Widget: Skip Forward pressed")
+                widgetChannel?.invokeMethod("skipForward", null)
+            }
+            "WIDGET_SKIP_BACK" -> {
+                Log.d(TAG, "Widget: Skip Back pressed")
+                widgetChannel?.invokeMethod("skipBack", null)
+            }
+        }
+    }
+    
+    private fun setupWidgetChannel(flutterEngine: FlutterEngine) {
+        widgetChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, WIDGET_CHANNEL)
+        widgetChannel?.setMethodCallHandler { call, result ->
+            when (call.method) {
+                "initialize" -> {
+                    Log.d(TAG, "Widget channel initialized")
+                    result.success(true)
+                }
+                else -> result.notImplemented()
+            }
+        }
     }
     
     private fun setupLicensingChannel(flutterEngine: FlutterEngine) {

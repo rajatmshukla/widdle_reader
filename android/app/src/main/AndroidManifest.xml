@@ -87,5 +87,18 @@
         
         <!-- Flutter metadata -->
         <meta-data android:name="flutterEmbedding" android:value="2"/>
+
+        <!-- Home Screen Widget -->
+        <receiver
+            android:name=".AudiobookWidgetProvider"
+            android:exported="true"
+            android:label="@string/app_name">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/audiobook_widget_info" />
+        </receiver>
     </application>
 </manifest>

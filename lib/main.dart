@@ -16,6 +16,7 @@ import 'screens/library_screen.dart';
 import 'screens/simple_player_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/license_check_screen.dart';
+import 'screens/holiday_splash_screen.dart';
 import 'screens/statistics_screen.dart';
 import 'theme.dart';
 import 'services/storage_service.dart';
@@ -23,6 +24,7 @@ import 'services/simple_audio_service.dart';
 import 'services/statistics_service.dart';
 import 'services/achievement_service.dart';
 import 'services/notification_service.dart';
+import 'services/widget_service.dart';
 
 // Define a global navigator key to access context from anywhere
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
@@ -126,6 +128,11 @@ Future<void> _initializeDataIntegrity() async {
     await achievementService.initialize();
     _logDebug("Achievement service initialized");
     
+    // Initialize home screen widget service
+    final widgetService = WidgetService();
+    await widgetService.initialize();
+    _logDebug("Widget service initialized");
+    
     _logDebug("Data integrity system initialized successfully");
   } catch (e) {
     _logDebug("Error initializing data integrity system: $e");
@@ -137,6 +144,20 @@ class MyApp extends StatefulWidget {
 
   @override
   State<MyApp> createState() => _MyAppState();
+
+  /// Check if current date is within holiday season (Dec 23 - Jan 4)
+  static bool isHolidaySeason() {
+    final now = DateTime.now();
+    final month = now.month;
+    final day = now.day;
+    
+    // December 23-31
+    if (month == 12 && day >= 23) return true;
+    // January 1-4
+    if (month == 1 && day <= 4) return true;
+    
+    return false;
+  }
 }
 
 class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
@@ -195,7 +216,17 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
           ],
           supportedLocales: FlutterQuillLocalizations.supportedLocales,
           
-          initialRoute: '/license', // Start with license check
+          // Show holiday splash during Dec 23 - Jan 4, otherwise go to license check
+          home: MyApp.isHolidaySeason()
+              ? HolidaySplashScreen(
+                  onComplete: () {
+                    navigatorKey.currentState?.pushNamedAndRemoveUntil(
+                      '/license',
+                      (route) => false,
+                    );
+                  },
+                )
+              : const LicenseCheckScreen(),
           routes: {
             '/license': (context) => const LicenseCheckScreen(),
             '/splash': (context) => const SplashScreen(),

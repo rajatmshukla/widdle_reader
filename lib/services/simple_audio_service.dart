@@ -13,6 +13,7 @@ import '../models/audiobook.dart';
 import '../services/storage_service.dart';
 import '../services/statistics_service.dart';
 import '../services/engagement_manager.dart';
+import '../services/widget_service.dart';
 
 class SimpleAudioService with WidgetsBindingObserver {
   // Singleton instance
@@ -47,6 +48,7 @@ class SimpleAudioService with WidgetsBindingObserver {
   Timer? _autoSaveTimer;
   final StorageService _storageService = StorageService();
   final StatisticsService _statsService = StatisticsService();
+  final WidgetService _widgetService = WidgetService();
 
   // Timer for MediaSession updates
   Timer? _mediaSessionUpdateTimer;
@@ -201,6 +203,9 @@ class SimpleAudioService with WidgetsBindingObserver {
              // 3. CRITICAL: Apply EQ settings NOW that audio session is truly active
              // This fixes the mute bug on app restart with EQ enabled
              _applyEqOnPlaybackStart();
+             
+             // 4. Update home screen widget with current book/chapter
+             _updateHomeWidget(isPlaying: true);
         }
       } else {
         _stopMediaSessionUpdates();
@@ -224,6 +229,9 @@ class SimpleAudioService with WidgetsBindingObserver {
           
           // 4. Reset EQ flag so it re-applies if the session was lost/reset
           _eqAppliedThisSession = false;
+          
+          // 5. Update home screen widget to show paused state
+          _updateHomeWidget(isPlaying: false);
         }
       }
       _updateMediaSessionPlaybackState();
@@ -435,6 +443,9 @@ class SimpleAudioService with WidgetsBindingObserver {
       if (autoPlay) {
         await play(propagateToNative: propagateCommands);
       }
+      
+      // Update home screen widget
+      await _updateHomeWidget(isPlaying: autoPlay);
     } catch (e) {
       debugPrint("Error loading audiobook: $e");
       rethrow;
@@ -594,6 +605,9 @@ class SimpleAudioService with WidgetsBindingObserver {
 
       // Record engagement for streak tracking
       unawaited(EngagementManager().recordListeningSession());
+      
+      // Update home screen widget
+      await _updateHomeWidget(isPlaying: _player.playing);
     } catch (e) {
       debugPrint("Error loading chapter $index: $e");
       
@@ -967,6 +981,33 @@ class SimpleAudioService with WidgetsBindingObserver {
     debugPrint("Forcing full state sync to native...");
     await _updateMediaSessionMetadata();
     await _updateMediaSessionPlaybackState();
+  }
+
+  /// Update the home screen widget with current playback state
+  /// Update the home screen widget with current playback state
+  Future<void> _updateHomeWidget({required bool isPlaying}) async {
+    if (_currentAudiobook == null) {
+      await _widgetService.clearWidget();
+      return;
+    }
+    
+    final bookTitle = _currentAudiobook!.title;
+    final chapterTitle = _currentAudiobook!.chapters[_currentChapterIndex].title;
+    
+    // Get local cover art path
+    String? coverPath;
+    try {
+      coverPath = await _storageService.getCachedCoverArtPath(_currentAudiobook!.id);
+    } catch (e) {
+      debugPrint("Error getting cover path for widget: $e");
+    }
+    
+    await _widgetService.updateWidget(
+      bookTitle: bookTitle,
+      chapterTitle: chapterTitle,
+      isPlaying: isPlaying,
+      coverPath: coverPath,
+    );
   }
 
   // ===========================

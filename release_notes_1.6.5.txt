@@ -1,0 +1,18 @@
+Widdle Reader v1.6.5 Release Notes
+
+🎉 What's New:
+
+📱 **Enhanced Home Screen Widget**
+- **Seamless Playback Control (New!)**: Control your audiobook directly from the home screen widget without opening the app! Play, pause, and skip chapters instantly.
+- **Cover Art Display**: The large widget now beautifully displays the cover art of your current audiobook.
+- **Improved Responsiveness**: Widget actions are now faster and more reliable.
+
+🎄 **Holiday Spirit**
+- **Holiday Splash Screen**: A festive new welcome screen to celebrate the season!
+
+✨ **Improvement & Fixes**
+- Fixed an issue where widget buttons could be unresponsive.
+- Performance optimizations for smoother playback.
+- Updated core libraries for better stability.
+
+Thank you for using Widdle Reader!
