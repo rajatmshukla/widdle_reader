@@ -13,6 +13,7 @@ import '../services/simple_audio_service.dart';
 
 import 'package:share_plus/share_plus.dart';
 import '../services/storage_service.dart';
+import '../services/native_scanner.dart';
 import '../services/notification_service.dart';
 import '../providers/audiobook_provider.dart';
 import '../providers/tag_provider.dart';
@@ -838,7 +839,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> with SingleTick
 
             // Version
             Text(
-              'Version 1.6.5',
+              'Version 1.7.0',
               style: textTheme.bodyMedium?.copyWith(
                 color: colorScheme.onSurfaceVariant,
               ),
@@ -1334,49 +1335,51 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> with SingleTick
     final storageService = StorageService();
     
     try {
-      showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (context) => const AlertDialog(
-          title: Text('Creating Backup'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              CircularProgressIndicator(),
-              SizedBox(height: 16),
-              Text('Exporting your data...'),
-            ],
-          ),
-        ),
-      );
+      // 1. Ask user to pick location first (before showing progress)
+      final now = DateTime.now().toIso8601String().replaceAll(':', '_');
+      final suggestedName = 'widdle_reader_backup_$now.json';
+      final String? targetUri = await NativeScanner.createFile(suggestedName, 'application/json');
       
-      final backupFile = await storageService.exportUserData();
+      // User cancelled
+      if (targetUri == null) return;
+
+      // 2. Now show progress dialog
+      if (context.mounted) {
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) => const AlertDialog(
+            title: Text('Creating Backup'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircularProgressIndicator(),
+                SizedBox(height: 16),
+                Text('Exporting your data...'),
+              ],
+            ),
+          ),
+        );
+      }
+      
+      // 3. Export
+      final backupPath = await storageService.exportUserDataToUri(targetUri);
       
       // Close the progress dialog
       if (context.mounted) Navigator.of(context).pop();
       
-      if (backupFile != null) {
-        // Show success and share options
+      if (backupPath != null) {
+        // Show success
         if (context.mounted) {
           showDialog(
             context: context,
             builder: (context) => AlertDialog(
               title: const Text('Backup Created'),
-              content: Text('Backup saved to: ${backupFile.path}\n\nWould you like to share this file?'),
+              content: Text('Backup saved successfully to selected folder.\n\nPath: $backupPath'),
               actions: [
                 TextButton(
                   onPressed: () => Navigator.of(context).pop(),
-                  child: const Text('CLOSE'),
-                ),
-                FilledButton(
-                  onPressed: () {
-                    Navigator.of(context).pop();
-                    Share.shareXFiles(
-                      [XFile(backupFile.path)],
-                      subject: 'Widdle Reader Backup',
-                    );
-                  },
-                  child: const Text('SHARE'),
+                  child: const Text('OK'),
                 ),
               ],
             ),
@@ -1523,28 +1526,28 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> with SingleTick
   
   // Check data health
   Future<void> _checkDataHealth(BuildContext context) async {
-    try {
-      final storageService = StorageService();
-      
-      // Show progress dialog
-      if (context.mounted) {
-        showDialog(
-          context: context,
-          barrierDismissible: false,
-          builder: (context) => const AlertDialog(
-            title: Text('Checking Data'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                CircularProgressIndicator(),
-                SizedBox(height: 16),
-                Text('Verifying data integrity...'),
-              ],
-            ),
+    final storageService = StorageService();
+    
+    // Show progress dialog
+    if (context.mounted) {
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const AlertDialog(
+          title: Text('Checking Data'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(height: 16),
+              Text('Verifying data integrity...'),
+            ],
           ),
-        );
-      }
-      
+        ),
+      );
+    }
+    
+    try {
       // Check data health
       final healthCheck = await storageService.checkDataHealth();
       
@@ -1565,19 +1568,31 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> with SingleTick
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text('Data Version: ${healthCheck['dataVersion']}/${healthCheck['currentVersion']}'),
+                  Text('Data Version: ${healthCheck['dataVersion'] ?? 'Unknown'}/${healthCheck['currentVersion'] ?? 'Unknown'}'),
                   const SizedBox(height: 8),
-                  Text('Last Cache Sync: ${healthCheck['lastCacheSync']}'),
+                  Text('Last Cache Sync: ${healthCheck['lastCacheSync'] ?? 'Never'}'),
                   const SizedBox(height: 16),
                   const Text('Data Counts:', style: TextStyle(fontWeight: FontWeight.bold)),
-                  Text('• Audiobooks: ${healthCheck['counts']['folders']}'),
-                  Text('• Progress Records: ${healthCheck['counts']['progress']}'),
-                  Text('• Position Records: ${healthCheck['counts']['positions']}'),
-                  Text('• Bookmarks: ${healthCheck['counts']['bookmarks']}'),
-                  Text('• Completed Books: ${healthCheck['counts']['completedBooks']}'),
-                  Text('• Custom Titles: ${healthCheck['counts']['customTitles']}'),
-                  Text('• User Tags: ${healthCheck['counts']['userTags'] ?? 0}'),
-                  Text('• Tag Assignments: ${healthCheck['counts']['audiobookTagAssignments'] ?? 0}'),
+                  Text('• Audiobooks: ${healthCheck['counts']?['folders'] ?? 0}'),
+                  Text('• Progress Records: ${healthCheck['counts']?['progress'] ?? 0}'),
+                  Text('• Position Records: ${healthCheck['counts']?['positions'] ?? 0}'),
+                  Text('• Bookmarks: ${healthCheck['counts']?['bookmarks'] ?? 0}'),
+                  Text('• Completed Books: ${healthCheck['counts']?['completedBooks'] ?? 0}'),
+                  Text('• Custom Titles: ${healthCheck['counts']?['customTitles'] ?? 0}'),
+                  Text('• User Tags: ${healthCheck['counts']?['userTags'] ?? 0}'),
+                  Text('• Tag Assignments: ${healthCheck['counts']?['audiobookTagAssignments'] ?? 0}'),
+                  Text('• Reading Sessions: ${healthCheck['counts']?['readingSessions'] ?? 0}'),
+                  Text('• Daily Stats: ${healthCheck['counts']?['dailyStats'] ?? 0}'),
+                  Text('• Achievements: ${healthCheck['counts']?['achievements'] ?? 0}'),
+                  Text('• Active Challenges: ${healthCheck['counts']?['activeChallenges'] ?? 0}'),
+                  Text('• Equalizer Settings: ${healthCheck['counts']?['equalizerSettings'] ?? 0}'),
+                  Text('• Duration Preferences: ${healthCheck['counts']?['durationModes'] ?? 0}'),
+                  Text('• Completion Flags: ${healthCheck['counts']?['completionFlags'] ?? 0}'),
+                  Text('• Manual Covers: ${healthCheck['counts']?['manualCovers'] ?? 0}'),
+                  if (healthCheck['error'] != null) ...[
+                    const SizedBox(height: 16),
+                    Text('⚠️ Error: ${healthCheck['error']}', style: const TextStyle(color: Colors.red)),
+                  ],
                   const SizedBox(height: 16),
                   const Text('A backup of your data was created as a safety measure.'),
                 ],
@@ -1600,9 +1615,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> with SingleTick
         );
       }
     } catch (e) {
-      // Close progress dialog if open
-      if (context.mounted && Navigator.of(context).canPop()) {
-        Navigator.of(context).pop();
+      // Close progress dialog if still open
+      if (context.mounted) {
+         // This is a bit risky if we don't know for sure the dialog is open, 
+         // but since barrierDismissible is false, it's likely the only one.
+         try { Navigator.of(context).pop(); } catch (_) {}
       }
       
       // Show error

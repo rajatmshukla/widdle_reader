@@ -56,4 +56,24 @@ class Chapter {
           : null,
     );
   }
+
+  Chapter copyWith({
+    String? id,
+    String? title,
+    String? audiobookId,
+    String? sourcePath,
+    Duration? duration,
+    Duration? start,
+    Duration? end,
+  }) {
+    return Chapter(
+      id: id ?? this.id,
+      title: title ?? this.title,
+      audiobookId: audiobookId ?? this.audiobookId,
+      sourcePath: sourcePath ?? this.sourcePath,
+      duration: duration ?? this.duration,
+      start: start ?? this.start,
+      end: end ?? this.end,
+    );
+  }
 }

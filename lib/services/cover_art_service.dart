@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
+import 'native_scanner.dart';
 
 class CoverArtService {
   static final CoverArtService _instance = CoverArtService._internal();
@@ -16,15 +17,14 @@ class CoverArtService {
   /// Search Open Library for cover art based on title and author
   Future<Uint8List?> fetchCoverFromOpenLibrary(String title, String? author, String audiobookPath) async {
     try {
-      /*
       // 1. Check if cover.jpg already exists in the folder
-      // Removed: Permission issue on Android 11+
-      final existingCover = File(p.join(audiobookPath, 'cover.jpg'));
-      if (await existingCover.exists()) {
+      final hasCover = await NativeScanner.exists(p.join(audiobookPath, 'cover.jpg'));
+      if (hasCover) {
         debugPrint('🎨 Found existing cover.jpg for $title');
-        return await existingCover.readAsBytes();
+        // We still return null here to trigger the search if intended, 
+        // OR we could load it. But fetchCoverFromOpenLibrary is usually 
+        // called when we WANT to fetch from web.
       }
-      */
 
       // 2. Search Open Library API
       final query = author != null && author.isNotEmpty ? '$title $author' : title;
@@ -50,15 +50,9 @@ class CoverArtService {
             if (imageResponse.statusCode == 200) {
               final bytes = imageResponse.bodyBytes;
               
-              /*
-              // 3. Cache to disk (DISABLED: Permission issue)
-              try {
-                await existingCover.writeAsBytes(bytes);
-                debugPrint('🎨 Cached cover art to ${existingCover.path}');
-              } catch (e) {
-                debugPrint('🎨 Error caching cover art: $e');
-              }
-              */
+              // 3. Cache to disk (Using NativeScanner for SAF support)
+              await NativeScanner.writeBytes(audiobookPath, bytes, fileName: 'cover.jpg');
+              debugPrint('🎨 Cached cover art to source folder');
               
               return bytes;
             }
@@ -129,12 +123,11 @@ class CoverArtService {
       if (response.statusCode == 200) {
         if (response.headers['content-type']?.contains('image') ?? false) {
           final bytes = response.bodyBytes;
-          /*
-          // DISABLED: Permission issue on Android 11+
-          final coverFile = File(p.join(audiobookPath, 'cover.jpg'));
-          await coverFile.writeAsBytes(bytes);
-          debugPrint('🎨 Manually saved cover art to ${coverFile.path}');
-          */
+          
+          // Save back to source folder using NativeScanner
+          await NativeScanner.writeBytes(audiobookPath, bytes, fileName: 'cover.jpg');
+          debugPrint('🎨 Manually saved cover art to source folder');
+          
           return bytes;
         } else {
           debugPrint('🎨 [OpenLibrary] Manual download error: Response is not an image (${response.headers['content-type']})');

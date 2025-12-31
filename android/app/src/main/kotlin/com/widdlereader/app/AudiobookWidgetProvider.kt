@@ -111,23 +111,35 @@ class AudiobookWidgetProvider : AppWidgetProvider() {
         views.setImageViewResource(R.id.widget_play_pause, playPauseIcon)
 
         // Set Cover Art if available and layout has image view
-        if (layoutId == R.layout.widget_audiobook_large) {
+        if (layoutId == R.layout.widget_audiobook_large || layoutId == R.layout.widget_audiobook) {
              if (coverPath != null && File(coverPath).exists()) {
                  try {
+                     Log.d("WidgetProvider", "🎨 Loading cover art for widget: $coverPath (layout=$layoutId)")
                      val options = BitmapFactory.Options().apply {
                          inJustDecodeBounds = true
                      }
                      BitmapFactory.decodeFile(coverPath, options)
-                     options.inSampleSize = calculateInSampleSize(options, 120, 120)
+                     
+                     // Larger target size for large layout, smaller for medium
+                     val targetSize = if (layoutId == R.layout.widget_audiobook_large) 150 else 80
+                     
+                     options.inSampleSize = calculateInSampleSize(options, targetSize, targetSize)
                      options.inJustDecodeBounds = false
                      
                      val bitmap = BitmapFactory.decodeFile(coverPath, options)
-                     views.setImageViewBitmap(R.id.widget_app_icon, bitmap)
+                     if (bitmap != null) {
+                        views.setImageViewBitmap(R.id.widget_app_icon, bitmap)
+                        Log.d("WidgetProvider", "✅ Cover art loaded: ${bitmap.width}x${bitmap.height}")
+                     } else {
+                        Log.w("WidgetProvider", "⚠️ BitmapFactory returned null for: $coverPath")
+                        views.setImageViewResource(R.id.widget_app_icon, R.mipmap.ic_launcher)
+                     }
                  } catch (e: Exception) {
-                     Log.e("WidgetProvider", "Error loading cover art: $e")
+                     Log.e("WidgetProvider", "❌ Error loading cover art for widget: $e")
                      views.setImageViewResource(R.id.widget_app_icon, R.mipmap.ic_launcher)
                  }
              } else {
+                 Log.d("WidgetProvider", "ℹ️ No cover art path provided or file doesn't exist: $coverPath")
                  views.setImageViewResource(R.id.widget_app_icon, R.mipmap.ic_launcher)
              }
         }

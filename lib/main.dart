@@ -25,6 +25,7 @@ import 'services/statistics_service.dart';
 import 'services/achievement_service.dart';
 import 'services/notification_service.dart';
 import 'services/widget_service.dart';
+import 'widgets/snow_overlay.dart'; // Import global snow overlay
 
 // Define a global navigator key to access context from anywhere
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
@@ -234,6 +235,16 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
             '/player': (context) => const SimplePlayerScreen(),
             '/settings': (context) => const SettingsScreen(),
             '/statistics': (context) => const StatisticsScreen(),
+          },
+
+          // Global builder for overlays (Snow Effect)
+          builder: (context, child) {
+            return Stack(
+              children: [
+                if (child != null) child,
+                const SnowOverlay(),
+              ],
+            );
           },
         );
       },

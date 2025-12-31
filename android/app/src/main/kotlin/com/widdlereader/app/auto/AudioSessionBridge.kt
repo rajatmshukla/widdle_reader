@@ -382,9 +382,11 @@ class AudioSessionBridge(private val context: Context) {
                     if (artwork != null) {
                         metadataBuilder.putBitmap(MediaMetadataCompat.METADATA_KEY_ALBUM_ART, artwork)
                         metadataBuilder.putBitmap(MediaMetadataCompat.METADATA_KEY_ART, artwork)
+                        metadataBuilder.putBitmap(MediaMetadataCompat.METADATA_KEY_DISPLAY_ICON, artwork)
                     }
                     metadataBuilder.putString(MediaMetadataCompat.METADATA_KEY_ALBUM_ART_URI, uri)
                     metadataBuilder.putString(MediaMetadataCompat.METADATA_KEY_ART_URI, uri)
+                    metadataBuilder.putString(MediaMetadataCompat.METADATA_KEY_DISPLAY_ICON_URI, uri)
                 }
                 
                 it.setMetadata(metadataBuilder.build())
@@ -455,35 +457,65 @@ class AudioSessionBridge(private val context: Context) {
      */
     private fun loadArtwork(artUri: String): Bitmap? {
         return try {
+            val targetSize = 320 // Robust size for notifications and widgets
+            
             val filePath = when {
                 artUri.startsWith("file://") -> Uri.parse(artUri).path
                 artUri.startsWith("/") -> artUri
                 else -> null
             }
             
-            if (filePath == null) {
-                Log.w(TAG, "Unsupported artwork URI format: $artUri")
+            // Handle content:// URIs
+            var finalBitmap: Bitmap? = null
+
+            if (artUri.startsWith("content://")) {
+                val uri = Uri.parse(artUri)
+                context.contentResolver.openInputStream(uri)?.use { inputStream ->
+                    val options = BitmapFactory.Options().apply {
+                        inJustDecodeBounds = true
+                    }
+                    val bytes = inputStream.readBytes()
+                    BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
+                    
+                    options.inSampleSize = calculateInSampleSize(options, targetSize, targetSize)
+                    options.inJustDecodeBounds = false
+                    finalBitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
+                }
+            } else if (filePath != null) {
+                val file = File(filePath)
+                if (file.exists()) {
+                    val options = BitmapFactory.Options().apply {
+                        inJustDecodeBounds = true
+                    }
+                    BitmapFactory.decodeFile(file.absolutePath, options)
+                    
+                    options.inSampleSize = calculateInSampleSize(options, targetSize, targetSize)
+                    options.inJustDecodeBounds = false
+                    finalBitmap = BitmapFactory.decodeFile(file.absolutePath, options)
+                }
+            }
+
+            if (finalBitmap != null) {
+                // FORCE RESIZE: inSampleSize only supports powers of 2. 
+                // We need to ensure it's actually small to avoid TransactionTooLargeException
+                if (finalBitmap!!.width > targetSize + 20 || finalBitmap!!.height > targetSize + 20) {
+                    val ratio = Math.min(targetSize.toDouble() / finalBitmap!!.width, targetSize.toDouble() / finalBitmap!!.height)
+                    val width = (finalBitmap!!.width * ratio).toInt()
+                    val height = (finalBitmap!!.height * ratio).toInt()
+                    
+                    Log.d(TAG, "Force resizing bitmap from ${finalBitmap!!.width}x${finalBitmap!!.height} to ${width}x${height}")
+                    val scaled = Bitmap.createScaledBitmap(finalBitmap!!, width, height, true)
+                    if (scaled != finalBitmap) {
+                        finalBitmap!!.recycle()
+                        finalBitmap = scaled
+                    }
+                }
+                Log.d(TAG, "✅ Successfully loaded artwork: ${finalBitmap!!.width}x${finalBitmap!!.height} from $artUri")
+                return finalBitmap
+            } else {
+                Log.w(TAG, "⚠️ Failed to decode artwork from: $artUri")
                 return null
             }
-            
-            val file = File(filePath)
-            if (!file.exists()) {
-                Log.w(TAG, "Cover art file not found: $filePath")
-                return null
-            }
-            
-            // First decode with inJustDecodeBounds=true to check dimensions
-            val options = BitmapFactory.Options().apply {
-                inJustDecodeBounds = true
-            }
-            BitmapFactory.decodeFile(file.absolutePath, options)
-            
-            // Calculate inSampleSize for 512x512 (better for background art)
-            options.inSampleSize = calculateInSampleSize(options, 512, 512)
-            
-            // Decode bitmap with inSampleSize set
-            options.inJustDecodeBounds = false
-            BitmapFactory.decodeFile(file.absolutePath, options)
             
         } catch (e: Exception) {
             Log.e(TAG, "Error loading artwork from $artUri", e)

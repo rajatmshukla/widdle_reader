@@ -206,7 +206,7 @@ class _HolidaySplashScreenState extends State<HolidaySplashScreen>
                       errorBuilder: (context, error, stackTrace) {
                         // Fallback to regular logo if holiday logo not found
                         return Image.asset(
-                          'assets/icons/app_logo.png',
+                          'assets/icons/app_logo_holidays.png',
                           fit: BoxFit.cover,
                         );
                       },

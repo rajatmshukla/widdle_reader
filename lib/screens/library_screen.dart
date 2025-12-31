@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart'; // For kDebugMode
+import 'dart:math'; // For Snow Effect
 import 'package:widdle_reader/screens/review_editor_screen.dart'; // Import ReviewEditorScreen
 import 'package:widdle_reader/screens/reviews_list_screen.dart'; // Import ReviewsListScreen
 import 'package:provider/provider.dart' as provider;
@@ -8,7 +9,9 @@ import 'package:flutter/services.dart';
 
 import 'settings_screen.dart';
 import 'simple_player_screen.dart';
+
 import 'cover_selection_screen.dart';
+import '../widgets/snow_overlay.dart'; // Import global provider
 
 
 
@@ -55,6 +58,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
   bool _androidAutoInitialized = false;
+  // bool _isSnowing = false; // MOVED TO GLOBAL PROVIDER
   int _selectedIndex = 0; // 0 = Library, 1 = Completed, 2 = Tags
   
   @override  
@@ -574,38 +578,14 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
                 ],
               ),
             ),
-            const SizedBox(height: 16),
-            
-            ListTile(
-              leading: Icon(Icons.book, color: colorScheme.primary),
-              title: const Text('Add Single Book'),
-              subtitle: const Text('Select a single folder containing audio files'),
-              onTap: () async {
-                Navigator.pop(context);
-                await provider.addAudiobookFolder();
-                await _handleAutoTagCreation(provider);
-              },
-            ),
-            const Divider(),
             ListTile(
               leading: Icon(Icons.auto_stories, color: colorScheme.primary),
               title: const Text('Scan for Books'),
-              subtitle: const Text('Recursively scan for audiobooks (long press to force deep rescan)'),
+              subtitle: const Text('Recursively scan for audiobooks'),
               onTap: () async {
                 Navigator.pop(context);
                 await provider.addAudiobooksRecursively();
                 await _handleAutoTagCreation(provider);
-              },
-              onLongPress: () async {
-                Navigator.pop(context);
-                // Haptic feedback for long-press action
-                HapticFeedback.mediumImpact();
-                await provider.forceRefreshLibrary();
-                if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Deep rescan completed')),
-                  );
-                }
               },
             ),
 
@@ -980,69 +960,89 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
                           
                           // Main content below loading card
                           Expanded(
-                            child: Consumer(
-                              builder: (context, widgetRef, child) {
-                                final searchState = ref.watch(searchProvider);
-                                
-                                // Switch content based on selected tab
-                                if (_selectedIndex == 3) {
-                                  // Reviews Hub
-                                  return const ReviewsListScreen();
-                                } else if (_selectedIndex == 2) {
-                                  // Tags view
-                                  return const TagsView();
-                                } else if (_selectedIndex == 1) {
-                                  // Completed books view
-                                  return Consumer(
-                                    builder: (context, widgetRef, child) {
-                                      final sortOption = ref.watch(librarySortOptionProvider);
-                                      
-                                      // Apply sorting
-                                      provider.sortAudiobooks(sortOption);
-                                      
-                                      var completedBooks = provider.completedBooksOnly;
-                                      
-                                      // Apply search filter if active
-                                      if (searchState.query.isNotEmpty) {
-                                        completedBooks = _getSearchResults(provider, searchState.query, booksToSearch: completedBooks);
-                                      }
-                                      
-                                      return completedBooks.isEmpty && !provider.isLoading
-                                          ? (searchState.query.isNotEmpty 
-                                              ? _buildEmptySearchResults(context, colorScheme) 
-                                              : _buildEmptyCompletedView(context, colorScheme))
-                                          : (isLandscape || themeProvider.isGridView)
-                                              ? _buildGridView(context, provider, isPortraitGrid: !isLandscape, booksToShow: completedBooks)
-                                              : _buildListView(context, provider, booksToShow: completedBooks);
-                                    },
-                                  );
-                                } else {
-                                  // Library mode (ongoing books only)
-                                  return Consumer(
-                                    builder: (context, widgetRef, child) {
-                                      final sortOption = ref.watch(librarySortOptionProvider);
-                                      
-                                      // Apply sorting
-                                      provider.sortAudiobooks(sortOption);
-                                      
-                                      var ongoingBooks = provider.ongoingBooks;
-                                      
-                                      // Apply search filter if active
-                                      if (searchState.query.isNotEmpty) {
-                                        ongoingBooks = _getSearchResults(provider, searchState.query, booksToSearch: ongoingBooks);
-                                      }
-                                      
-                                      return ongoingBooks.isEmpty && !provider.isLoading
-                                          ? (searchState.query.isNotEmpty 
-                                              ? _buildEmptySearchResults(context, colorScheme) 
-                                              : _buildEmptyLibraryView(context, provider, colorScheme))
-                                          : (isLandscape || themeProvider.isGridView)
-                                              ? _buildGridView(context, provider, isPortraitGrid: !isLandscape, booksToShow: ongoingBooks)
-                                              : _buildListView(context, provider, booksToShow: ongoingBooks);
-                                    },
-                                  );
+                            child: RefreshIndicator(
+                              onRefresh: () async {
+                                if (_selectedIndex == 0 || _selectedIndex == 1) {
+                                  await provider.syncLibraryWithRoot(isLightweight: true);
                                 }
+                                return Future.delayed(const Duration(milliseconds: 500));
                               },
+                              child: Consumer(
+                                builder: (context, widgetRef, child) {
+                                  final searchState = ref.watch(searchProvider);
+                                  
+                                  // Switch content based on selected tab
+                                  if (_selectedIndex == 3) {
+                                    // Reviews Hub
+                                    return const ReviewsListScreen();
+                                  } else if (_selectedIndex == 2) {
+                                    // Tags view
+                                    return const TagsView();
+                                  } else if (_selectedIndex == 1) {
+                                    // Completed books view
+                                    return Consumer(
+                                      builder: (context, widgetRef, child) {
+                                        final sortOption = ref.watch(librarySortOptionProvider);
+                                        
+                                        // Apply sorting
+                                        provider.sortAudiobooks(sortOption);
+                                        
+                                        var completedBooks = provider.completedBooksOnly;
+                                        
+                                        // Apply search filter if active
+                                        if (searchState.query.isNotEmpty) {
+                                          completedBooks = _getSearchResults(provider, searchState.query, booksToSearch: completedBooks);
+                                        }
+                                        
+                                        return completedBooks.isEmpty && !provider.isLoading
+                                            ? (searchState.query.isNotEmpty 
+                                                ? _buildEmptySearchResults(context, colorScheme) 
+                                                : ConstrainedBox(
+                                                    constraints: BoxConstraints(minHeight: MediaQuery.of(context).size.height * 0.5),
+                                                    child: SingleChildScrollView(
+                                                      physics: const AlwaysScrollableScrollPhysics(),
+                                                      child: _buildEmptyCompletedView(context, colorScheme)
+                                                    ),
+                                                  ))
+                                            : (isLandscape || themeProvider.isGridView)
+                                                ? _buildGridView(context, provider, isPortraitGrid: !isLandscape, booksToShow: completedBooks)
+                                                : _buildListView(context, provider, booksToShow: completedBooks);
+                                      },
+                                    );
+                                  } else {
+                                    // Library mode (ongoing books only)
+                                    return Consumer(
+                                      builder: (context, widgetRef, child) {
+                                        final sortOption = ref.watch(librarySortOptionProvider);
+                                        
+                                        // Apply sorting
+                                        provider.sortAudiobooks(sortOption);
+                                        
+                                        var ongoingBooks = provider.ongoingBooks;
+                                        
+                                        // Apply search filter if active
+                                        if (searchState.query.isNotEmpty) {
+                                          ongoingBooks = _getSearchResults(provider, searchState.query, booksToSearch: ongoingBooks);
+                                        }
+                                        
+                                        return ongoingBooks.isEmpty && !provider.isLoading
+                                            ? (searchState.query.isNotEmpty 
+                                                ? _buildEmptySearchResults(context, colorScheme) 
+                                                : ConstrainedBox(
+                                                    constraints: BoxConstraints(minHeight: MediaQuery.of(context).size.height * 0.5),
+                                                    child: SingleChildScrollView(
+                                                      physics: const AlwaysScrollableScrollPhysics(),
+                                                      child: _buildEmptyLibraryView(context, provider, colorScheme)
+                                                    ),
+                                                  ))
+                                            : (isLandscape || themeProvider.isGridView)
+                                                ? _buildGridView(context, provider, isPortraitGrid: !isLandscape, booksToShow: ongoingBooks)
+                                                : _buildListView(context, provider, booksToShow: ongoingBooks);
+                                      },
+                                    );
+                                  }
+                                },
+                              ),
                             ),
                           ),
                         ],
@@ -1067,16 +1067,50 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
           
           // Mini Player - appears at bottom when audiobook is playing
           // Note: This is now part of bottomNavigationBar
+          
+          // Snow Overlay is now Global in main.dart
         ],
       ),
       
       // Floating action button (only show in Library tab)
       floatingActionButton: _selectedIndex == 0 && !provider.isLoading
-          ? FloatingActionButton(
-              onPressed: () => _showAddBooksDialog(context, provider),
-              elevation: 3,
-              child: const Icon(Icons.add_rounded),
-              tooltip: 'Add Audiobooks',
+          ? Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // "Let it snow" Button
+                Consumer(
+                  builder: (context, ref, child) {
+                    final isSnowing = ref.watch(snowProvider);
+                    return FloatingActionButton.small(
+                      heroTag: 'snow_btn',
+                      onPressed: () {
+                         ref.read(snowProvider.notifier).toggle();
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(!isSnowing ? "Let it snow! ❄️" : "Winter is over! ☀️"), // Logic inverted because we just toggled
+                            duration: const Duration(seconds: 1),
+                            behavior: SnackBarBehavior.floating,
+                            backgroundColor: colorScheme.secondary,
+                          ),
+                        );
+                      },
+                      backgroundColor: isSnowing ? colorScheme.primary : colorScheme.surfaceContainerHigh,
+                      foregroundColor: isSnowing ? colorScheme.onPrimary : colorScheme.onSurfaceVariant,
+                      tooltip: 'Let it snow',
+                      child: const Icon(Icons.ac_unit_rounded),
+                    );
+                  }
+                ),
+                const SizedBox(height: 16),
+                // Add Books Button
+                FloatingActionButton(
+                  heroTag: 'add_books_btn',
+                  onPressed: () => _showAddBooksDialog(context, provider),
+                  elevation: 3,
+                  child: const Icon(Icons.add_rounded),
+                  tooltip: 'Add Audiobooks',
+                ),
+              ],
             )
           : null,
       
@@ -1785,3 +1819,5 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
     );
   }
 }
+
+

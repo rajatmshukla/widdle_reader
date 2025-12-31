@@ -56,6 +56,7 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
       ItemPositionsListener.create();
   StreamSubscription<int>?
   _chapterSubscription; // To listen for chapter changes
+  StreamSubscription<String>? _errorSubscription;
 
   @override
   void initState() {
@@ -90,6 +91,19 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
           }
         }
       });
+    });
+
+    // Listen for playback errors
+    _errorSubscription = _audioService.errorStream.listen((message) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(message),
+            backgroundColor: Theme.of(context).colorScheme.error,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
     });
   }
 
@@ -260,7 +274,15 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
     
     for (int i = 0; i < _audiobook!.chapters.length; i++) {
       final chapter = _audiobook!.chapters[i];
-      final file = File(chapter.id);
+      final audioPath = chapter.sourcePath;
+      
+      if (audioPath.startsWith('content://')) {
+        diagnostics.writeln("✅ Chapter ${i + 1}: SAF Content URI (Bypassing File existence check)");
+        validChapters++;
+        continue;
+      }
+
+      final file = File(audioPath);
       final exists = await file.exists();
       
       if (exists) {
@@ -311,6 +333,7 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
   @override
   void dispose() {
     _chapterSubscription?.cancel(); // Cancel the stream subscription
+    _errorSubscription?.cancel();
     // _chapterListScrollController.dispose(); // Remove old controller disposal
     WidgetsBinding.instance.removeObserver(this);
     _savePositionBeforeDispose();
@@ -1230,7 +1253,10 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
                   selected: isPlaying,
                   selectedTileColor: colorScheme.primaryContainer.withAlpha(80),
                   onTap: () {
-                    _audioService.skipToChapter(index);
+                    debugPrint("👆 Chapter $index clicked");
+                    _audioService.skipToChapter(index).catchError((e) {
+                      debugPrint("🚨 Error skipping to chapter: $e");
+                    });
                   },
                 ),
               );
@@ -1610,51 +1636,80 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
   Future<void> _seekToTotalPosition(Duration targetTotalPos) async {
     if (_audiobook == null) return;
     
-    Duration accumulatedDuration = Duration.zero;
-    
-    for (int i = 0; i < _audiobook!.chapters.length; i++) {
-       final chapter = _audiobook!.chapters[i];
-       final chapterDuration = chapter.duration ?? Duration.zero;
-       
-       // Check if target is in this chapter
-       if (targetTotalPos <= accumulatedDuration + chapterDuration) {
-         // Found the chapter!
-         final relativePosition = targetTotalPos - accumulatedDuration;
+    try {
+      Duration accumulatedDuration = Duration.zero;
+      
+      for (int i = 0; i < _audiobook!.chapters.length; i++) {
+         final chapter = _audiobook!.chapters[i];
+         final chapterDuration = chapter.duration ?? Duration.zero;
          
-         debugPrint("Seeking to Book Pos: $targetTotalPos -> Chapter ${i + 1}, Pos: $relativePosition");
-         
-         // If we are already in this chapter, just seek
-         if (i == _audioService.currentChapterIndex) {
-            _audioService.seek(relativePosition);
-            _audioService.saveCurrentPosition();
-         } else {
-            // Load new chapter
-            final wasPlaying = _audioService.isPlaying;
-            await _audioService.loadChapter(
-               i,
-               startPosition: relativePosition,
-            );
-            
-            // Resume if we were playing
-            if (wasPlaying) {
-               _audioService.play();
-            }
+         // Check if target is in this chapter
+         if (targetTotalPos <= accumulatedDuration + chapterDuration) {
+           // Found the chapter!
+           final relativePosition = targetTotalPos - accumulatedDuration;
+           
+           debugPrint("Seeking to Book Pos: $targetTotalPos -> Chapter ${i + 1}, Pos: $relativePosition");
+           
+           // If we are already in this chapter, just seek
+           if (i == _audioService.currentChapterIndex) {
+              _audioService.seek(relativePosition);
+              _audioService.saveCurrentPosition();
+           } else {
+              // Load new chapter with error handling
+              final wasPlaying = _audioService.isPlaying;
+              try {
+                await _audioService.loadChapter(
+                   i,
+                   startPosition: relativePosition,
+                );
+                
+                // Resume if we were playing
+                if (wasPlaying) {
+                   _audioService.play();
+                }
+              } catch (e) {
+                debugPrint("Error loading chapter $i during seek: $e");
+                // Show user-friendly error
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text("Could not jump to that position. Try seeking within the current chapter."),
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                }
+              }
+           }
+           return;
          }
-         return;
-       }
-       
-       accumulatedDuration += chapterDuration;
-    }
-    
-    // If we went past the end (e.g. slight math error or rounding), go to last chapter end
-    if (_audiobook!.chapters.isNotEmpty) {
-       final lastIdx = _audiobook!.chapters.length - 1;
-       final lastChapter = _audiobook!.chapters[lastIdx];
-       // Go to slightly before end of last chapter
-       await _audioService.loadChapter(
-          lastIdx, 
-          startPosition: (lastChapter.duration ?? const Duration(seconds: 1)) - const Duration(seconds: 1)
-       );
+         
+         accumulatedDuration += chapterDuration;
+      }
+      
+      // If we went past the end (e.g. slight math error or rounding), go to last chapter end
+      if (_audiobook!.chapters.isNotEmpty) {
+         final lastIdx = _audiobook!.chapters.length - 1;
+         final lastChapter = _audiobook!.chapters[lastIdx];
+         // Go to slightly before end of last chapter
+         try {
+           await _audioService.loadChapter(
+              lastIdx, 
+              startPosition: (lastChapter.duration ?? const Duration(seconds: 1)) - const Duration(seconds: 1)
+           );
+         } catch (e) {
+           debugPrint("Error loading last chapter during seek: $e");
+         }
+      }
+    } catch (e) {
+      debugPrint("Error in _seekToTotalPosition: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text("Seek failed: ${e.toString()}"),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
     }
   }
 
@@ -1838,7 +1893,10 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
                   icon: cupertino.CupertinoIcons.gobackward_15,
                   size: isLandscape ? 28 : 32,
                   color: colorScheme.onSurfaceVariant,
-                  onPressed: () => _audioService.rewind(),
+                  onPressed: () {
+                    debugPrint("👆 Rewind 15s clicked");
+                    _audioService.rewind();
+                  },
                 ),
 
                 // Previous chapter button
@@ -1847,6 +1905,7 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
                   size: isLandscape ? 28 : 32,
                   color: colorScheme.onSurfaceVariant,
                   onPressed: () {
+                    debugPrint("👆 Prev Chapter clicked");
                     _audioService.skipToPrevious();
                     _audioService.saveCurrentPosition(); // Save position
                   },
@@ -1887,6 +1946,7 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
                       },
                     ),
                     onPressed: () {
+                      debugPrint("👆 Play/Pause clicked. Current isPlaying: $isPlaying");
                       isPlaying ? _audioService.pause() : _audioService.play();
                       // Save position after play/pause state changes
                       _audioService.saveCurrentPosition();
@@ -1900,6 +1960,7 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
                   size: isLandscape ? 28 : 32,
                   color: colorScheme.onSurfaceVariant,
                   onPressed: () {
+                    debugPrint("👆 Next Chapter clicked");
                     _audioService.skipToNext();
                     _audioService.saveCurrentPosition(); // Save position
                   },
@@ -1910,7 +1971,10 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
                   icon: cupertino.CupertinoIcons.goforward_15,
                   size: isLandscape ? 28 : 32,
                   color: colorScheme.onSurfaceVariant,
-                  onPressed: () => _audioService.fastForward(),
+                  onPressed: () {
+                    debugPrint("👆 Fast Forward 15s clicked");
+                    _audioService.fastForward();
+                  },
                 ),
               ],
             ),
@@ -2089,7 +2153,10 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
                           _buildLargeControlButton(
                             icon: cupertino.CupertinoIcons.gobackward_15,
                             color: colorScheme.onSurface,
-                            onPressed: () => _audioService.rewind(),
+                            onPressed: () {
+                              debugPrint("👆 [CarMode] Rewind 15s clicked");
+                              _audioService.rewind();
+                            },
                             size: isPortrait ? 48 : 64,
                           ),
                           
@@ -2119,6 +2186,7 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
                                     color: colorScheme.onPrimary,
                                   ),
                                   onPressed: () {
+                                    debugPrint("👆 [CarMode] Play/Pause clicked. Current isPlaying: $isPlaying");
                                     isPlaying ? _audioService.pause() : _audioService.play();
                                     _audioService.saveCurrentPosition();
                                   },
@@ -2131,7 +2199,10 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
                           _buildLargeControlButton(
                             icon: cupertino.CupertinoIcons.goforward_15,
                             color: colorScheme.onSurface,
-                            onPressed: () => _audioService.fastForward(),
+                            onPressed: () {
+                              debugPrint("👆 [CarMode] Fast Forward 15s clicked");
+                              _audioService.fastForward();
+                            },
                             size: isPortrait ? 48 : 64,
                           ),
                         ],
@@ -2147,6 +2218,7 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
                             width: double.infinity,
                             child: ElevatedButton.icon(
                               onPressed: () {
+                                debugPrint("👆 [CarMode] Prev Chapter clicked");
                                 _audioService.skipToPrevious();
                                 _audioService.saveCurrentPosition();
                               },
@@ -2164,6 +2236,7 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
                             width: double.infinity,
                             child: ElevatedButton.icon(
                               onPressed: () {
+                                debugPrint("👆 [CarMode] Next Chapter clicked");
                                 _audioService.skipToNext();
                                 _audioService.saveCurrentPosition();
                               },

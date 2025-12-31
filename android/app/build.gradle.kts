@@ -153,5 +153,8 @@ dependencies {
     // JSON processing
     implementation("com.google.code.gson:gson:2.10.1")
     
+    // DocumentFile for SAF (Storage Access Framework)
+    implementation("androidx.documentfile:documentfile:1.0.1")
+    
     // Add other app-specific dependencies here if needed
 }

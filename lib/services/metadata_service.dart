@@ -1,10 +1,9 @@
 import 'dart:io';
-import 'dart:async'; // For unawaited
-import 'dart:typed_data'; // For Uint8List
-import 'package:flutter/foundation.dart'; // For debugPrint
+import 'dart:async';
+import 'dart:typed_data';
+import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 import 'package:just_audio/just_audio.dart';
-// Ensure flutter_media_metadata is correctly imported if used
 import 'package:flutter_media_metadata/flutter_media_metadata.dart';
 
 import '../models/audiobook.dart';
@@ -12,6 +11,7 @@ import '../models/chapter.dart';
 import 'ffmpeg_helper.dart';
 import 'cover_art_service.dart';
 import 'storage_service.dart';
+import 'native_scanner.dart';
 
 // CRITICAL FIX: Add release-safe logging for metadata service
 void _logDebug(String message) {
@@ -24,8 +24,8 @@ void _logDebug(String message) {
 
 class MetadataService {
   final List<String> _supportedFormats = const [
-    // Make const
-    '.mp3', '.m4a', '.m4b', '.wav', '.ogg', '.aac', '.flac', '.opus', // Added opus
+    '.mp3', '.m4a', '.m4b', '.wav', '.ogg', '.aac', '.flac', '.opus',
+    '.mp4', '.m4v', '.m4p', '.wma',
   ];
 
   final List<String> _coverArtFormats = const [
@@ -33,108 +33,78 @@ class MetadataService {
   ];
 
   /// Recursively scans a root directory for audiobook folders.
-  /// Returns a list of discovered audiobook folder paths.
+  /// Supports both standard filesystem paths and SAF content Uris.
+  /// PERFORMANCE FIX: Offloads recursive scanning to native side.
   Future<List<String>> scanForAudiobookFolders(String rootPath) async {
-    _logDebug("Starting recursive scan for audiobooks in: $rootPath");
+    _logDebug("Starting native recursive scan for audiobooks in: $rootPath");
     
-    final List<String> audiobookFolders = [];
-    final rootDirectory = Directory(rootPath);
-    
-    if (!await rootDirectory.exists()) {
-      debugPrint("Root directory does not exist: $rootPath");
-      return audiobookFolders;
-    }
-
     try {
-      await _scanDirectoryRecursively(rootDirectory, audiobookFolders);
-      _logDebug("Scan completed. Found ${audiobookFolders.length} audiobook folders");
-      
-      // Sort the folders for consistent ordering - using natural sort for better folder handling
-      audiobookFolders.sort((a, b) => _naturalCompare(a, b));
-      
-      return audiobookFolders;
+      if (Platform.isAndroid) {
+        final List<String> audiobookFolders = await NativeScanner.recursiveScan(rootPath);
+        _logDebug("Native recursive scan completed. Found ${audiobookFolders.length} audiobook folders.");
+        
+        // Sort the folders for consistent ordering
+        audiobookFolders.sort((a, b) => _naturalCompare(a, b));
+        return audiobookFolders;
+      } else {
+        // Fallback for non-Android platforms
+        final List<String> audiobookFolders = [];
+        final rootDirectory = Directory(rootPath);
+        if (!await rootDirectory.exists()) {
+          debugPrint("Root directory does not exist: $rootPath");
+          return audiobookFolders;
+        }
+        await _scanDirectoryRecursivelyFallback(rootDirectory, audiobookFolders);
+        audiobookFolders.sort((a, b) => _naturalCompare(a, b));
+        return audiobookFolders;
+      }
     } catch (e) {
-      debugPrint("Error during recursive scan: $e");
-      return audiobookFolders;
+      _logDebug("Error during recursive scan for $rootPath: $e");
+      return [];
     }
   }
 
-
-
-  /// Recursively scans a directory and its subdirectories for audiobook folders.
-  /// A folder is considered an audiobook folder if it contains audio files.
-  /// NOTE: This method explicitly ignores .nomedia files and scans directories containing them.
-  /// The .nomedia file is an Android directive for media scanners (like music players),
-  /// not a filesystem directive, so audiobook apps should ignore it.
-  Future<void> _scanDirectoryRecursively(
+  /// Fallback recursive scan for non-Android platforms
+  Future<void> _scanDirectoryRecursivelyFallback(
     Directory directory, 
     List<String> audiobookFolders
   ) async {
     try {
-      final List<FileSystemEntity> entities = await directory.list().toList();
+      bool hasAudioFilesInThisDir = false;
+      final List<Directory> subdirectoriesToScan = [];
       
-      // Check if current directory contains audio files
-      bool hasAudioFiles = false;
-      bool hasSubdirectories = false;
-      final List<Directory> subdirectories = [];
-      bool hasNomediaFile = false;
-      
-      debugPrint("Scanning directory: ${directory.path} (${entities.length} items)");
-      
-      for (final entity in entities) {
-        if (entity is File) {
-          final fileName = p.basename(entity.path);
-          final extension = p.extension(entity.path).toLowerCase();
-          
-          // Check for .nomedia file (for logging purposes)
-          if (fileName == '.nomedia' || fileName.toLowerCase() == '.nomedia') {
-            hasNomediaFile = true;
-            debugPrint("  Found .nomedia file (will scan directory anyway)");
-            continue; // Skip the .nomedia file itself
+      await for (final entity in directory.list(followLinks: false)) {
+        try {
+          if (entity is File) {
+            final fileName = p.basename(entity.path);
+            final extension = p.extension(fileName).toLowerCase();
+            
+            if (fileName.toLowerCase() == '.nomedia' || 
+                fileName == '.DS_Store' || 
+                fileName.toLowerCase() == 'thumbs.db') {
+              continue; 
+            }
+            
+            if (_supportedFormats.contains(extension)) {
+              hasAudioFilesInThisDir = true;
+            }
+          } else if (entity is Directory) {
+            subdirectoriesToScan.add(entity);
           }
-          
-          if (_supportedFormats.contains(extension)) {
-            hasAudioFiles = true;
-            debugPrint("  Found audio file: ${p.basename(entity.path)}");
-            break; // Found audio files, no need to check further
-          }
-        } else if (entity is Directory) {
-          hasSubdirectories = true;
-          subdirectories.add(entity);
-          debugPrint("  Found subdirectory: ${p.basename(entity.path)}");
+        } catch (e) {
+          _logDebug("  Error processing entity ${entity.path}: $e. Skipping.");
         }
       }
 
-      // If this directory has audio files, it's an audiobook folder
-      if (hasAudioFiles) {
-        if (hasNomediaFile) {
-          debugPrint("✓ AUDIOBOOK FOLDER FOUND (with .nomedia): ${directory.path}");
-        } else {
-          debugPrint("✓ AUDIOBOOK FOLDER FOUND: ${directory.path}");
-        }
+      if (hasAudioFilesInThisDir) {
         audiobookFolders.add(directory.path);
-        
-        // Don't scan subdirectories if this folder has audio files
-        // This prevents treating individual chapters as separate audiobooks
-        return;
       }
 
-      // If no audio files but has subdirectories, scan them recursively
-      if (hasSubdirectories) {
-        debugPrint("  No audio files found, scanning ${subdirectories.length} subdirectories...");
-        for (final subdirectory in subdirectories) {
-          await _scanDirectoryRecursively(subdirectory, audiobookFolders);
-        }
-      } else {
-        // Empty directory or no relevant content
-        if (hasNomediaFile) {
-          debugPrint("  Directory has .nomedia but no audio files: ${directory.path}");
-        } else {
-          debugPrint("  Skipping empty directory: ${directory.path}");
-        }
+      for (final subdirectory in subdirectoriesToScan) {
+        await _scanDirectoryRecursivelyFallback(subdirectory, audiobookFolders);
       }
     } catch (e) {
-      debugPrint("Error scanning directory ${directory.path}: $e");
+      _logDebug("✗ Error scanning directory ${directory.path}: $e. Skipping branch.");
     }
   }
 
@@ -163,14 +133,12 @@ class MetadataService {
         final bNum = BigInt.parse(bRaw);
         if (aNum != bNum) return aNum.compareTo(bNum);
         
-        // If numeric value is same but strings differ (e.g. "01" vs "1")
         if (aRaw.length != bRaw.length) return aRaw.length.compareTo(bRaw.length);
       } else {
         if (aRaw != bRaw) return aRaw.compareTo(bRaw);
       }
     }
     
-    // If one is a prefix of the other
     if (aMatches.length != bMatches.length) {
       return aMatches.length.compareTo(bMatches.length);
     }
@@ -178,756 +146,709 @@ class MetadataService {
     return a.compareTo(b);
   }
 
-  /// Enhanced method to get audiobook details with better error handling and cover art detection
+  /// Robust method to get audiobook details with isolated error handling and timeouts
   Future<Audiobook> getAudiobookDetails(String folderPath) async {
-    final directory = Directory(folderPath);
     List<Chapter> chapters = [];
     Duration totalDuration = Duration.zero;
     Uint8List? coverArt;
     String? author;
 
-    if (!await directory.exists()) {
-      debugPrint("Directory not found: $folderPath");
-      // Return an empty audiobook object if the directory doesn't exist
-      return Audiobook(
-        id: folderPath,
-        title: p.basename(folderPath),
-        author: null,
-        chapters: [],
-        totalDuration: Duration.zero,
-      );
-    }
-
     try {
-      final List<FileSystemEntity> files = await directory.list().toList();
-      // Using natural sort so "Book 10" comes after "Book 2"
-      files.sort((a, b) => _naturalCompare(p.basename(a.path), p.basename(b.path)));
+      final List<String> audioFilePaths = [];
+      final List<String> imageFilePaths = [];
 
-      // Use a single player instance for duration checks
-      final audioPlayer = AudioPlayer();
-
-      // First pass: Collect audio files and any image files
-      final List<File> audioFiles = [];
-      final List<File> imageFiles = [];
-
-      for (var entity in files) {
-        if (entity is File) {
-          final filePath = entity.path;
-          final fileName = p.basename(filePath);
-          final extension = p.extension(fileName).toLowerCase();
-
-          // Check for audio files
-          if (_supportedFormats.contains(extension)) {
-            audioFiles.add(entity);
-          }
-          // Collect any image files for potential cover art
-          else if (_coverArtFormats.contains(extension)) {
-            imageFiles.add(entity);
-          }
-        }
-      }
-
-      // Second pass: Process audio files
-      for (var audioFile in audioFiles) {
-        final filePath = audioFile.path;
-        final fileName = p.basename(filePath);
-        
-            try {
-              final chapterId = filePath; // Use full path as unique ID
-          String chapterTitle = p.basenameWithoutExtension(fileName); // Default title
-              Duration? chapterDuration; // Make it explicitly nullable
-
-              // --- FFmpeg Chapter Extraction ---
-              // Check if the file has embedded chapters using FFmpeg
-              List<Chapter> embeddedChapters = [];
-              try {
-                embeddedChapters = await FFmpegHelper.extractChapters(
-                  filePath: filePath,
-                  audiobookId: folderPath,
-                );
-              } catch (e) {
-                debugPrint("FFmpeg extraction failed for $fileName: $e");
-              }
-
-              bool hasEmbeddedChapters = false;
-              if (embeddedChapters.isNotEmpty) {
-                debugPrint("Using ${embeddedChapters.length} embedded chapters from $fileName");
-                chapters.addAll(embeddedChapters);
-                hasEmbeddedChapters = true;
-                // We proceed to metadata extraction to get cover art and author
-              }
-
-              // --- Metadata Extraction (Fallback/Standard) ---
-              try {
-                debugPrint("Attempting metadata extraction for: $fileName");
-            final metadata = await MetadataRetriever.fromFile(audioFile);
-            
-                // Use metadata title if available, otherwise keep filename
-            chapterTitle = metadata.trackName?.isNotEmpty == true
-                        ? metadata.trackName!
-                        : chapterTitle;
-                
-            // Extract author from first audio file if not set yet
-            if (author == null && metadata.albumArtistName?.isNotEmpty == true) {
-              author = metadata.albumArtistName;
-            } else if (author == null && metadata.trackArtistNames?.isNotEmpty == true) {
-              // Use the first artist name from the list
-              author = metadata.trackArtistNames!.first;
-            }
-            
-                // Metadata duration might be null or 0
-            chapterDuration = (metadata.trackDuration != null &&
-                            metadata.trackDuration! > 0)
-                        ? Duration(milliseconds: metadata.trackDuration!)
-                        : null; // Keep it null if metadata duration is invalid
-
-            // Priority 1: Try to get cover art from embedded metadata
-                if (coverArt == null &&
-                    metadata.albumArt != null &&
-                    metadata.albumArt!.isNotEmpty) {
-                  coverArt = metadata.albumArt;
-                  debugPrint("Found embedded cover art in: $fileName");
-                }
-                debugPrint(
-              "Metadata for $fileName: Title='$chapterTitle', Duration=$chapterDuration, Author='$author'",
-                );
-              } catch (e) {
-                debugPrint(
-                  "MetadataRetriever failed for $fileName: $e. Will try just_audio for duration.",
-                );
-                // chapterDuration remains null here
-              }
-
-              // --- Fallback/Primary Duration Check with just_audio ---
-              // If metadata didn't provide a valid duration, use just_audio
-              // But skip if we already have chapters and a valid end time from them
-              if ((chapterDuration == null || chapterDuration == Duration.zero) && 
-                  (!hasEmbeddedChapters || embeddedChapters.last.end == null)) {
-                try {
-                  debugPrint("Using just_audio to get duration for: $fileName");
-                  // setFilePath returns the duration
-                  final durationOrNull = await audioPlayer.setFilePath(filePath);
-                  if (durationOrNull != null && durationOrNull > Duration.zero) {
-                    chapterDuration = durationOrNull;
-                    debugPrint(
-                      "just_audio duration for $fileName: $chapterDuration",
-                    );
-                  } else {
-                    debugPrint(
-                      "just_audio returned zero/null duration for $fileName. Skipping chapter.",
-                    );
-                    // chapterDuration remains null or zero, chapter will be skipped below
-                  }
-                } catch (audioError) {
-                  debugPrint(
-                    "Could not get duration for $fileName using just_audio: $audioError",
-                  );
-                  // chapterDuration remains null, chapter will be skipped below
-                }
-              }
-
-              // If we still don't have duration but have embedded chapters, use the last chapter's end
-              if ((chapterDuration == null || chapterDuration == Duration.zero) && 
-                  hasEmbeddedChapters && embeddedChapters.last.end != null) {
-                chapterDuration = embeddedChapters.last.end;
-              }
-
-              // --- Add Chapter ---
-              // *** FIX: Only add chapter if duration is valid (not null and > 0) ***
-              if (chapterDuration != null && chapterDuration > Duration.zero) {
-                totalDuration += chapterDuration; // Add to total duration
-                
-                // Only add the file as a chapter if we didn't find embedded chapters
-                if (!hasEmbeddedChapters) {
-                  chapters.add(
-                    Chapter(
-                      id: chapterId,
-                      title: chapterTitle,
-                      audiobookId: folderPath,
-                      sourcePath: filePath, // Add sourcePath
-                      duration: chapterDuration, // Pass the non-nullable duration
-                      start: Duration.zero,
-                      end: chapterDuration,
-                    ),
-                  );
-                }
-              } else {
-                debugPrint(
-                  "Skipping chapter '$chapterTitle' due to zero or null duration.",
-                );
-              }
-            } catch (e) {
-              debugPrint("Error processing audio file $filePath: $e");
-            }
-          }
-
-      // Priority 2: If no embedded cover art found, use any image file in the folder
-      if (coverArt == null && imageFiles.isNotEmpty) {
-        // Sort image files naturally for consistent selection
-        imageFiles.sort((a, b) => _naturalCompare(p.basename(a.path), p.basename(b.path)));
-        
-        for (var imageFile in imageFiles) {
-          try {
-            final fileName = p.basename(imageFile.path);
-            debugPrint("Attempting to use image file as cover: $fileName");
-            coverArt = await imageFile.readAsBytes();
-            if (coverArt != null && coverArt.isNotEmpty) {
-              debugPrint("Successfully loaded cover art from: $fileName");
-              break; // Use the first valid image file
-            } else {
-            }
-          } catch (e) {
-            debugPrint("Error reading image file ${p.basename(imageFile.path)}: $e");
-          }
-        }
+      // Collect files using NativeScanner with a small retry to handle OS/SAF indexing lag
+      var entities = await NativeScanner.listDirectory(folderPath);
+      if (entities.isEmpty) {
+        _logDebug("  listDirectory returned empty, retrying in 500ms...");
+        await Future.delayed(const Duration(milliseconds: 500));
+        entities = await NativeScanner.listDirectory(folderPath);
       }
       
-      // Priority 3: Check internal cache for manually downloaded cover art
-      if (coverArt == null) {
+      for (final entity in entities) {
+        try {
+          if (!entity.isDirectory) {
+            final fileName = entity.name;
+            final extension = p.extension(fileName).toLowerCase();
+            
+            if (fileName.toLowerCase() == '.nomedia' || 
+                fileName == '.DS_Store' || 
+                fileName.toLowerCase() == 'thumbs.db') {
+              continue;
+            }
+
+            if (_supportedFormats.contains(extension)) {
+              audioFilePaths.add(entity.path);
+            } else if (_coverArtFormats.contains(extension)) {
+              imageFilePaths.add(entity.path);
+            }
+          }
+        } catch (e) {
+          _logDebug("  Skipping unreadable entity in $folderPath: $e");
+        }
+      }
+
+      if (audioFilePaths.isEmpty) {
+        return _createEmptyAudiobook(folderPath);
+      }
+
+      // Sort by filename (not full path) for consistent alphanumeric order
+      audioFilePaths.sort((a, b) => _naturalCompare(p.basename(a), p.basename(b)));
+
+      // COVER ART SELECTION CHAIN (Chain of Thought)
+      // 1. Check if user has explicitly selected a cover (Final Boss)
+      final bool userHasSelectedCover = await StorageService().hasManualCover(folderPath);
+      
+      if (userHasSelectedCover) {
+        _logDebug("  User has manually selected a cover for this book. Loading from cache (Final Boss).");
         coverArt = await StorageService().loadCachedCoverArt(folderPath);
       }
       
-      /*
-      // NEW: Priority 3: Try Open Library fetch if still nothing
-      if (coverArt == null) {
-        final title = p.basename(folderPath);
-        debugPrint('🎨 No local cover found for $title, attempting Open Library fetch...');
-        coverArt = await CoverArtService().fetchCoverFromOpenLibrary(title, author, folderPath);
-      }
-      */
-      
-      // Dispose the temporary player when done
-      await audioPlayer.dispose();
-      debugPrint("Finished processing folder: $folderPath");
-    } catch (e) {
-      debugPrint("Error listing or processing files in $folderPath: $e");
-      // Return empty audiobook on listing error
-      return Audiobook(
-        id: folderPath,
-        title: p.basename(folderPath),
-        author: null,
-        chapters: [],
-        totalDuration: Duration.zero,
-      );
-    }
-
-    // Return the fully processed Audiobook object
-    return Audiobook(
-      id: folderPath, // Folder path as unique ID
-      title: p.basename(folderPath), // Use folder name as title
-      author: author, // Author extracted from metadata
-      chapters: chapters,
-      totalDuration: totalDuration,
-      coverArt: coverArt,
-    );
-  }
-
-  /// Extracts potential tag names from folder structure
-  /// Analyzes the path relative to the root to identify series, authors, and genres
-  List<String> extractPotentialTags(String audiobookPath, String rootPath) {
-    final List<String> potentialTags = [];
-    
-    try {
-      debugPrint("Extracting potential tags:");
-      debugPrint("  audiobookPath: $audiobookPath");
-      debugPrint("  rootPath: $rootPath");
-      
-      // Get the relative path from root to audiobook
-      String relativePath = p.relative(audiobookPath, from: rootPath);
-      debugPrint("  relativePath: $relativePath");
-      
-      // Split the path into segments
-      final pathSegments = p.split(relativePath);
-      debugPrint("  pathSegments: $pathSegments");
-      
-      // Remove the last segment (audiobook folder itself)
-      if (pathSegments.isNotEmpty) {
-        pathSegments.removeLast();
-        debugPrint("  pathSegments after removing last: $pathSegments");
-      }
-      
-      // Each remaining segment is a potential tag
-      for (final segment in pathSegments) {
-        final cleanedSegment = _cleanTagName(segment);
-        debugPrint("  cleaning '$segment' -> '$cleanedSegment'");
-        if (cleanedSegment.isNotEmpty && cleanedSegment.length > 2) {
-          potentialTags.add(cleanedSegment);
-          debugPrint("  added tag: '$cleanedSegment'");
-        } else {
-          debugPrint("  skipped tag (too short or empty): '$cleanedSegment'");
-        }
-      }
-      
-      debugPrint("Final extracted potential tags for $audiobookPath: $potentialTags");
-      
-    } catch (e) {
-      debugPrint("Error extracting potential tags from $audiobookPath: $e");
-    }
-    
-    return potentialTags;
-  }
-
-  /// Cleans and normalizes tag names
-  /// UPDATE: Now returns exact folder name (trimmed) to preserve case and special characters
-  String _cleanTagName(String tagName) {
-    return tagName.trim();
-  }
-
-  /// Suggests tag names based on folder structure analysis with smart series consolidation
-  /// This method analyzes common patterns to suggest better tag names
-  List<String> suggestTagNames(List<String> audiobookPaths, String rootPath) {
-    final Map<String, int> tagCounts = {};
-    final Map<String, Set<String>> tagToBooks = {};
-    
-    // Collect all potential tags and count their usage
-    for (final audiobookPath in audiobookPaths) {
-      final tags = extractPotentialTags(audiobookPath, rootPath);
-      for (final tag in tags) {
-        tagCounts[tag] = (tagCounts[tag] ?? 0) + 1;
-        tagToBooks.putIfAbsent(tag, () => <String>{});
-        tagToBooks[tag]!.add(p.basename(audiobookPath));
-      }
-    }
-    
-    // Consolidate similar series tags before suggesting
-    final consolidatedTags = _consolidateSimilarTags(tagCounts, tagToBooks);
-    
-    // Filter tags that apply to multiple books (likely series or genres)
-    final suggestedTags = <String>[];
-    for (final entry in consolidatedTags.entries) {
-      final tagName = entry.key;
-      final count = entry.value['count'] as int;
-      final books = entry.value['books'] as Set<String>;
-      
-      // Only suggest tags that apply to multiple books
-      if (count > 1) {
-        suggestedTags.add(tagName);
-        debugPrint("Suggested consolidated tag '$tagName' for $count books: ${books.take(3).join(', ')}${count > 3 ? '...' : ''}");
-      }
-    }
-    
-    // Sort by frequency (most common first)
-    suggestedTags.sort((a, b) {
-      final aCount = consolidatedTags[a]?['count'] as int? ?? 0;
-      final bCount = consolidatedTags[b]?['count'] as int? ?? 0;
-      return bCount.compareTo(aCount);
-    });
-    
-    return suggestedTags;
-  }
-
-  /// Consolidates similar tags (especially series) into single representative tags
-  Map<String, Map<String, dynamic>> _consolidateSimilarTags(
-    Map<String, int> tagCounts,
-    Map<String, Set<String>> tagToBooks,
-  ) {
-    final consolidated = <String, Map<String, dynamic>>{};
-    final processed = <String>{};
-    
-    for (final entry in tagCounts.entries) {
-      final tagName = entry.key;
-      final count = entry.value;
-      
-      if (processed.contains(tagName)) continue;
-      
-      // Find all similar tags that should be consolidated
-      final similarTags = <String>[tagName];
-      final allBooks = Set<String>.from(tagToBooks[tagName] ?? {});
-      int totalCount = count;
-      
-      for (final otherTag in tagCounts.keys) {
-        if (otherTag != tagName && !processed.contains(otherTag)) {
-          if (_areTagsSimilarForConsolidation(tagName, otherTag)) {
-            similarTags.add(otherTag);
-            allBooks.addAll(tagToBooks[otherTag] ?? {});
-            totalCount += tagCounts[otherTag] ?? 0;
-            processed.add(otherTag);
-          }
-        }
-      }
-      
-      // Choose the best representative name from similar tags
-      final bestName = _chooseBestTagName(similarTags);
-      
-      consolidated[bestName] = {
-        'count': allBooks.length, // Use unique book count, not sum of counts
-        'books': allBooks,
-        'originalTags': similarTags,
-      };
-      
-      processed.add(tagName);
-      
-      if (similarTags.length > 1) {
-        debugPrint("Consolidated ${similarTags.length} similar tags into '$bestName': ${similarTags.join(', ')}");
-      }
-    }
-    
-    return consolidated;
-  }
-
-  /// Determines if two tags should be consolidated (stricter than similarity checking)
-  bool _areTagsSimilarForConsolidation(String tag1, String tag2) {
-    final clean1 = _cleanTagNameForConsolidation(tag1);
-    final clean2 = _cleanTagNameForConsolidation(tag2);
-    
-    // Must have the same core name to be consolidated
-    if (clean1 == clean2 && clean1.isNotEmpty) {
-      return true;
-    }
-    
-    // Check for very high similarity (95% for consolidation vs 85% for duplicate detection)
-    if (clean1.length > 2 && clean2.length > 2) {
-      final similarity = _calculateStringSimilarity(clean1, clean2);
-      return similarity > 0.95;
-    }
-    
-    return false;
-  }
-
-  /// Cleans tag names specifically for consolidation (more aggressive than normalization)
-  String _cleanTagNameForConsolidation(String name) {
-    return name
-        .toLowerCase()
-        .replaceAll(RegExp(r'\b(?:series|book|vol|volume|part|chapter|the)\s*\d*\b'), '')
-        .replaceAll(RegExp(r'\b\d+\b'), '') // Remove standalone numbers
-        .replaceAll(RegExp(r'[^\w\s]'), '') // Remove special characters
-        .replaceAll(RegExp(r'\s+'), ' ')    // Normalize whitespace
-        .trim();
-  }
-
-  /// Chooses the best representative name from similar tags
-  String _chooseBestTagName(List<String> similarTags) {
-    if (similarTags.length == 1) return similarTags.first;
-    
-    // Prefer shorter, cleaner names
-    similarTags.sort((a, b) {
-      // First, prefer tags without numbers
-      final aHasNumbers = RegExp(r'\d').hasMatch(a);
-      final bHasNumbers = RegExp(r'\d').hasMatch(b);
-      
-      if (aHasNumbers != bHasNumbers) {
-        return aHasNumbers ? 1 : -1; // Prefer tag without numbers
-      }
-      
-      // Then prefer shorter names
-      final lengthComparison = a.length.compareTo(b.length);
-      if (lengthComparison != 0) return lengthComparison;
-      
-      // Finally, alphabetical order
-      return a.compareTo(b);
-    });
-    
-    return similarTags.first;
-  }
-
-  /// Calculates string similarity using Jaccard coefficient
-  double _calculateStringSimilarity(String s1, String s2) {
-    if (s1 == s2) return 1.0;
-    if (s1.isEmpty || s2.isEmpty) return 0.0;
-    
-    final set1 = s1.split('').toSet();
-    final set2 = s2.split('').toSet();
-    
-    final intersection = set1.intersection(set2).length;
-    final union = set1.union(set2).length;
-    
-    return union > 0 ? intersection / union : 0.0;
-  }
-
-  /// ========================================
-  /// PERFORMANCE OPTIMIZATION - LAZY LOADING
-  /// ========================================
-
-  /// Gets basic audiobook info for fast initial loading
-  /// Returns lightweight data: title, author, folder path, chapter count
-  Future<Audiobook> getBasicAudiobookInfo(String folderPath) async {
-    final directory = Directory(folderPath);
-    
-    if (!await directory.exists()) {
-      debugPrint("Directory not found: $folderPath");
-      return Audiobook(
-        id: folderPath,
-        title: p.basename(folderPath),
-        author: null,
-        chapters: [],
-        totalDuration: Duration.zero,
-      );
-    }
-
-    try {
-      // Quick scan for audio files without full processing
-      final List<FileSystemEntity> files = await directory.list().toList();
-      final List<File> audioFiles = [];
-      String? author;
-      
-      for (var entity in files) {
-        if (entity is File) {
-          final extension = p.extension(entity.path).toLowerCase();
-          if (_supportedFormats.contains(extension)) {
-            audioFiles.add(entity);
+      // 2. If no manual cover, try local folder FIRST (higher quality/faster)
+      if (coverArt == null && imageFilePaths.isNotEmpty) {
+        _logDebug("  Searching local folder for cover images...");
+        coverArt = await _tryLoadImageCover(imageFilePaths);
+        if (coverArt != null && coverArt!.isNotEmpty) {
+          _logDebug("  Found cover in local folder.");
+          await StorageService().saveCachedCoverArt(folderPath, coverArt!);
+          
+          // Ensure it exists as EmbeddedCover.jpg but don't overwrite
+          final bool hasExistingCover = entities.any((e) => !e.isDirectory && 
+              (e.name.toLowerCase() == 'cover.jpg' || e.name.toLowerCase() == 'embeddedcover.jpg'));
+          if (!hasExistingCover) {
+            await NativeScanner.writeBytes(folderPath, coverArt!, fileName: 'EmbeddedCover.jpg');
           }
         }
       }
 
-      // Try to get author from first audio file metadata (quick check)
-      if (audioFiles.isNotEmpty) {
-        try {
-          final metadata = await MetadataRetriever.fromFile(audioFiles.first);
-          author = metadata.albumArtistName?.isNotEmpty == true
-              ? metadata.albumArtistName
-              : metadata.trackArtistNames?.isNotEmpty == true
-                  ? metadata.trackArtistNames!.first
-                  : null;
-        } catch (e) {
-          // Ignore metadata errors for basic info
-          debugPrint("Could not extract basic metadata from ${audioFiles.first.path}: $e");
-        }
-      }
-
-      // Create basic chapters (no duration calculation yet)
-      final List<Chapter> basicChapters = audioFiles.map((file) {
-        final fileName = p.basename(file.path);
-        return Chapter(
-          id: file.path,
-          title: p.basenameWithoutExtension(fileName),
-          audiobookId: folderPath,
-          sourcePath: file.path, // Add sourcePath
-          duration: Duration.zero, // Will be loaded later
-        );
-      }).toList();
-
-      // Sort chapters naturally by title
-      basicChapters.sort((a, b) => _naturalCompare(a.title, b.title));
-
-      return Audiobook(
-        id: folderPath,
-        title: p.basename(folderPath),
-        author: author,
-        chapters: basicChapters,
-        totalDuration: Duration.zero, // Will be calculated later
-        // coverArt left null - will be loaded on-demand
-      );
-
-    } catch (e) {
-      debugPrint("Error getting basic audiobook info for $folderPath: $e");
-      return Audiobook(
-        id: folderPath,
-        title: p.basename(folderPath),
-        author: null,
-        chapters: [],
-        totalDuration: Duration.zero,
-      );
-    }
-  }
-
-  /// Loads detailed metadata on-demand (durations, cover art)
-  /// This method is called when the user scrolls to or interacts with a book
-  Future<Audiobook> loadDetailedMetadata(Audiobook basicBook) async {
-    final folderPath = basicBook.id;
-    final directory = Directory(folderPath);
-    
-    if (!await directory.exists()) {
-      debugPrint("Directory not found during detailed loading: $folderPath");
-      return basicBook;
-    }
-
-    try {
-      final List<FileSystemEntity> files = await directory.list().toList();
-      final List<File> audioFiles = [];
-      final List<File> imageFiles = [];
+      // 3. MANDATORY: Process audio files for chapters, duration, and author
+      // This ALSO acts as the fall-back for embedded cover art
+      // PERFORMANCE FIX: Only extract cover from audio if we DON'T have a local one.
+      // 3. MANDATORY: Process audio files for chapters, duration, and author
+      // OPTIMIZATION: Process files in parallel batches to speed up loading
+      final audioPlayer = AudioPlayer(); // We still need this for just_audio fallback
+      final bool hasPhysicalCover = entities.any((e) => !e.isDirectory && 
+          (e.name.toLowerCase() == 'cover.jpg' || e.name.toLowerCase() == 'embeddedcover.jpg'));
       
-      // Collect audio and image files
-      for (var entity in files) {
-        if (entity is File) {
-          final extension = p.extension(entity.path).toLowerCase();
-          if (_supportedFormats.contains(extension)) {
-            audioFiles.add(entity);
-          } else if (_coverArtFormats.contains(extension)) {
-            imageFiles.add(entity);
-          }
-        }
-      }
-
-      // Sort audio files naturally to match basic chapters order
-      audioFiles.sort((a, b) => _naturalCompare(p.basename(a.path), p.basename(b.path)));
-
-      Duration totalDuration = Duration.zero;
-      final List<Chapter> detailedChapters = [];
-      Uint8List? coverArt;
-
-      // Use a single player instance for duration checks
-      final audioPlayer = AudioPlayer();
-
       try {
-        // Process audio files for detailed metadata
-        for (int i = 0; i < audioFiles.length; i++) {
-          final audioFile = audioFiles[i];
-          final filePath = audioFile.path;
-          final fileName = p.basename(filePath);
+        // Chunk size of 5 for parallel processing to avoid overwhelming system resources
+        const int chunkSize = 5; 
+        for (var i = 0; i < audioFilePaths.length; i += chunkSize) {
+          final end = (i + chunkSize < audioFilePaths.length) ? i + chunkSize : audioFilePaths.length;
+          final batch = audioFilePaths.sublist(i, end);
           
-          String chapterTitle = p.basenameWithoutExtension(fileName);
-          Duration? chapterDuration;
+          final List<Future<_ChapterProcessingResult?>> futures = batch.map((filePath) {
+             final shouldExtractCover = coverArt == null && !hasPhysicalCover;
+             return _processAudioFileRobust(
+                filePath, 
+                folderPath, 
+                audioPlayer, // Note: Shared player might be tricky if not thread-safe, but just_audio usually handles sequential calls. 
+                // However, parallel calls on ONE player object is bad.
+                // We should instantiate a player per task OR fallback to native metadata only for parallel.
+                // Actually, _processAudioFileRobust creates player? No, it takes it as arg.
+                // FIX: Let's rely on NativeScanner (isolates) which is thread-safe on native side.
+                // For duration fallback using AudioPlayer, we must be careful.
+                // We will create a new player per parallel task to be safe, or stick to NativeScanner.
+                extractCoverArt: shouldExtractCover, 
+                extractAuthor: author == null,
+                forceFfmpegCover: !hasPhysicalCover && coverArt == null && p.extension(filePath).toLowerCase() == '.m4b',
+             );
+          }).toList();
 
-          try {
-            // Try metadata first for title and embedded cover art
-            final metadata = await MetadataRetriever.fromFile(audioFile);
-            
-            chapterTitle = metadata.trackName?.isNotEmpty == true
-                ? metadata.trackName!
-                : chapterTitle;
-
-            // Extract embedded cover art from first file if not found yet
-            if (coverArt == null && metadata.albumArt != null && metadata.albumArt!.isNotEmpty) {
-              coverArt = Uint8List.fromList(metadata.albumArt!);
-              debugPrint("Found embedded cover art in: $fileName");
-            }
-
-            // Try to get duration from metadata first
-            if (metadata.trackDuration != null && metadata.trackDuration! > 0) {
-              chapterDuration = Duration(milliseconds: metadata.trackDuration!);
-              debugPrint("Metadata duration for $fileName: $chapterDuration");
-            }
-          } catch (e) {
-            debugPrint("Error extracting detailed metadata from $fileName: $e");
-          }
-
-          // If no duration from metadata, use just_audio
-          if (chapterDuration == null || chapterDuration == Duration.zero) {
-            try {
-              final durationOrNull = await audioPlayer.setFilePath(filePath);
-              if (durationOrNull != null && durationOrNull > Duration.zero) {
-                chapterDuration = durationOrNull;
-                debugPrint("just_audio duration for $fileName: $chapterDuration");
+          final results = await Future.wait(futures);
+          
+          for (final result in results) {
+            if (result != null) {
+              chapters.addAll(result.chapters);
+              for (var chapter in result.chapters) {
+                 totalDuration += chapter.duration ?? Duration.zero;
               }
-            } catch (audioError) {
-              debugPrint("Could not get duration for $fileName using just_audio: $audioError");
+              
+              if (author == null && result.author != null) author = result.author;
+              
+              // Capture embedded cover
+              if (result.coverArt != null && result.coverArt!.isNotEmpty) {
+                if (coverArt == null) {
+                  _logDebug("  Found embedded cover art in a chapter file");
+                  coverArt = result.coverArt;
+                  await StorageService().saveCachedCoverArt(folderPath, coverArt!);
+                }
+
+                if (!hasPhysicalCover) {
+                   // Save physically but don't await/block
+                   NativeScanner.writeBytes(folderPath, result.coverArt!, fileName: 'EmbeddedCover.jpg')
+                      .then((_) => _logDebug("  Background: Extracted local cover"))
+                      .catchError((e) => null);
+                }
+              }
             }
           }
-
-          // Only add chapter if duration is valid
-          if (chapterDuration != null && chapterDuration > Duration.zero) {
-            totalDuration += chapterDuration;
-            detailedChapters.add(
-              Chapter(
-                id: filePath,
-                title: chapterTitle,
-                audiobookId: folderPath,
-                sourcePath: filePath, // Add sourcePath
-                duration: chapterDuration,
-                start: Duration.zero,
-                end: chapterDuration,
-              ),
-            );
-          } else {
-            debugPrint("Skipping chapter '$chapterTitle' due to zero or null duration.");
-          }
         }
-
-        if (coverArt == null && imageFiles.isNotEmpty) {
-          imageFiles.sort((a, b) => _naturalCompare(p.basename(a.path), p.basename(b.path)));
-          
-          for (var imageFile in imageFiles) {
-            try {
-              final fileName = p.basename(imageFile.path);
-              debugPrint("Attempting to use image file as cover: $fileName");
-              coverArt = await imageFile.readAsBytes();
-              if (coverArt != null && coverArt.isNotEmpty) {
-                debugPrint("Successfully loaded cover art from: $fileName");
-                break;
-              } else {
-            }
-          } catch (e) {
-            debugPrint("Error reading image file ${p.basename(imageFile.path)}: $e");
-          }
-        }
-      }
-
-        // Priority 3: Check internal cache for manually downloaded cover art
-        if (coverArt == null) {
-          coverArt = await StorageService().loadCachedCoverArt(folderPath);
-        }
-
       } finally {
         await audioPlayer.dispose();
       }
 
-      // Return updated audiobook with detailed metadata
+      // 4. Final Cache Fallback & Persistence
+      if (coverArt == null) {
+        coverArt = await StorageService().loadCachedCoverArt(folderPath);
+      }
+      
+      // ENSURE PHYSICAL COVER: If we have coverArt but no physical file, save it now
+      if (coverArt != null && !hasPhysicalCover) {
+        try {
+          await NativeScanner.writeBytes(folderPath, coverArt!, fileName: 'EmbeddedCover.jpg');
+          _logDebug("  Ensured physical cover exists: $folderPath/EmbeddedCover.jpg");
+        } catch (e) {
+          _logDebug("  Failed to save physical cover: $e");
+        }
+      }
+      
+      final displayName = await NativeScanner.getDisplayName(folderPath);
+      String bookTitle = _cleanTitle(displayName ?? p.basename(folderPath));
+
+      // USER REQUEST: Prioritize metadata title (Album tag or Title tag)
+      if (audioFilePaths.isNotEmpty) {
+        try {
+          // We can use the information from the first file to set the book title
+          final firstFileRet = await NativeScanner.getMetadata(audioFilePaths.first, extractCover: false);
+          if (firstFileRet != null) {
+            final album = firstFileRet['album'] as String?;
+            final tagTitle = firstFileRet['title'] as String?;
+            
+            if (audioFilePaths.length == 1) {
+              if (album != null && album.trim().isNotEmpty) {
+                _logDebug("  Single file: Using Album tag for book title: $album");
+                bookTitle = album.trim();
+              } else if (tagTitle != null && tagTitle.trim().isNotEmpty) {
+                _logDebug("  Single file: Using Title tag for book title: $tagTitle");
+                bookTitle = tagTitle.trim();
+              }
+            }
+          }
+        } catch (e) {
+          _logDebug("  Error extracting title priority: $e");
+        }
+      }
+      
+      // USER REQUEST: Consistency for single-file books (Chapter Title = Book Title)
+      if (chapters.length == 1 && chapters.first.title == p.basenameWithoutExtension(_cleanTitle(audioFilePaths.first))) {
+         chapters[0] = chapters[0].copyWith(title: bookTitle);
+      }
+      
       return Audiobook(
-        id: basicBook.id,
-        title: basicBook.title,
-        author: basicBook.author,
-        chapters: detailedChapters,
+        id: folderPath,
+        title: bookTitle, // AudiobookProvider will handle using customTitles if valid
+        author: author,
+        chapters: chapters,
         totalDuration: totalDuration,
         coverArt: coverArt,
       );
 
     } catch (e) {
-      debugPrint("Error loading detailed metadata for $folderPath: $e");
-      return basicBook; // Return original basic book if detailed loading fails
+      _logDebug("Critical error processing folder $folderPath: $e");
+      return _createEmptyAudiobook(folderPath);
     }
   }
 
-  /// Batch load basic info for multiple audiobooks (parallel processing)
-  Future<List<Audiobook>> loadBasicInfoBatch(List<String> folderPaths, {int batchSize = 5}) async {
-    final List<Audiobook> results = [];
-    
-    // Process in batches to avoid overwhelming the system
-    for (int i = 0; i < folderPaths.length; i += batchSize) {
-      final batch = folderPaths.sublist(i, (i + batchSize).clamp(0, folderPaths.length));
+  /// Helper to create a basic empty audiobook on failure
+  Audiobook _createEmptyAudiobook(String folderPath) {
+    return Audiobook(
+      id: folderPath,
+      title: p.basename(folderPath),
+      author: null,
+      chapters: [],
+      totalDuration: Duration.zero,
+    );
+  }
+
+  /// Robust metadata processing for a single audio file
+  Future<_ChapterProcessingResult?> _processAudioFileRobust(
+    String filePath,
+    String folderPath,
+    AudioPlayer audioPlayer, {
+    bool extractCoverArt = true,
+    bool extractAuthor = true,
+    bool forceFfmpegCover = false,
+  }) async {
+    final fileName = _cleanTitle(filePath);
+    String chapterTitle = p.basenameWithoutExtension(fileName);
+    Duration? chapterDuration;
+    Uint8List? coverArt;
+    String? author;
+    Map<String, dynamic>? retrieverMetadata;
+
+    // STEP 1: Try Native Metadata Extraction (Preferred for SAF Uris)
+    if (filePath.startsWith('content://')) {
+      try {
+        final nativeMetadata = await NativeScanner.getMetadata(
+          filePath, 
+          extractCover: extractCoverArt
+        ).timeout(const Duration(seconds: 10));
+
+        if (nativeMetadata != null) {
+          retrieverMetadata = nativeMetadata;
+          chapterTitle = nativeMetadata['title'] ?? chapterTitle;
+          author = nativeMetadata['artist'] ?? nativeMetadata['albumArtist'];
+          
+          if (nativeMetadata['duration'] != null) {
+            chapterDuration = Duration(milliseconds: (nativeMetadata['duration'] as num).toInt());
+          }
+          
+          if (extractCoverArt && nativeMetadata['coverArt'] != null) {
+            coverArt = nativeMetadata['coverArt'] as Uint8List;
+            _logDebug("  Cover art extracted via NativeScanner for $fileName");
+          }
+        }
+      } catch (e) {
+        _logDebug("Native metadata failed for $fileName: $e");
+      }
+    } else {
+      // Non-SAF path: Still try NativeScanner, it handles direct paths too
+      try {
+        final nativeMetadata = await NativeScanner.getMetadata(
+          filePath, 
+          extractCover: extractCoverArt
+        ).timeout(const Duration(seconds: 30));
+        
+        if (nativeMetadata != null) {
+          retrieverMetadata = nativeMetadata;
+          chapterTitle = nativeMetadata['title'] ?? chapterTitle;
+          author = nativeMetadata['artist'] ?? nativeMetadata['albumArtist'];
+          
+          if (nativeMetadata['duration'] != null) {
+            chapterDuration = Duration(milliseconds: (nativeMetadata['duration'] as num).toInt());
+          }
+          
+          if (extractCoverArt && nativeMetadata['coverArt'] != null) {
+            coverArt = nativeMetadata['coverArt'] as Uint8List;
+            _logDebug("  Cover art extracted via NativeScanner (Local) for $fileName");
+          }
+        } else {
+          _logDebug("  NativeScanner returned null metadata for $fileName");
+        }
+      } catch (e) {
+        _logDebug("Native metadata (Local) failed for $fileName: $e");
+      }
+    }
+
+    // STEP 2: FFmpeg Cover Art Fallback
+    if (extractCoverArt && coverArt == null) {
+      try {
+        final ffmpegCover = await FFmpegHelper.extractCoverArt(filePath: filePath)
+            .timeout(const Duration(seconds: 20));
+        if (ffmpegCover != null && ffmpegCover.isNotEmpty) {
+          coverArt = ffmpegCover;
+          _logDebug("  Cover art extracted via FFmpeg fallback for $fileName");
+        }
+      } catch (e) {
+        _logDebug("FFmpeg cover extraction failed for $fileName: $e");
+      }
+    }
+
+    // STEP 3: Duration with just_audio (Works for both Files and Uris)
+    if (chapterDuration == null || chapterDuration == Duration.zero) {
+      try {
+        Duration? durationOrNull;
+        if (filePath.startsWith('content://')) {
+          durationOrNull = await audioPlayer.setAudioSource(AudioSource.uri(Uri.parse(filePath)))
+              .timeout(const Duration(seconds: 15));
+        } else {
+          durationOrNull = await audioPlayer.setFilePath(filePath)
+              .timeout(const Duration(seconds: 15));
+        }
+        
+        if (durationOrNull != null && durationOrNull > Duration.zero) {
+          chapterDuration = durationOrNull;
+        }
+      } catch (e) {
+        _logDebug("just_audio failed for $fileName: $e");
+      }
+    }
+
+    if (chapterDuration == null || chapterDuration == Duration.zero) {
+      return null;
+    }
+
+    // STEP 4: Check for Embedded Chapters using FFmpeg if this is a single large file
+    // Only do this if it's the only audio file or a large one
+    if (chapterDuration > const Duration(minutes: 10)) {
+       try {
+         final embeddedChapters = await FFmpegHelper.extractChapters(
+           filePath: filePath, 
+           audiobookId: folderPath
+         ).timeout(const Duration(seconds: 15));
+         
+         if (embeddedChapters.isNotEmpty) {
+           _logDebug("Found ${embeddedChapters.length} embedded chapters in $fileName");
+           return _ChapterProcessingResult(
+             chapters: embeddedChapters,
+             coverArt: coverArt,
+             author: author,
+           );
+         }
+       } catch (e) {
+         _logDebug("FFmpeg chapter extraction failed for $fileName: $e");
+       }
+    }
+
+    return _ChapterProcessingResult(
+      chapters: [
+        Chapter(
+          id: filePath,
+          title: chapterTitle,
+          audiobookId: folderPath,
+          sourcePath: filePath,
+          duration: chapterDuration,
+          start: Duration.zero,
+          end: chapterDuration,
+        )
+      ],
+      coverArt: coverArt,
+      author: author,
+      album: retrieverMetadata?['album'] as String?,
+      metadataTitle: retrieverMetadata?['title'] as String?,
+    );
+  }
+
+  /// Helper to try loading cover art from local image files
+  Future<Uint8List?> _tryLoadImageCover(List<String> imageFilePaths) async {
+    // PRE-SORT: Prioritize filenames containing 'cover', 'folder', 'artwork'
+    imageFilePaths.sort((a, b) {
+      final nameA = p.basename(a).toLowerCase();
+      final nameB = p.basename(b).toLowerCase();
       
-      debugPrint("Loading basic info batch ${(i ~/ batchSize) + 1} (${batch.length} books)...");
+      int scoreA = 0;
+      // EXACT MATCH PRIORITY (User Request: avoid conflicting images)
+      if (nameA == 'cover.jpg' || nameA == 'cover.jpeg') scoreA += 10;
+      else if (nameA.contains('cover')) scoreA += 5;
+      else if (nameA.contains('folder')) scoreA += 3;
+      else if (nameA.contains('artwork')) scoreA += 2;
+      else if (nameA == 'embeddedcover.jpg') scoreA += 1; // Lowest priority for local files
       
-      // Process batch in parallel
-      final futures = batch.map((path) => getBasicAudiobookInfo(path));
-      final batchResults = await Future.wait(futures);
+      int scoreB = 0;
+      if (nameB == 'cover.jpg' || nameB == 'cover.jpeg') scoreB += 10;
+      else if (nameB.contains('cover')) scoreB += 5;
+      else if (nameB.contains('folder')) scoreB += 3;
+      else if (nameB.contains('artwork')) scoreB += 2;
+      else if (nameB == 'embeddedcover.jpg') scoreB += 1;
       
-      // Filter out empty books
-      final validBooks = batchResults.where((book) => book.chapters.isNotEmpty).toList();
-      results.addAll(validBooks);
-      
-      debugPrint("Batch completed: ${validBooks.length}/${batch.length} books loaded");
+      if (scoreA != scoreB) return scoreB.compareTo(scoreA); // Descending score
+      return _naturalCompare(nameA, nameB);
+    });
+
+    // Strategy: Only return the BEST candidate found to avoid loading multiples
+    if (imageFilePaths.isNotEmpty) {
+      final bestPath = imageFilePaths.first;
+      try {
+        _logDebug("  Loading best local cover candidate: ${p.basename(bestPath)}");
+        final data = await NativeScanner.readBytes(bestPath).timeout(const Duration(seconds: 5));
+        if (data != null && data.isNotEmpty) return data;
+      } catch (e) {
+        _logDebug("  Error reading best image: $e");
+      }
     }
     
+    return null;
+  }
+
+  /// Support for background info loading
+  Future<Audiobook> getBasicAudiobookInfo(String folderPath) async {
+    try {
+      final List<String> audioFilePaths = [];
+      final List<String> imageFilePaths = [];
+      String? author;
+      
+      final entities = await NativeScanner.listDirectory(folderPath);
+      for (final entity in entities) {
+        try {
+          if (!entity.isDirectory) {
+            final fileName = entity.name;
+            final extension = p.extension(fileName).toLowerCase();
+            
+            if (fileName.toLowerCase() == '.nomedia' || 
+                fileName == '.DS_Store' || 
+                fileName.toLowerCase() == 'thumbs.db') {
+              continue;
+            }
+
+            if (_supportedFormats.contains(extension)) {
+              audioFilePaths.add(entity.path);
+            } else if (['.jpg', '.jpeg', '.png', '.webp'].contains(extension)) {
+              imageFilePaths.add(entity.path);
+            }
+          }
+        } catch (e) {
+          _logDebug("  Error scanning basic info: $e");
+        }
+      }
+
+      if (audioFilePaths.isEmpty) {
+        return _createEmptyAudiobook(folderPath);
+      }
+
+      audioFilePaths.sort((a, b) => _naturalCompare(p.basename(a), p.basename(b)));
+
+      final List<Chapter> basicChapters = audioFilePaths.map((path) {
+        final fileName = _cleanTitle(path);
+        String title = p.basenameWithoutExtension(fileName);
+        
+        // If there's only one file and it doesn't have a specific title yet, 
+        // it will be replaced by the bookTitle later in this method.
+        
+        return Chapter(
+          id: path,
+          title: title,
+          audiobookId: folderPath,
+          sourcePath: path,
+          duration: Duration.zero, 
+        );
+      }).toList();
+
+      final displayName = await NativeScanner.getDisplayName(folderPath);
+      String bookTitle = _cleanTitle(displayName ?? p.basename(folderPath));
+      Uint8List? coverArt;
+
+      // COVER ART SELECTION CHAIN
+      // 1. Check for manual selection (Final Boss)
+      if (await StorageService().hasManualCover(folderPath)) {
+        coverArt = await StorageService().loadCachedCoverArt(folderPath);
+      }
+
+      // 2. Try Local Folder FIRST (Quality & Performance)
+      if (coverArt == null && imageFilePaths.isNotEmpty) {
+        coverArt = await _tryLoadImageCover(imageFilePaths);
+      }
+
+      // 3. Fallback to Embedded Metadata
+      // PERFORMANCE FIX: ONLY extract from audio if we truly lack a cover art.
+      // Do NOT "prime" folders for 700MB+ books if we already have a local image.
+      final bool hasPhysicalCover = entities.any((e) => !e.isDirectory && 
+          (e.name.toLowerCase() == 'cover.jpg' || e.name.toLowerCase() == 'embeddedcover.jpg'));
+      
+      if (coverArt == null) {
+        try {
+          final metadata = await NativeScanner.getMetadata(audioFilePaths.first, extractCover: true)
+              .timeout(const Duration(seconds: 30));
+          if (metadata != null) {
+            author = author ?? metadata['artist'] ?? metadata['albumArtist'];
+            
+            final album = metadata['album'] as String?;
+            final tagTitle = metadata['title'] as String?;
+            
+            if (audioFilePaths.length == 1) {
+              if (album != null && album.trim().isNotEmpty) {
+                bookTitle = album.trim();
+              } else if (tagTitle != null && tagTitle.trim().isNotEmpty) {
+                bookTitle = tagTitle.trim();
+              }
+            }
+            
+            if (metadata['coverArt'] != null && (metadata['coverArt'] as Uint8List).isNotEmpty) {
+              final embeddedData = metadata['coverArt'] as Uint8List;
+              if (coverArt == null) {
+                coverArt = embeddedData;
+              }
+              
+              if (!hasPhysicalCover) {
+                await NativeScanner.writeBytes(folderPath, embeddedData, fileName: 'EmbeddedCover.jpg');
+                _logDebug("  Persisted extracted cover art to folder: $folderPath");
+              }
+            }
+          }
+        } catch (e) {
+          _logDebug("  Initial metadata extraction failed: $e");
+        }
+      }
+
+      // 4. Final Cache Fallback
+      if (coverArt == null) {
+        coverArt = await StorageService().loadCachedCoverArt(folderPath);
+      }
+
+      // USER REQUEST: Consistency for single-file books
+      if (basicChapters.length == 1 && basicChapters.first.title == p.basenameWithoutExtension(_cleanTitle(audioFilePaths.first))) {
+         // This is a bit tricky since basicChapters is a List and we return it.
+         // We'll create a new list with a modified chapter.
+         final updatedChapters = [
+           basicChapters.first.copyWith(title: bookTitle)
+         ];
+         return Audiobook(
+           id: folderPath,
+           title: bookTitle,
+           author: author,
+           coverArt: coverArt,
+           chapters: updatedChapters,
+           totalDuration: Duration.zero,
+         );
+      }
+
+      return Audiobook(
+        id: folderPath,
+        title: bookTitle,
+        author: author,
+        coverArt: coverArt,
+        chapters: basicChapters,
+        totalDuration: Duration.zero,
+      );
+    } catch (e) {
+      _logDebug("Error in basic info for $folderPath: $e");
+      return _createEmptyAudiobook(folderPath);
+    }
+  }
+
+  /// Loads detailed metadata on-demand
+  Future<Audiobook> loadDetailedMetadata(Audiobook basicBook) async {
+    return getAudiobookDetails(basicBook.id);
+  }
+
+  /// Batch load basic info
+  Future<List<Audiobook>> loadBasicInfoBatch(List<String> folderPaths, {int batchSize = 5}) async {
+    final List<Audiobook> results = [];
+    for (int i = 0; i < folderPaths.length; i += batchSize) {
+      final batch = folderPaths.sublist(i, (i + batchSize).clamp(0, folderPaths.length));
+      final futures = batch.map((path) => getBasicAudiobookInfo(path));
+      final batchResults = await Future.wait(futures);
+      results.addAll(batchResults.where((book) => book.chapters.isNotEmpty));
+    }
     return results;
   }
 
-  /// Preload cover art for visible audiobooks in background
-  Future<void> preloadCoverArt(List<String> audiobookIds) async {
-    /*
-    for (final audiobookId in audiobookIds) {
-      try {
-        // This would run in background, so we don't await it
-        unawaited(_loadCoverArtInBackground(audiobookId));
-      } catch (e) {
-        debugPrint("Error starting background cover art load for $audiobookId: $e");
-      }
-    }
-    */
-  }
-
-  /*
-  /// Background method to load cover art without blocking UI
-  Future<void> _loadCoverArtInBackground(String audiobookId) async {
+  /// Extract potential tags from folder hierarchy
+  List<String> extractPotentialTags(String audiobookPath, String rootPath) {
+    final List<String> potentialTags = [];
     try {
-      final directory = Directory(audiobookId);
-      if (!await directory.exists()) return;
+      if (audiobookPath.startsWith('content://')) {
+          // For SAF URIs, we try to extract segments from the document ID
+          final uri = Uri.parse(audiobookPath);
+          String? docId;
+          
+          if (audiobookPath.contains('/document/')) {
+            docId = Uri.decodeFull(audiobookPath.split('/document/').last);
+          } else if (audiobookPath.contains('/tree/')) {
+             docId = Uri.decodeFull(audiobookPath.split('/tree/').last);
+          }
 
-      final files = await directory.list().toList();
-      final imageFiles = files
-          .whereType<File>()
-          .where((file) => _coverArtFormats.contains(p.extension(file.path).toLowerCase()))
-          .toList();
+          if (docId != null) {
+            // Document IDs often look like "PRIMARY:Folder/Subfolder/BookFolder"
+            final segments = docId.split(RegExp(r'[:/]'))
+                .where((s) => s.isNotEmpty && s.toUpperCase() != "PRIMARY")
+                .toList();
+            
+            if (segments.isNotEmpty) {
+              segments.removeLast(); // The last segment is the book folder itself
+            }
+            
+            // USER REQUEST: Do not make a tag out of the root folder.
+            // If the root was selected at "Audiobooks", and we are at "Audiobooks/Fantasy/Book",
+            // the segments are ["Audiobooks", "Fantasy"].
+            // We should ideally skip "Audiobooks" if it's the top-most segment of the rootPath.
+            
+            // For now, let's at least skip the first segment if there are multiple, 
+            // as the first segment is usually the root of the picked tree.
+            if (segments.length > 1) {
+              segments.removeAt(0);
+            } else if (segments.length == 1) {
+              // If only one segment remains, and it's the root, skip it
+              segments.clear();
+            }
+            
+            for (final segment in segments) {
+               final cleaned = segment.trim();
+               if (cleaned.isNotEmpty && cleaned.length > 2) {
+                  potentialTags.add(cleaned);
+               }
+            }
+          }
+          return potentialTags;
+      }
 
-      if (imageFiles.isNotEmpty) {
-        imageFiles.sort((a, b) => _naturalCompare(p.basename(a.path), p.basename(b.path)));
-        final coverArt = await imageFiles.first.readAsBytes();
-        
-        // Could cache this result here for future use
-        debugPrint("Background loaded cover art for $audiobookId");
+      final relativePath = p.relative(audiobookPath, from: rootPath);
+      final pathSegments = p.split(relativePath);
+      if (pathSegments.isNotEmpty) {
+        pathSegments.removeLast(); // Remove book folder
+      }
+      
+      // USER REQUEST: Skip root folder
+      if (pathSegments.isNotEmpty) {
+        // p.relative doesn't include the root folder name itself, 
+        // it starts from inside the root. So splitting relativePath 
+        // ALREADY excludes the root folder.
+      }
+      
+      for (final segment in pathSegments) {
+        final cleanedSegment = segment.trim();
+        if (cleanedSegment.isNotEmpty && cleanedSegment.length > 2) {
+          potentialTags.add(cleanedSegment);
+        }
       }
     } catch (e) {
-      debugPrint("Error in background cover art loading for $audiobookId: $e");
+      _logDebug("Error extracting tags: $e");
     }
+    return potentialTags;
   }
-  */
+
+  List<String> suggestTagNames(List<String> audiobookPaths, String rootPath) {
+    final Map<String, int> tagCounts = {};
+    for (final path in audiobookPaths) {
+      final tags = extractPotentialTags(path, rootPath);
+      for (final tag in tags) {
+        tagCounts[tag] = (tagCounts[tag] ?? 0) + 1;
+      }
+    }
+    
+    // Only suggest tags that appear for multiple books to avoid clutter
+    return tagCounts.entries
+        .where((e) => e.value >= 1) // In this app, even 1 is fine for auto-mapping
+        .map((e) => e.key)
+        .toList();
+  }
+
+  /// Robustly cleans a title string, specially handling SAF URIs.
+  String _cleanTitle(String title) {
+    if (title.isEmpty) return "Unknown";
+    
+    // Check if it's likely a SAF encoded string
+    if (title.contains('%3A') || title.contains('%2F') || title.contains(':')) {
+      try {
+        // 1. Full URL Decode
+        String decoded = Uri.decodeFull(title);
+        
+        // 2. Handle Document ID pattern (primary:Folder/Sub/Book)
+        if (decoded.contains(':')) {
+          decoded = decoded.split(':').last;
+        }
+        
+        // 3. Extraction of the last segment (the actual folder name)
+        if (decoded.contains('/')) {
+          final segments = decoded.split('/').where((s) => s.trim().isNotEmpty).toList();
+          if (segments.isNotEmpty) {
+            return segments.last;
+          }
+        }
+        
+        return decoded.trim().isNotEmpty ? decoded.trim() : title;
+      } catch (e) {
+        // Fallback for failed decode
+        return title.split('/').last.split(':').last;
+      }
+    }
+    
+    return title;
+  }
+}
+
+class _ChapterProcessingResult {
+  final List<Chapter> chapters; // Changed to list to support embedded chapters
+  final Uint8List? coverArt;
+  final String? author;
+  final String? album;
+  final String? metadataTitle;
+
+  _ChapterProcessingResult({
+    required this.chapters,
+    this.coverArt,
+    this.author,
+    this.album,
+    this.metadataTitle,
+  });
 }

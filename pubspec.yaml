@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.6.5+32
+version: 1.7.0+33
 
 environment:
   sdk: ^3.7.2
@@ -70,15 +70,16 @@ dependencies:
   flutter_local_notifications: ^17.2.2
   timezone: ^0.9.4
   home_widget: ^0.6.0  # For home screen widget support
+  flutter_svg: ^2.2.2
 
 # Add this section at the root level of your pubspec.yaml
 flutter_launcher_icons:
   android: true
   ios: true
-  image_path_android: "assets/icons/app_logo_holidays.png"  # For PNG
-  image_path_ios: "assets/icons/app_logo_holidays.png"      # For PNG
+  image_path_android: "assets/icons/app_logo.png"  # For PNG
+  image_path_ios: "assets/icons/app_logo.png"      # For PNG
   # OR for SVG (which is better for scaling)
-  image_path: "assets/icons/app_logo.svg"          # If using SVG
+  image_path: "assets/icons/app_logo.png"          # If using SVG
   adaptive_icon_background: "#FFFFFF"              # Background color for Android adaptive icons
   remove_alpha_ios: true                           # iOS doesn't support transparency in app icons
   

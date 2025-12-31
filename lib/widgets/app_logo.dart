@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import '../providers/theme_provider.dart';
 
 class AppLogo extends StatelessWidget {
@@ -44,19 +45,10 @@ class AppLogo extends StatelessWidget {
               ),
             ],
           ),
-          child: Image.asset(
+          child: SvgPicture.asset(
             'assets/icons/app_logo_holidays.png',
             width: size * 0.88,
             height: size * 0.88,
-            errorBuilder: (context, error, stackTrace) => CustomPaint(
-              size: Size(size * 0.88, size * 0.88),
-              painter: SmileyBookHeadphonesPainter(
-                primaryColor: primaryColor,
-                secondaryColor: secondaryColor,
-                accentColor: colorScheme.surface,
-                faceColor: colorScheme.onSurface,
-              ),
-            ),
           ),
         ),
         if (showTitle) ...[

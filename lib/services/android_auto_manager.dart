@@ -165,7 +165,7 @@ class AndroidAutoManager {
       };
       
       // Add cover art path if available (avoid base64 to prevent OOM)
-      String? coverPath = await _storageService?.getCachedCoverArtPath(book.id);
+      String? coverPath = await _storageService?.getCoverArtUri(book.id);
       
       // Fallback: If persistent cache is missing but we have bytes in memory, 
       // write to a temporary file so Native can read it.

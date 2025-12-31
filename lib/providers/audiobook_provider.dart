@@ -19,6 +19,7 @@ import '../services/metadata_service.dart';
 import '../services/storage_service.dart';
 import '../services/auto_tag_service.dart';
 import '../services/cover_art_service.dart';
+import '../services/native_scanner.dart';
 import '../providers/tag_provider.dart';
 
 // CRITICAL FIX: Add release-safe logging
@@ -63,6 +64,9 @@ class AudiobookProvider extends ChangeNotifier with WidgetsBindingObserver {
   // New property for custom titles
   final Map<String, String> _customTitles = {};
 
+  bool _isSyncing = false;
+  Timer? _syncTimer;
+
   // Current sort option to prevent unnecessary re-sorting
   LibrarySortOption? _currentSortOption;
 
@@ -102,13 +106,34 @@ class AudiobookProvider extends ChangeNotifier with WidgetsBindingObserver {
 
   // Constructor: Load audiobooks when the provider is created
   AudiobookProvider() {
+    _initialize();
+  }
+
+  Future<void> _initialize() async {
     // Register lifecycle observer
     WidgetsBinding.instance.addObserver(this);
     
     // Listen for data restore events to prevent stale state
     _storageService.addRestoreListener(_onDataRestored);
     
-    _loadCustomTitles().then((_) => loadAudiobooks());
+    // USER REQUEST: Persist root path for background sync continuity
+    // We MUST await this before loadAudiobooks to avoid race conditions in sync/pruning safety
+    _lastScannedRootPath = await _storageService.getRootPath();
+    _logDebug("Loaded persistent root path: $_lastScannedRootPath");
+    
+    await _loadCustomTitles();
+    await loadAudiobooks();
+    
+    // Start periodic background sync (every 5 minutes)
+    _startPeriodicSync();
+  }
+  
+  void _startPeriodicSync() {
+    _syncTimer?.cancel();
+    _syncTimer = Timer.periodic(const Duration(minutes: 5), (timer) {
+      _logDebug("⏰ Periodic sync triggered...");
+      syncLibraryWithRoot(isLightweight: true);
+    });
   }
   
   @override
@@ -126,13 +151,13 @@ class AudiobookProvider extends ChangeNotifier with WidgetsBindingObserver {
   
   @override
   void dispose() {
+    _syncTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     _storageService.removeRestoreListener(_onDataRestored);
     super.dispose();
   }
   
-  // Guard to prevent concurrent sync operations
-  bool _isSyncing = false;
+
   
   /// Syncs library to remove deleted books without full reload
   Future<void> syncDeletedBooksOnly() async {
@@ -150,7 +175,7 @@ class AudiobookProvider extends ChangeNotifier with WidgetsBindingObserver {
       
       for (final path in folderPaths) {
         try {
-          if (await Directory(path).exists()) {
+          if (await NativeScanner.exists(path)) {
             validPaths.add(path);
           } else {
             deletedPaths.add(path);
@@ -248,6 +273,17 @@ class AudiobookProvider extends ChangeNotifier with WidgetsBindingObserver {
       // Update cache
       await _storageService.saveCachedCoverArt(audiobookId, coverData);
       
+      // USER REQUEST: Save back to source folder as cover.jpg for other apps/standardization
+      try {
+        await NativeScanner.writeBytes(audiobookId, coverData, fileName: 'cover.jpg');
+        debugPrint("🎨 Persisted updated cover art to source folder for $audiobookId");
+      } catch (e) {
+        debugPrint("🎨 Error persisting cover art to source: $e");
+      }
+      
+      // USER REQUEST: Flag this as a manual selection (Final Boss) so it's not overwritten by scans
+      await _storageService.setManualCoverFlag(audiobookId, true);
+      
       notifyListeners();
     }
   }
@@ -341,8 +377,8 @@ class AudiobookProvider extends ChangeNotifier with WidgetsBindingObserver {
       _completedBooks[book.id] = isCompleted;
 
       // Calculate progress percentage to confirm completion status
-      final progress = await _storageService.loadProgressCache(book.id) ?? 0.0;
-      if (progress >= 0.99) {
+      final progress = await _storageService.loadProgressCache(book.id);
+      if (progress != null && progress >= 0.99) {
         _completedBooks[book.id] = true;
         await _storageService.markAsCompleted(book.id);
       }
@@ -578,14 +614,15 @@ class AudiobookProvider extends ChangeNotifier with WidgetsBindingObserver {
     _newBooks[audiobookId] = false;
 
     // Check if the book is completed (>99% progress)
-    final progress =
-        await _storageService.loadProgressCache(audiobookId) ?? 0.0;
-    if (progress >= 0.99) {
-      _completedBooks[audiobookId] = true;
-      await _storageService.markAsCompleted(audiobookId);
-    } else {
-      _completedBooks[audiobookId] = false;
-      await _storageService.unmarkAsCompleted(audiobookId);
+    final progress = await _storageService.loadProgressCache(audiobookId);
+    if (progress != null) {
+      if (progress >= 0.99) {
+        _completedBooks[audiobookId] = true;
+        await _storageService.markAsCompleted(audiobookId);
+      } else {
+        _completedBooks[audiobookId] = false;
+        await _storageService.unmarkAsCompleted(audiobookId);
+      }
     }
 
     // Re-sort to ensure proper positioning
@@ -634,21 +671,19 @@ class AudiobookProvider extends ChangeNotifier with WidgetsBindingObserver {
   /// Updates completion status based on progress and reorder books accordingly
   Future<void> updateCompletionStatus(String audiobookId) async {
     // Get current progress percentage
-    final progress =
-        await _storageService.loadProgressCache(audiobookId) ?? 0.0;
+    final progress = await _storageService.loadProgressCache(audiobookId);
+    if (progress == null) return; // Don't update if we don't know the progress
 
     // Consider book completed if progress is ≥99%
     if (progress >= 0.99) {
       if (!(_completedBooks[audiobookId] ?? false)) {
         _completedBooks[audiobookId] = true;
         await _storageService.markAsCompleted(audiobookId);
-
-        // Re-sort books to move this one to the bottom
         _sortAudiobooksByStatus();
         notifyListeners();
       }
     } else {
-      // If progress is <99% but book was marked as completed before, unmark it
+      // Only unmark if it was previously marked
       if (_completedBooks[audiobookId] ?? false) {
         _completedBooks[audiobookId] = false;
         await _storageService.unmarkAsCompleted(audiobookId);
@@ -755,10 +790,17 @@ class AudiobookProvider extends ChangeNotifier with WidgetsBindingObserver {
       final List<String> deletedPaths = [];
       
       for (final path in folderPaths) {
-        if (await Directory(path).exists()) {
+        if (await NativeScanner.exists(path)) {
           validPaths.add(path);
         } else {
-          deletedPaths.add(path);
+          // PROTECTION: On Android, if we don't have a root path yet (e.g., fresh restore),
+          // don't delete "missing" books as it's likely just a permission issue.
+          if (Platform.isAndroid && _lastScannedRootPath == null) {
+            _logDebug("Safety: Keeping potentially inaccessible book (no root path): $path");
+            validPaths.add(path);
+          } else {
+            deletedPaths.add(path);
+          }
         }
       }
       
@@ -804,7 +846,8 @@ class AudiobookProvider extends ChangeNotifier with WidgetsBindingObserver {
           // Fallback to basic cache
           final cachedBasicInfo = await _storageService.loadCachedBasicBookInfo(path);
           if (cachedBasicInfo != null) {
-            final audiobook = _createAudiobookFromCachedInfo(path, cachedBasicInfo);
+            final cachedCoverArt = await _storageService.loadCachedCoverArt(path); // USER REQUEST: Also check cover here
+            final audiobook = _createAudiobookFromCachedInfo(path, cachedBasicInfo, cachedCoverArt);
             if (audiobook.chapters.isNotEmpty) {
               loadedBooks.add(audiobook);
             }
@@ -853,6 +896,12 @@ class AudiobookProvider extends ChangeNotifier with WidgetsBindingObserver {
       // STEP 4: Start background validation (no UI impact)
       unawaited(_validateLibraryInBackground());
       
+      // USER REQUEST: Automatically sync library with root folder
+      // This runs in background to verify existence and adds new folders
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        syncLibraryWithRoot();
+      });
+      
     } catch (e, stackTrace) {
       _logDebug("Error in fast startup loading: $e\n$stackTrace");
       // Even on error, show empty state rather than loading
@@ -878,8 +927,7 @@ class AudiobookProvider extends ChangeNotifier with WidgetsBindingObserver {
       
       // Check each book path still exists
       for (final path in folderPaths) {
-        final directory = Directory(path);
-        if (!await directory.exists()) {
+        if (!await NativeScanner.exists(path)) {
           // Try to find renamed folder
           final newPath = await _findRenamedFolder(path);
           if (newPath != null) {
@@ -1179,7 +1227,7 @@ class AudiobookProvider extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   /// Creates an Audiobook from cached basic info
-  Audiobook _createAudiobookFromCachedInfo(String path, Map<String, dynamic> cachedInfo) {
+  Audiobook _createAudiobookFromCachedInfo(String path, Map<String, dynamic> cachedInfo, [Uint8List? coverArt]) {
     try {
       final chaptersData = cachedInfo['chapters'] as List<dynamic>? ?? [];
       final chapters = chaptersData.map((chapterData) {
@@ -1201,7 +1249,7 @@ class AudiobookProvider extends ChangeNotifier with WidgetsBindingObserver {
         author: cachedInfo['author'] as String?,
         chapters: chapters,
         totalDuration: Duration(milliseconds: cachedInfo['totalDurationMs'] as int? ?? 0),
-        // coverArt will be loaded separately
+        coverArt: coverArt, // Now passed in
       );
     } catch (e) {
       _logDebug("Error creating audiobook from cached info: $e");
@@ -1345,17 +1393,34 @@ class AudiobookProvider extends ChangeNotifier with WidgetsBindingObserver {
     }
 
     try {
-      // Use file picker to select the root directory
-      String? rootDirectoryPath = await FilePicker.platform.getDirectoryPath(
-        dialogTitle: 'Select Audiobooks Root Folder - Will scan all subfolders',
-        lockParentWindow: true,
-      );
+      // Use native folder picker (SAF) on Android for "magic" loading
+      // For other platforms, stick to standard FilePicker
+      String? rootDirectoryPath;
+      if (Platform.isAndroid) {
+        rootDirectoryPath = await NativeScanner.pickFolder();
+      } else {
+        rootDirectoryPath = await FilePicker.platform.getDirectoryPath(
+          dialogTitle: 'Select Audiobooks Root Folder - Will scan all subfolders',
+          lockParentWindow: true,
+        );
+      }
 
       if (rootDirectoryPath != null && rootDirectoryPath.isNotEmpty) {
         _logDebug("Root audiobooks folder selected: $rootDirectoryPath");
 
-        // Store the root path for auto-tag creation
+        // PERFORMANCE FIX: Create .nomedia file to hide from other apps as suggested by user
+        if (Platform.isAndroid) {
+          try {
+            await NativeScanner.createNomediaFile(rootDirectoryPath);
+            _logDebug("Created .nomedia file in $rootDirectoryPath");
+          } catch (e) {
+            _logDebug("Failed to create .nomedia file: $e");
+          }
+        }
+
+        // Store the root path for auto-tag creation and background sync
         _lastScannedRootPath = rootDirectoryPath;
+        await _storageService.setRootPath(rootDirectoryPath);
 
         // Start processing immediately with proper error handling
         await _processNewBooksInBackground(rootDirectoryPath);
@@ -1368,6 +1433,121 @@ class AudiobookProvider extends ChangeNotifier with WidgetsBindingObserver {
       _logDebug("Error during addAudiobooksRecursively process: $e\n$stackTrace");
       _errorMessage = "An error occurred while accessing the file system: $e";
       _stopLoading();
+    }
+  }
+
+  /// Fully syncs the library with the root folder: adds new books, removes missing ones.
+  /// [isLightweight] if true, avoids complex repair/metadata processing for existing books.
+  Future<void> syncLibraryWithRoot({bool isLightweight = false}) async {
+    if (_lastScannedRootPath == null || _isSyncing) return;
+    _isSyncing = true;
+    _logDebug("🔄 Starting full library sync with root: $_lastScannedRootPath");
+
+    try {
+      // 1. Scan for ALL valid audiobook folders currently on disk
+      final List<String> currentOnDiskFolders = 
+          await _metadataService.scanForAudiobookFolders(_lastScannedRootPath!);
+      
+      _logDebug("Found ${currentOnDiskFolders.length} folders on disk.");
+
+      // 1. Identify new, missing, and repair-needed books
+      final Set<String> normalizedOnDisk = currentOnDiskFolders.map((p) => p.toLowerCase().trim()).toSet();
+      
+      final List<String> pathsToAdd = [];
+      final List<String> pathsToRemove = [];
+      final List<Audiobook> booksToRepair = [];
+
+      // A. Check for new books
+      for (final path in currentOnDiskFolders) {
+        final normalizedPath = path.toLowerCase().trim();
+        if (!_audiobooks.any((book) => book.id.toLowerCase().trim() == normalizedPath)) {
+          pathsToAdd.add(path);
+        }
+      }
+
+      // B. Check for missing or repair-needed books
+      for (final book in _audiobooks) {
+        final normalizedBookId = book.id.toLowerCase().trim();
+        if (!normalizedOnDisk.contains(normalizedBookId)) {
+          // SAFETY: Double check if it actually exists before removing
+          if (!(await NativeScanner.exists(book.id))) {
+            pathsToRemove.add(book.id);
+          } else {
+             _logDebug("Safety: Disk scan missed ${book.id} but it EXISTS. Keeping it.");
+          }
+        } else if (book.coverArt == null) {
+          // USER REQUEST: If book exists but has no cover, mark for repair
+          booksToRepair.add(book);
+        }
+      }
+
+      _logDebug("Sync Results: +${pathsToAdd.length} new, -${pathsToRemove.length} missing, ${isLightweight ? 'Skipped repair' : booksToRepair.length.toString() + ' needing repair'}");
+
+      // 4. Execute Removal
+      if (pathsToRemove.isNotEmpty) {
+        for (final path in pathsToRemove) {
+          await _storageService.removeAudiobookData(path);
+          _customTitles.remove(path);
+          _completedBooks.remove(path);
+          _newBooks.remove(path);
+          _lastPlayedTimestamps.remove(path);
+        }
+        await _saveCustomTitles();
+        _audiobooks.removeWhere((book) => pathsToRemove.contains(book.id));
+        // Update the persistent list immediately
+        final updatedPaths = _audiobooks.map((b) => b.id).toList();
+        await _storageService.saveAudiobookFolders(updatedPaths);
+      }
+
+      // 5. Execute Repair (For existing books missing covers)
+      if (booksToRepair.isNotEmpty && !isLightweight) {
+        _logDebug("Repairing data for ${booksToRepair.length} books...");
+        for (final book in booksToRepair) {
+           try {
+             final updatedBook = await _metadataService.getAudiobookDetails(book.id);
+             if (updatedBook.coverArt != null) {
+                final idx = _audiobooks.indexWhere((b) => b.id == book.id);
+                if (idx != -1) {
+                  _audiobooks[idx] = updatedBook;
+                  notifyListeners();
+                }
+             }
+           } catch (e) {
+             _logDebug("Error repairing book ${book.id}: $e");
+           }
+        }
+      }
+
+      // 6. Execute Addition (Batch processing)
+      if (pathsToAdd.isNotEmpty) {
+         // We reuse the existing logic but bypass the UI blockers
+         // Add them to the persistent list first
+         final currentPaths = _audiobooks.map((b) => b.id).toList();
+         currentPaths.addAll(pathsToAdd);
+         await _storageService.saveAudiobookFolders(currentPaths);
+         
+         // Process one by one to load metadata
+         for (final path in pathsToAdd) {
+            try {
+              final audiobook = await _metadataService.getAudiobookDetails(path);
+              _audiobooks.add(audiobook);
+              _newBooks[path] = true; // Mark as new
+            } catch (e) {
+              _logDebug("Error loading new book during sync: $path - $e");
+            }
+         }
+         // Sort after adding
+         _sortAudiobooksByStatus();
+      }
+
+      if (pathsToAdd.isNotEmpty || pathsToRemove.isNotEmpty) {
+        notifyListeners();
+      }
+
+    } catch (e) {
+      _logDebug("Error during full library sync: $e");
+    } finally {
+      _isSyncing = false;
     }
   }
 
@@ -1475,119 +1655,6 @@ class AudiobookProvider extends ChangeNotifier with WidgetsBindingObserver {
       _logDebug("CRITICAL: Stopping loading due to error");
       _forceStopLoading();
       _errorMessage = "Error processing audiobooks: $e";
-    }
-  }
-
-  /// Add single audiobook folder
-  Future<void> addAudiobookFolder() async {
-    if (!await _requestPermissions()) {
-      return;
-    }
-
-    try {
-      // Start loading and show immediately
-      _startLoading();
-      
-      // Show loading screen immediately
-      notifyListeners();
-      
-      // Use FilePicker to select a single directory path
-      String? selectedDirectoryPath = await FilePicker.platform.getDirectoryPath(
-        dialogTitle: 'Select Single Audiobook Folder',
-        lockParentWindow: true,
-      );
-
-      if (selectedDirectoryPath != null && selectedDirectoryPath.isNotEmpty) {
-        _logDebug("Single audiobook folder selected: $selectedDirectoryPath");
-
-        // Check if this exact path is already in the library
-        if (_audiobooks.any((book) => book.id == selectedDirectoryPath)) {
-          _stopLoading();
-          _errorMessage = "This audiobook folder is already in your library.";
-          _logDebug("Attempted to add duplicate folder: $selectedDirectoryPath");
-          notifyListeners();
-          return;
-        }
-
-        // Process in background
-        unawaited(_processSingleBookInBackground(selectedDirectoryPath));
-
-      } else {
-        _logDebug("Single folder selection cancelled.");
-        _stopLoading();
-      }
-    } catch (e, stackTrace) {
-      _logDebug("Error during addAudiobookFolder process: $e\n$stackTrace");
-      _errorMessage = "An error occurred while accessing the file system.";
-      _stopLoading();
-    }
-  }
-
-  /// Process single book in background
-  Future<void> _processSingleBookInBackground(String selectedDirectoryPath) async {
-    try {
-      // Note: Loading already started in addAudiobookFolder - no need to call _startLoading() again
-      
-      // Get audiobook details for the selected path
-      final newBook = await _metadataService.getAudiobookDetails(selectedDirectoryPath);
-
-      if (newBook.chapters.isEmpty) {
-        _stopLoading();
-        _errorMessage =
-            "The selected folder contains no compatible audio files.\n\n"
-            "Supported formats: MP3, M4A, M4B, WAV, OGG, AAC, FLAC\n\n"
-            "Please select a folder that contains audio files, or use "
-            "'Add Multiple Books' to scan for audiobooks in subfolders.";
-        _logDebug("No compatible chapters found in: $selectedDirectoryPath");
-        notifyListeners();
-      } else {
-        
-        // Mark the new book as "new" (never played)
-        _newBooks[newBook.id] = true;
-        _lastPlayedTimestamps[newBook.id] = 0;
-        _completedBooks[newBook.id] = false;
-
-        _audiobooks.add(newBook);
-        // Sort using current sort preference when adding new books
-        _sortAudiobooksByStatus();
-
-        // Cache the new book
-        await _cacheBasicBookInfo(newBook, selectedDirectoryPath);
-        await _cacheDetailedMetadata(newBook);
-        
-        // Register with file tracking system 🐛
-        await _storageService.registerAudiobook(
-          selectedDirectoryPath,
-          title: newBook.title,
-          author: newBook.author,
-          chapterCount: newBook.chapters.length,
-        );
-
-        // Store content hash for future rename detection
-        final contentHash = await _storageService.generateContentHash(selectedDirectoryPath);
-        await _storageService.updateContentHash(contentHash, selectedDirectoryPath);
-
-        // Save the updated list of folder paths
-        await _storageService.saveAudiobookFolders(
-          _audiobooks.map((b) => b.id).toList(),
-        );
-
-        // Store info for potential auto-tag creation from UI
-        _lastScannedRootPath = Directory(selectedDirectoryPath).parent.path;
-        _lastAddedPaths = [selectedDirectoryPath];
-        _logDebug("Single audiobook added and ready for auto-tagging");
-        
-        _forceStopLoading();
-        _errorMessage = null;
-        _logDebug("Successfully added audiobook: ${newBook.title} with ${newBook.chapters.length} chapters");
-      }
-    } catch (e, stackTrace) {
-      _forceStopLoading();
-      
-          _logDebug("Error processing single audiobook folder: $e\n$stackTrace");
-          _errorMessage = 
-              "Failed to process the selected folder. The folder may be corrupted "
-              "or contain unsupported file formats.";
     }
   }
 
@@ -1762,9 +1829,7 @@ class AudiobookProvider extends ChangeNotifier with WidgetsBindingObserver {
       
       // Check each book for path changes or deletions
       for (final folderPath in folderPaths) {
-        final directory = Directory(folderPath);
-        
-        if (!await directory.exists()) {
+        if (!await NativeScanner.exists(folderPath)) {
           // Try to find the book in a new location using file tracking
           final newPath = await _storageService.findMigratedPath(folderPath);
           

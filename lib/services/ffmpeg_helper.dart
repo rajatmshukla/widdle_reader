@@ -1,4 +1,9 @@
+import 'dart:io';
+import 'dart:typed_data';
 import 'package:ffmpeg_kit_flutter_new_audio/ffprobe_kit.dart';
+import 'package:ffmpeg_kit_flutter_new_audio/ffmpeg_kit_config.dart';
+import 'package:ffmpeg_kit_flutter_new_audio/ffmpeg_kit.dart';
+import 'package:ffmpeg_kit_flutter_new_audio/return_code.dart';
 import 'package:flutter/foundation.dart';
 import '../models/chapter.dart';
 
@@ -13,11 +18,28 @@ class FFmpegHelper {
     final List<Chapter> chapters = [];
 
     try {
-      final session = await FFprobeKit.getMediaInformation(filePath);
-      final information = session.getMediaInformation();
+      debugPrint("FFprobe: Starting extraction for $filePath");
+      String actualPath = filePath;
+      
+      // FFprobeKit (Android) often handles content:// URIs directly.
+      // We'll try direct access first, then fallback to getSafParameter if it fails.
+      
+      var session = await FFprobeKit.getMediaInformation(actualPath);
+      var information = session.getMediaInformation();
+
+      if (information == null && filePath.startsWith('content://')) {
+        debugPrint("FFprobe: Direct access returned no info, trying SAF parameter...");
+        final safPath = await FFmpegKitConfig.getSafParameter(filePath, "r");
+        if (safPath != null) {
+          actualPath = safPath;
+          debugPrint("FFprobe: Using SAF parameter path: $actualPath");
+          session = await FFprobeKit.getMediaInformation(actualPath);
+          information = session.getMediaInformation();
+        }
+      }
 
       if (information == null) {
-        debugPrint("FFprobe: No media information found for $filePath");
+        debugPrint("FFprobe: No media information found for $filePath after all attempts");
         return [];
       }
 
@@ -27,91 +49,74 @@ class FFmpegHelper {
         return [];
       }
 
-      debugPrint("FFprobe: Found ${ffmpegChapters.length} chapters in $filePath");
+      debugPrint("FFprobe: Found ${ffmpegChapters.length} native chapter objects in $filePath");
+
+      final allProperties = information.getAllProperties();
+      final List<dynamic>? jsonChapters = (allProperties != null && allProperties['chapters'] is List) 
+          ? allProperties['chapters'] as List 
+          : null;
 
       for (int i = 0; i < ffmpegChapters.length; i++) {
-        final chapter = ffmpegChapters[i];
+        final chapterObj = ffmpegChapters[i];
         
-        // FFmpeg times are usually in milliseconds or seconds depending on time_base
-        // getStart() and getEnd() usually return values in the time_base units
-        // But getStartTime() and getEndTime() return seconds as double/string usually?
-        // Let's check the API. FFprobeKit returns Chapter objects.
-        // Usually they have start, end, and tags (title).
-        
-        // Safe parsing of start/end times (assuming milliseconds if integer, or converting)
-        // The Chapter object from ffmpeg_kit has getStart(), getEnd() which are long (int).
-        // It also has getTimeBase().
-        
-        final startVal = chapter.getStart();
-        final endVal = chapter.getEnd();
-        // final timeBase = chapter.getTimeBase(); // e.g. "1/1000"
-        
-        // However, usually it's safer to rely on getStartTime() / getEndTime() which are often in seconds
-        // But the Chapter class in ffmpeg_kit_flutter might vary.
-        // Let's assume standard behavior: start/end are raw values.
-        // We might need to calculate based on time_base, but often for simple audio
-        // it's easier to use the metadata if available.
-        
-        // Let's try to use the 'tags' to get the title.
-        final tags = chapter.getTags();
+        // 1. Try to get title from tags
+        final tags = chapterObj.getTags();
         String title = "Chapter ${i + 1}";
         if (tags != null && tags['title'] != null) {
           title = tags['title']!;
         }
 
-        // Calculate duration
-        // Note: We need to be careful about units. 
-        // For now, let's assume the values are usable or we can get seconds.
-        // Actually, looking at the library, it's often safer to trust the 'start_time' and 'end_time' strings if available,
-        // but getStart() is a number.
+        double startSeconds = 0.0;
+        double endSeconds = 0.0;
         
-        // Let's rely on a simpler assumption for now: 
-        // If we can't easily determine the unit, we might need to inspect the output.
-        // But typically, FFprobeKit handles this.
-        
-        // Let's use a robust way:
-        // We'll use the start/end times converted to Duration.
-        // We'll assume they are in milliseconds for now, but we should verify.
-        // Wait, FFmpeg usually uses a timebase.
-        
-        // Let's use the helper method if available or just parse.
-        // Actually, let's look at the properties available on the Chapter object at runtime if needed.
-        // For now, we'll implement a best-effort extraction.
-        
-        // Using start_time and end_time (seconds) is usually most reliable if available.
-        // But the wrapper might expose them as getStartTime().
-        
-        // Let's try to use the raw values and convert.
-        // If start/end are large integers, they are likely timebase units.
-        // If we don't know the timebase, it's hard.
-        
-        // BETTER APPROACH:
-        // Use the JSON output from FFprobe which is standard.
-        final allProperties = information.getAllProperties();
-        if (allProperties != null && allProperties['chapters'] is List) {
-          final jsonChapters = allProperties['chapters'] as List;
+        // 2. Try to use JSON data if available for higher precision (seconds as double)
+        bool usedJson = false;
+        if (jsonChapters != null && i < jsonChapters.length) {
           final jsonChapter = jsonChapters[i];
-          
           final startTimeStr = jsonChapter['start_time'];
           final endTimeStr = jsonChapter['end_time'];
           
           if (startTimeStr != null && endTimeStr != null) {
-            final startSeconds = double.tryParse(startTimeStr.toString()) ?? 0.0;
-            final endSeconds = double.tryParse(endTimeStr.toString()) ?? 0.0;
-            
-            final startDuration = Duration(milliseconds: (startSeconds * 1000).round());
-            final endDuration = Duration(milliseconds: (endSeconds * 1000).round());
-            
-            chapters.add(Chapter(
-              id: "$filePath#$i", // Unique ID for this segment
-              title: title,
-              audiobookId: audiobookId,
-              sourcePath: filePath,
-              start: startDuration,
-              end: endDuration,
-              duration: endDuration - startDuration,
-            ));
+            startSeconds = double.tryParse(startTimeStr.toString()) ?? 0.0;
+            endSeconds = double.tryParse(endTimeStr.toString()) ?? 0.0;
+            usedJson = true;
           }
+        }
+
+        // 3. Fallback to native object values if JSON wasn't helpful or available
+        if (!usedJson) {
+           // Native getStart/getEnd are in time_base units
+           final int startVal = chapterObj.getStart() ?? 0;
+           final int endVal = chapterObj.getEnd() ?? 0;
+           final timeBaseStr = chapterObj.getTimeBase() ?? "1/1000";
+           
+           if (timeBaseStr.contains('/')) {
+             final parts = timeBaseStr.split('/');
+             final num = double.tryParse(parts[0]) ?? 1.0;
+             final den = double.tryParse(parts[1]) ?? 1000.0;
+             startSeconds = startVal * (num / den);
+             endSeconds = endVal * (num / den);
+           } else {
+             startSeconds = startVal / 1000.0;
+             endSeconds = endVal / 1000.0;
+           }
+        }
+
+        final startDuration = Duration(milliseconds: (startSeconds * 1000).round());
+        final endDuration = Duration(milliseconds: (endSeconds * 1000).round());
+        final chapterDuration = endDuration > startDuration ? endDuration - startDuration : Duration.zero;
+
+        // Only add if duration > 0 OR if it's the only chapter (to be safe)
+        if (chapterDuration > Duration.zero || i == 0) {
+          chapters.add(Chapter(
+            id: "$filePath#$i",
+            title: title,
+            audiobookId: audiobookId,
+            sourcePath: filePath,
+            start: startDuration,
+            end: endDuration,
+            duration: chapterDuration,
+          ));
         }
       }
     } catch (e) {
@@ -119,5 +124,82 @@ class FFmpegHelper {
     }
 
     return chapters;
+  }
+
+  /// Extracts embedded cover art from an audio file using FFmpeg.
+  /// Returns the image bytes if found, otherwise null.
+  static Future<Uint8List?> extractCoverArt({
+    required String filePath,
+  }) async {
+    try {
+      debugPrint("FFmpeg: Attempting cover art extraction for $filePath");
+      String actualPath = filePath;
+      
+      if (filePath.startsWith('content://')) {
+        final safPath = await FFmpegKitConfig.getSafParameter(filePath, "r");
+        if (safPath != null) {
+          actualPath = safPath;
+        }
+      }
+
+      // 1. Get media information to check specifically for video/image streams
+      final session = await FFprobeKit.getMediaInformation(actualPath);
+      final information = session.getMediaInformation();
+      if (information == null) return null;
+
+      final streams = information.getStreams();
+      bool hasAttachedPic = false;
+      for (final stream in streams) {
+        final type = stream.getType();
+        // In audio files, a video stream is almost always the embedded cover art
+        if (type == 'video') {
+          hasAttachedPic = true;
+          break;
+        }
+      }
+
+      if (!hasAttachedPic) {
+        debugPrint("FFmpeg: No video/attached_pic streams found in $filePath");
+        return null;
+      }
+
+      // 2. Use FFmpeg to extract the first video stream to a temporary file
+      // -i input -map 0:v -c copy -frames:v 1 -f image2 out.jpg
+      final tempFile = File('${Directory.systemTemp.path}/ffmpeg_cover_${DateTime.now().millisecondsSinceEpoch}.jpg');
+      
+      // We use -map 0:v:0 to get the first video stream (usually the cover)
+      // -vframes 1 to get only one frame
+      // -q:v 2 for high quality if re-encoding is needed, but -c:v copy is better if it's already mjpeg/png
+      final command = '-i "$actualPath" -map 0:v:0 -c:v copy -frames:v 1 -f image2 "${tempFile.path}" -y';
+      
+      final ffSession = await FFmpegKit.execute(command);
+      final returnCode = await ffSession.getReturnCode();
+
+      if (ReturnCode.isSuccess(returnCode)) {
+        if (await tempFile.exists()) {
+          final bytes = await tempFile.readAsBytes();
+          // Clean up
+          try { await tempFile.delete(); } catch (_) {}
+          debugPrint("FFmpeg: Successfully extracted ${bytes.length} bytes of cover art");
+          return bytes;
+        }
+      } else {
+        debugPrint("FFmpeg: Cover extraction command failed with code $returnCode");
+        // Fallback: Try without -c:v copy in case the format needs re-encoding to jpg
+        final fallbackCommand = '-i "$actualPath" -map 0:v:0 -frames:v 1 -f image2 "${tempFile.path}" -y';
+        final fallbackSession = await FFmpegKit.execute(fallbackCommand);
+        if (ReturnCode.isSuccess(await fallbackSession.getReturnCode())) {
+           if (await tempFile.exists()) {
+             final bytes = await tempFile.readAsBytes();
+             try { await tempFile.delete(); } catch (_) {}
+             debugPrint("FFmpeg: Successfully extracted ${bytes.length} bytes (with re-encode)");
+             return bytes;
+           }
+        }
+      }
+    } catch (e) {
+      debugPrint("Error extracting cover art with FFmpeg: $e");
+    }
+    return null;
   }
 }

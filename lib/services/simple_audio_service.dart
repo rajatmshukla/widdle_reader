@@ -42,6 +42,7 @@ class SimpleAudioService with WidgetsBindingObserver {
   final _currentChapterSubject = BehaviorSubject<int>.seeded(0);
   final _playingSubject = BehaviorSubject<bool>.seeded(false);
   final _speedSubject = BehaviorSubject<double>.seeded(1.0);
+  final _errorSubject = PublishSubject<String>(); // Broadcaster for playback errors
   final _audiobookSubject = BehaviorSubject<Audiobook?>.seeded(null);
 
   // Timer for auto-saving
@@ -66,6 +67,7 @@ class SimpleAudioService with WidgetsBindingObserver {
   Stream<bool> get playingStream => _playingSubject.stream;
   Stream<double> get speedStream => _speedSubject.stream;
   Stream<Audiobook?> get audiobookStream => _audiobookSubject.stream;
+  Stream<String> get errorStream => _errorSubject.stream;
 
   // Current state getters
   Duration get position => _player.position;
@@ -242,10 +244,19 @@ class SimpleAudioService with WidgetsBindingObserver {
       _speedSubject.add(speed);
       _updateMediaSessionPlaybackState();
     });
+    
+    // ERROR LISTENER - CRITICAL for diagnosing "buttons don't work"
+    _player.playbackEventStream.listen((event) {
+      // Nothing needed here usually, but it confirms events are flowing
+    }, onError: (Object e, StackTrace stackTrace) {
+      debugPrint('🚨 [just_audio] Error detected in playback stream: $e');
+      debugPrint('$stackTrace');
+    });
 
-    // Completion listener - go to next chapter
     _player.processingStateStream.listen((state) {
+      debugPrint('📊 [PlayerState] ProcessingState changed to: $state');
       if (state == ProcessingState.completed) {
+        debugPrint('🏁 [PlayerState] Chapter completed, skipping to next...');
         skipToNext();
       }
     });
@@ -456,11 +467,19 @@ class SimpleAudioService with WidgetsBindingObserver {
   Future<Uri?> _getCoverArtUri(Uint8List coverArt, String id) async {
     try {
       final tempDir = await getTemporaryDirectory();
-      final file = File('${tempDir.path}/cover_$id.jpg');
-      await file.writeAsBytes(coverArt);
+      // FIX: Use hash for filename to prevent filesystem errors with long IDs
+      // We use hashCode as a simple, short unique identifier for temp files
+      final safeName = 'cover_${id.hashCode}'; 
+      final file = File('${tempDir.path}/$safeName.jpg');
+      
+      // Optimized: Only write if didn't exist to save IO
+      if (!await file.exists()) {
+        await file.writeAsBytes(coverArt);
+      }
       return Uri.file(file.path);
     } catch (e) {
       debugPrint("Error creating cover art file: $e");
+      // Fallback to data URI (though AA support is limited)
       return Uri.dataFromBytes(coverArt);
     }
   }
@@ -487,26 +506,36 @@ class SimpleAudioService with WidgetsBindingObserver {
       final chapter = _currentAudiobook!.chapters[index];
       
       // Validate file
-      final audioFile = File(chapter.sourcePath);
-      if (!await audioFile.exists()) {
-        throw Exception("Audio file not found: ${audioFile.path}");
+      final audioPath = chapter.sourcePath;
+      final isContentUri = audioPath.startsWith('content://');
+      
+      if (!isContentUri) {
+        final audioFile = File(audioPath);
+        if (!await audioFile.exists()) {
+          throw Exception("Audio file not found: ${audioFile.path}");
+        }
+        
+        final fileSize = await audioFile.length();
+        if (fileSize < 1024) {
+          throw Exception("Audio file appears corrupted (too small): ${audioFile.path}");
+        }
       }
       
-      final fileSize = await audioFile.length();
-      if (fileSize < 1024) {
-        throw Exception("Audio file appears corrupted (too small): ${audioFile.path}");
-      }
-      debugPrint("Loading chapter: ${chapter.title} from ${audioFile.path}");
+      debugPrint("📖 [LoadChapter] Loading chapter $index: ${chapter.title} from $audioPath");
 
-      // Prepare artUri
+      // Prepare artUri - prioritize cached cover art (reliable local file)
       Uri? artUri;
       try {
         final coverPath = await _storageService.getCachedCoverArtPath(_currentAudiobook!.id);
-        if (coverPath != null) {
+        if (coverPath != null && await File(coverPath).exists()) {
           artUri = Uri.file(coverPath);
+          debugPrint("🖼️ [LoadChapter] Using cached cover art: $coverPath");
         } else if (_currentAudiobook!.coverArt != null) {
           final sanitizedId = _currentAudiobook!.id.replaceAll(RegExp(r'[^\w]'), '_');
           artUri = await _getCoverArtUri(_currentAudiobook!.coverArt!, sanitizedId);
+          debugPrint("🖼️ [LoadChapter] Using in-memory cover art (saved to temp)");
+        } else {
+          debugPrint("🖼️ [LoadChapter] No cover art available for this book");
         }
       } catch (e) {
         debugPrint("Error getting cover art URI: $e");
@@ -539,13 +568,19 @@ class SimpleAudioService with WidgetsBindingObserver {
         
         if (chapter.end != null && chapter.end! > Duration.zero && chapter.end! > chapter.start) {
           audioSource = ClippingAudioSource(
-              child: AudioSource.uri(Uri.file(chapter.sourcePath), tag: mediaItem),
+              child: AudioSource.uri(
+                isContentUri ? Uri.parse(audioPath) : Uri.file(audioPath), 
+                tag: mediaItem
+              ),
               start: chapter.start,
               end: chapter.end,
               tag: mediaItem,
           );
         } else {
-          audioSource = AudioSource.uri(Uri.file(chapter.sourcePath), tag: mediaItem);
+          audioSource = AudioSource.uri(
+            isContentUri ? Uri.parse(audioPath) : Uri.file(audioPath), 
+            tag: mediaItem
+          );
         }
 
         // IMPROVEMENT: Robustness fix for EQ muting/state issues.
@@ -561,11 +596,18 @@ class SimpleAudioService with WidgetsBindingObserver {
           await _loudnessEnhancer?.setEnabled(false);
         }
 
-        await _player.setAudioSource(audioSource, initialPosition: startPosition);
+        debugPrint('🕒 [LoadChapter] Setting AudioSource (Position: $startPosition)...');
+        await _player.setAudioSource(audioSource, initialPosition: startPosition)
+            .timeout(const Duration(seconds: 15), onTimeout: () {
+              debugPrint('🚨 [LoadChapter] TIMEOUT setting audio source!');
+              throw Exception("Timeout loading audio source. This can happen with slow storage or SAF indexing issues.");
+            });
+        debugPrint('✅ [LoadChapter] AudioSource set successfully. Duration: ${_player.duration}');
         
         // REMOVED: EQ application is now deferred to playback start
         // See _applyEqOnPlaybackStart() in playingStream listener
         // This prevents the mute bug caused by enabling EQ before audio session is active
+        // _applyEqOnPlaybackStart(); 
       } catch (audioSourceError) {
         if (audioSourceError.toString().contains('FileSystemException')) {
           throw Exception("Cannot access audio file. Check file permissions.");
@@ -609,7 +651,8 @@ class SimpleAudioService with WidgetsBindingObserver {
       // Update home screen widget
       await _updateHomeWidget(isPlaying: _player.playing);
     } catch (e) {
-      debugPrint("Error loading chapter $index: $e");
+      debugPrint("🚨 [LoadChapter] CRITICAL ERROR loading chapter $index: $e");
+      _errorSubject.add("Failed to load chapter: $e");
       
       String userMessage = "Failed to load chapter.";
       if (e.toString().contains("not found")) {
@@ -665,7 +708,7 @@ class SimpleAudioService with WidgetsBindingObserver {
       // Get cover art URI: Use override if provided, otherwise check storage
       String? artUri = overrideArtUri;
       if (artUri == null) {
-         artUri = await _storageService.getCachedCoverArtPath(_currentAudiobook!.id);
+         artUri = await _storageService.getCoverArtUri(_currentAudiobook!.id);
       }
       
       await _audioBridgeChannel.invokeMethod('updateMetadata', {
@@ -841,8 +884,9 @@ class SimpleAudioService with WidgetsBindingObserver {
     bool fromUser = false,
     bool propagateToNative = true,
   }) async {
+    debugPrint('🕒 [Seek] Seeking to ${position.inMilliseconds} ms (Player Status: ${_player.processingState})');
     await _player.seek(position);
-    debugPrint('Seek to ${position.inMilliseconds} ms');
+    debugPrint('✅ [Seek] Seek finished');
     _notifyPlaybackChanged(nativeUpdate: true);
   }
 
@@ -900,8 +944,10 @@ class SimpleAudioService with WidgetsBindingObserver {
   Future<void> skipToChapter(int index, {bool propagateToNative = true}) async {
     if (_currentAudiobook == null) return;
 
+    debugPrint('⏭️ [SkipToChapter] Navigating to chapter $index');
     if (index >= 0 && index < _currentAudiobook!.chapters.length) {
       await loadChapter(index);
+      debugPrint('▶️ [SkipToChapter] Triggering play...');
       await play(propagateToNative: propagateToNative);
       if (propagateToNative) {
         _invokeMediaSessionCommand('skipToQueueItem', {
@@ -913,10 +959,18 @@ class SimpleAudioService with WidgetsBindingObserver {
 
   // Time skipping
   Future<void> fastForward({bool propagateToNative = true}) async {
-    if (_player.duration == null) return;
+    final currentPos = _player.position;
+    final totalDuration = _player.duration;
+    
+    debugPrint('⏩ [FastForward] Current: $currentPos, Total: $totalDuration');
+    
+    if (totalDuration == null) {
+      debugPrint('⚠️ [FastForward] Skipping because Duration is null');
+      return;
+    }
 
-    final newPosition = _player.position + const Duration(seconds: 15);
-    final maxPosition = _player.duration!;
+    final newPosition = currentPos + const Duration(seconds: 15);
+    final maxPosition = totalDuration;
 
     await seek(
       newPosition > maxPosition ? maxPosition : newPosition,
@@ -926,7 +980,10 @@ class SimpleAudioService with WidgetsBindingObserver {
   }
 
   Future<void> rewind({bool propagateToNative = true}) async {
-    final newPosition = _player.position - const Duration(seconds: 15);
+    final currentPos = _player.position;
+    debugPrint('⏪ [Rewind] Current: $currentPos');
+
+    final newPosition = currentPos - const Duration(seconds: 15);
     await seek(
       newPosition < Duration.zero ? Duration.zero : newPosition,
       propagateToNative: propagateToNative,
@@ -953,6 +1010,7 @@ class SimpleAudioService with WidgetsBindingObserver {
     await _currentChapterSubject.close();
     await _playingSubject.close();
     await _speedSubject.close();
+    await _errorSubject.close();
   }
 
   Future<void> _invokeMediaSessionCommand(String action, [Map<String, dynamic>? params]) async {
@@ -1037,14 +1095,16 @@ class SimpleAudioService with WidgetsBindingObserver {
     if (_currentAudiobook == null || _equalizer == null) return;
     if (_eqAppliedThisSession) return; // Only apply once per play session
     
-    _eqAppliedThisSession = true;
+    // DELAYED MARK: Don't set to true yet, wait for successful application
     
     // Delay slightly to ensure audio is flowing before enabling effects
-    Future.delayed(const Duration(milliseconds: 300), () async {
+    // This is crucial on many Android devices to avoid "silent" starts
+    Future.delayed(const Duration(milliseconds: 600), () async {
       if (!_player.playing) return; // Abort if user paused quickly
       
       debugPrint('📊 [EQ] Applying settings on playback start');
       await applyBookEqualizerSettings(force: true);
+      _eqAppliedThisSession = true;
     });
   }
   
@@ -1228,14 +1288,19 @@ class SimpleAudioService with WidgetsBindingObserver {
 
       // 4. Handle Volume Boost (Loudness Enhancer)
       if (_loudnessEnhancer != null) {
-        await _loudnessEnhancer!.setTargetGain(boost.clamp(0.0, 30.0)); // Increase cap for "even on a speaker"
+        // Capped more tightly to avoid muting on some hardware
+        final safeBoost = boost.clamp(0.0, 20.0);
         
-        if (boost > 0.01 && enabled) {
-          if (!await _loudnessEnhancer!.enabled) {
-            await _loudnessEnhancer!.setEnabled(true);
-          }
+        if (enabled && safeBoost > 0.01) {
+          debugPrint('📊 [EQ SYNC] Applying boost: $safeBoost');
+          // Important: set gain WHILE disabled, then enable
+          await _loudnessEnhancer!.setEnabled(false);
+          await _loudnessEnhancer!.setTargetGain(safeBoost);
+          await Future.delayed(const Duration(milliseconds: 50));
+          await _loudnessEnhancer!.setEnabled(true);
         } else {
           await _loudnessEnhancer!.setEnabled(false);
+          await _loudnessEnhancer!.setTargetGain(0.0);
         }
       }
       

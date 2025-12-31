@@ -8,6 +8,17 @@
     android:gravity="center_vertical"
     android:orientation="horizontal"
     android:padding="12dp">
+    
+    <!-- Cover Art -->
+    <ImageView
+        android:id="@+id/widget_app_icon"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
+        android:layout_marginEnd="12dp"
+        android:background="@drawable/widget_button_background"
+        android:clipToOutline="true"
+        android:scaleType="centerCrop"
+        android:src="@mipmap/ic_launcher" />
 
     <!-- Text Content -->
     <LinearLayout

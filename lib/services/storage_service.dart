@@ -5,9 +5,12 @@ import 'dart:io';
 import 'dart:convert'; // Add this import for JSON encoding/decoding
 import 'dart:typed_data'; // For Uint8List
 import 'package:path_provider/path_provider.dart';
+import 'package:crypto/crypto.dart'; // For robust filename hashing
+import 'dart:convert'; // For utf8 encoding
 import '../models/bookmark.dart'; // Import the Bookmark model
 import 'dart:async'; // For periodic cache persistence
 import '../models/audiobook.dart'; // Import Audiobook model
+import 'native_scanner.dart';
 
 class StorageService {
   // Listeners for data restore events
@@ -32,6 +35,7 @@ class StorageService {
   }
   // Key constants for SharedPreferences
   static const String foldersKey = 'audiobook_folders';
+  static const String rootPathKey = 'audiobooks_root_path';
 
   static const lastPositionPrefix = 'last_pos_';
   static const customTitlesKey = 'custom_titles';
@@ -43,12 +47,21 @@ class StorageService {
       'completed_books'; // New key for completed books
   static const bookmarksKey = 'bookmarks'; // New key for bookmarks
   static const reviewsKey = 'audiobook_reviews'; // Key for book reviews
-  static const bookmarksPrefix = 'bookmarks_'; // Prefix for individual audiobook bookmarks
+  static const bookmarksPrefix = 'bookmarks:'; // Prefix for individual audiobook bookmarks
+  static const readingSessionPrefix = 'reading_session_';
+  static const dailyStatsPrefix = 'daily_stats_';
+  static const readingStreakKey = 'reading_streak';
+  static const dailyReadingGoalKey = 'daily_reading_goal';
+  static const showReadingStreakKey = 'show_reading_streak';
+  static const unlockedAchievementsKey = 'unlocked_achievements';
+  static const activeChallengesKey = 'active_challenges';
+  static const completedChallengesKey = 'completed_challenges';
   static const backupSuffix = '_backup';
   static const dataVersionKey = 'data_version';
   static const cacheSyncTimestampKey = 'cache_sync_timestamp';
   static const playbackSpeedPrefix = 'playback_speed_';
   static const durationModePrefix = 'duration_mode_'; // New key for duration mode preference
+  static const manualCoverPrefix = 'manual_cover_'; // USER REQUEST: Flag for user-selected covers
 
   
   // Tag-related keys (from tag provider)
@@ -194,6 +207,8 @@ class StorageService {
           await prefs.setStringList(foldersKey, _foldersCache);
           _dirtyFoldersCache = false;
         }
+
+        // Persist root path if needed (though we handle it in setRootPath)
         
         // Persist file tracking caches 🐛
         if (_dirtyFileTrackingCache) {
@@ -232,26 +247,34 @@ class StorageService {
   Future<void> createDataBackup() async {
     try {
       final prefs = await _preferences;
+      final keys = prefs.getKeys();
       
-      // Backup progress cache
-      for (final key in prefs.getKeys()) {
-        if (key.startsWith(progressCachePrefix)) {
+      // OPTIMIZATION: Use a single loop to backup all prefixed keys
+      for (final key in keys) {
+        if (key.endsWith(backupSuffix)) continue; // Skip existing backups
+
+        // 1. Double values (Progress & Playback Speed)
+        if (key.startsWith(progressCachePrefix) || key.startsWith(playbackSpeedPrefix)) {
           final value = prefs.getDouble(key);
           if (value != null) {
             await prefs.setDouble('$key$backupSuffix', value);
           }
         }
-      }
-      
-      // Backup position data
-      for (final key in prefs.getKeys()) {
-        if (key.startsWith(lastPositionPrefix)) {
+        // 2. String values (Positions, Bookmarks, Reading Sessions, etc.)
+        else if (key.startsWith(lastPositionPrefix) || 
+                 key.startsWith(bookmarksPrefix) || 
+                 key.startsWith(readingSessionPrefix) || 
+                 key.startsWith(dailyStatsPrefix) ||
+                 key == readingStreakKey ||
+                 key == 'active_session') {
           final value = prefs.getString(key);
           if (value != null) {
             await prefs.setString('$key$backupSuffix', value);
           }
         }
       }
+      
+      // Backup individual list/flag keys (not starting with specific prefixes requiring complex iteration)
       
       // Backup completed books
       final completedBooks = prefs.getStringList(completedBooksKey);
@@ -271,16 +294,6 @@ class StorageService {
         await prefs.setStringList('$foldersKey$backupSuffix', folders);
       }
       
-      // Backup bookmarks
-      for (final key in prefs.getKeys()) {
-        if (key.startsWith('$bookmarksKey:')) {
-          final value = prefs.getString(key);
-          if (value != null) {
-            await prefs.setString('$key$backupSuffix', value);
-          }
-        }
-      }
-      
       // Backup user tags
       final userTags = prefs.getString(userTagsKey);
       if (userTags != null) {
@@ -293,30 +306,7 @@ class StorageService {
         await prefs.setString('$audiobookTagsKey$backupSuffix', audiobookTags);
       }
 
-      // Backup playback speeds
-      for (final key in prefs.getKeys()) {
-        if (key.startsWith(playbackSpeedPrefix)) {
-          final value = prefs.getDouble(key);
-          if (value != null) {
-            await prefs.setDouble('$key$backupSuffix', value);
-          }
-        }
-      }
-      
-      // Backup reading statistics
-      for (final key in prefs.getKeys()) {
-        if (key.startsWith('reading_session_') || 
-            key.startsWith('daily_stats_') ||
-            key == 'reading_streak' ||
-            key == 'active_session') {
-          final value = prefs.getString(key);
-          if (value != null) {
-            await prefs.setString('$key$backupSuffix', value);
-          }
-        }
-      }
-      
-      // Backup achievements (CRITICAL: was missing)
+      // Backup achievements
       final achievements = prefs.getString('unlocked_achievements');
       if (achievements != null) {
         await prefs.setString('unlocked_achievements$backupSuffix', achievements);
@@ -336,7 +326,7 @@ class StorageService {
         await prefs.setBool('show_reading_streak$backupSuffix', showStreak);
       }
       
-      debugPrint('Data backup created successfully.');
+      debugPrint('Data backup created successfully (Optimized).');
     } catch (e) {
       debugPrint('Error creating data backup: $e');
     }
@@ -403,7 +393,7 @@ class StorageService {
       
       // Restore bookmarks
       for (final key in prefs.getKeys()) {
-        if (key.endsWith(backupSuffix) && key.startsWith('$bookmarksKey:')) {
+        if (key.endsWith(backupSuffix) && key.startsWith(bookmarksPrefix)) {
           final originalKey = key.substring(0, key.length - backupSuffix.length);
           final value = prefs.getString(key);
           if (value != null) {
@@ -442,9 +432,9 @@ class StorageService {
       // Restore reading statistics
       for (final key in prefs.getKeys()) {
         if (key.endsWith(backupSuffix) && 
-            (key.startsWith('reading_session_') || 
-             key.startsWith('daily_stats_') ||
-             key.contains('reading_streak') ||
+            (key.startsWith(readingSessionPrefix) || 
+             key.startsWith(dailyStatsPrefix) ||
+             key.contains(readingStreakKey) ||
              key.contains('active_session'))) {
           final originalKey = key.substring(0, key.length - backupSuffix.length);
           final value = prefs.getString(key);
@@ -455,10 +445,10 @@ class StorageService {
         }
       }
       
-      // Restore achievements (CRITICAL: was missing)
-      final achievementsBackup = prefs.getString('unlocked_achievements$backupSuffix');
+      // Restore achievements
+      final achievementsBackup = prefs.getString('$unlockedAchievementsKey$backupSuffix');
       if (achievementsBackup != null) {
-        await prefs.setString('unlocked_achievements', achievementsBackup);
+        await prefs.setString(unlockedAchievementsKey, achievementsBackup);
         restoredAnyData = true;
       }
       final achievementTimestampBackup = prefs.getInt('achievement_last_check$backupSuffix');
@@ -468,14 +458,14 @@ class StorageService {
       }
       
       // Restore statistics settings (daily goal, show streak)
-      final dailyGoalBackup = prefs.getInt('daily_reading_goal$backupSuffix');
+      final dailyGoalBackup = prefs.getInt('$dailyReadingGoalKey$backupSuffix');
       if (dailyGoalBackup != null) {
-        await prefs.setInt('daily_reading_goal', dailyGoalBackup);
+        await prefs.setInt(dailyReadingGoalKey, dailyGoalBackup);
         restoredAnyData = true;
       }
-      final showStreakBackup = prefs.getBool('show_reading_streak$backupSuffix');
+      final showStreakBackup = prefs.getBool('$showReadingStreakKey$backupSuffix');
       if (showStreakBackup != null) {
-        await prefs.setBool('show_reading_streak', showStreakBackup);
+        await prefs.setBool(showReadingStreakKey, showStreakBackup);
         restoredAnyData = true;
       }
       
@@ -508,6 +498,29 @@ class StorageService {
   // Check data integrity and health
   Future<Map<String, dynamic>> checkDataHealth() async {
     final result = <String, dynamic>{};
+    
+    // Initialize counts with safe defaults to prevent UI crashes
+    final counts = {
+      'progress': 0,
+      'positions': 0,
+      'bookmarks': 0,
+      'completedBooks': 0,
+      'folders': 0,
+      'customTitles': 0,
+      'userTags': 0,
+      'audiobookTagAssignments': 0,
+      'readingSessions': 0,
+      'dailyStats': 0,
+      'playbackSpeeds': 0,
+      'achievements': 0,
+      'activeChallenges': 0,
+      'durationModes': 0,
+      'completionFlags': 0,
+      'manualCovers': 0,
+      'equalizerSettings': 0,
+    };
+    result['counts'] = counts;
+
     try {
       final prefs = await _preferences;
       
@@ -517,34 +530,46 @@ class StorageService {
       result['currentVersion'] = currentDataVersion;
       result['needsMigration'] = dataVersion < currentDataVersion;
       
-      // Count all data types
-      int progressCount = 0;
-      int positionCount = 0;
-      int bookmarkCount = 0;
-      int completedBooksCount = 0;
-      
-      for (final key in prefs.getKeys()) {
-        if (key.startsWith(progressCachePrefix)) progressCount++;
-        if (key.startsWith(lastPositionPrefix)) positionCount++;
-        if (key.startsWith(playbackSpeedPrefix)) progressCount++; // Count playback speeds
-        if (key.startsWith('$bookmarksKey:')) bookmarkCount++;
+      final keys = prefs.getKeys();
+      for (final key in keys) {
+        if (key.endsWith(backupSuffix)) continue;
+
+        if (key.startsWith(progressCachePrefix)) counts['progress'] = (counts['progress'] as int) + 1;
+        else if (key.startsWith(lastPositionPrefix)) counts['positions'] = (counts['positions'] as int) + 1;
+        else if (key.startsWith(playbackSpeedPrefix)) counts['playbackSpeeds'] = (counts['playbackSpeeds'] as int) + 1; 
+        else if (key.startsWith(bookmarksPrefix)) counts['bookmarks'] = (counts['bookmarks'] as int) + 1;
+        else if (key.startsWith(readingSessionPrefix)) counts['readingSessions'] = (counts['readingSessions'] as int) + 1;
+        else if (key.startsWith(dailyStatsPrefix)) counts['dailyStats'] = (counts['dailyStats'] as int) + 1;
+        else if (key.startsWith(_eqBookPrefix)) counts['equalizerSettings'] = (counts['equalizerSettings'] as int) + 1;
+        else if (key.startsWith(durationModePrefix)) counts['durationModes'] = (counts['durationModes'] as int) + 1;
+        else if (key.startsWith(completionPrefix)) counts['completionFlags'] = (counts['completionFlags'] as int) + 1;
+        else if (key.startsWith(manualCoverPrefix)) counts['manualCovers'] = (counts['manualCovers'] as int) + 1;
       }
       
-      completedBooksCount = (prefs.getStringList(completedBooksKey) ?? []).length;
-      final foldersCount = (prefs.getStringList(foldersKey) ?? []).length;
-      final customTitlesCount = (prefs.getStringList(customTitlesKey) ?? []).length;
+      counts['completedBooks'] = (prefs.getStringList(completedBooksKey) ?? []).length;
+      counts['folders'] = (prefs.getStringList(foldersKey) ?? []).length;
+      
+      // Handle custom titles (hybrid String/List support)
+      final rawCustomTitles = prefs.get(customTitlesKey);
+      if (rawCustomTitles is String) {
+        try {
+          final Map titles = jsonDecode(rawCustomTitles);
+          counts['customTitles'] = titles.length;
+        } catch (_) { counts['customTitles'] = 0; }
+      } else if (rawCustomTitles is List) {
+        counts['customTitles'] = rawCustomTitles.length;
+      } else {
+        counts['customTitles'] = 0;
+      }
       
       // Count tags
-      int userTagsCount = 0;
-      int audiobookTagAssignmentsCount = 0;
-      
       final userTagsJson = prefs.getString(userTagsKey);
       if (userTagsJson != null) {
         try {
           final tagsList = jsonDecode(userTagsJson) as List;
-          userTagsCount = tagsList.length;
+          counts['userTags'] = tagsList.length;
         } catch (e) {
-          // Invalid JSON, count as 0
+          debugPrint('Health check warning: Invalid user tags JSON');
         }
       }
       
@@ -552,32 +577,28 @@ class StorageService {
       if (audiobookTagsJson != null) {
         try {
           final tagsMap = jsonDecode(audiobookTagsJson) as Map<String, dynamic>;
-          audiobookTagAssignmentsCount = tagsMap.length;
+          counts['audiobookTagAssignments'] = tagsMap.length;
         } catch (e) {
-          // Invalid JSON, count as 0
+          debugPrint('Health check warning: Invalid audiobook tags JSON');
         }
       }
-      
-      // Count reading statistics
-      int readingSessionsCount = 0;
-      int dailyStatsCount = 0;
-      for (final key in prefs.getKeys()) {
-        if (key.startsWith('reading_session_')) readingSessionsCount++;
-        if (key.startsWith('daily_stats_')) dailyStatsCount++;
+
+      // Achievement counts
+      final achievementsJson = prefs.getString(unlockedAchievementsKey);
+      if (achievementsJson != null) {
+        try {
+          final achievements = jsonDecode(achievementsJson) as List;
+          counts['achievements'] = achievements.length;
+        } catch (_) {}
       }
-      
-      result['counts'] = {
-        'progress': progressCount,
-        'positions': positionCount,
-        'bookmarks': bookmarkCount,
-        'completedBooks': completedBooksCount,
-        'folders': foldersCount,
-        'customTitles': customTitlesCount,
-        'userTags': userTagsCount,
-        'audiobookTagAssignments': audiobookTagAssignmentsCount,
-        'readingSessions': readingSessionsCount,
-        'dailyStats': dailyStatsCount,
-      };
+
+      final challengesJson = prefs.getString(activeChallengesKey);
+      if (challengesJson != null) {
+        try {
+          final challenges = jsonDecode(challengesJson) as List;
+          counts['activeChallenges'] = challenges.length;
+        } catch (_) {}
+      }
       
       // Get last cache sync timestamp
       final lastSyncTimestamp = prefs.getInt(cacheSyncTimestampKey) ?? 0;
@@ -590,9 +611,11 @@ class StorageService {
       
       debugPrint('Data health check: $result');
       return result;
-    } catch (e) {
+    } catch (e, stack) {
       debugPrint('Error checking data health: $e');
+      debugPrint(stack.toString());
       result['error'] = e.toString();
+      // Returns partially populated health check result
       return result;
     }
   }
@@ -903,49 +926,38 @@ class StorageService {
 
   // 🐛 FILE TRACKING SYSTEM IMPLEMENTATION
   
-  /// Generate content-based hash for an audiobook folder
-  /// Uses first and last audio file info + folder structure for fingerprinting
   Future<String> generateContentHash(String folderPath) async {
     try {
-      final directory = Directory(folderPath);
-      if (!await directory.exists()) {
-        return '';
-      }
-
-      final List<FileSystemEntity> files = await directory.list().toList();
-      final audioFiles = files
-          .whereType<File>()
-          .where((file) => _isAudioFile(file.path))
+      // Use SAF-aware listing instead of dart:io
+      final List<NativeScannerEntry> entities = await NativeScanner.listDirectory(folderPath);
+      
+      final audioFiles = entities
+          .where((e) => !e.isDirectory && _isAudioFile(e.name))
           .toList();
 
       if (audioFiles.isEmpty) {
         return '';
       }
 
-      // Sort for consistent ordering
-      audioFiles.sort((a, b) => path.basename(a.path).compareTo(path.basename(b.path)));
+      // Sort for consistent ordering by filename
+      audioFiles.sort((a, b) => path.basename(a.name).compareTo(path.basename(b.name)));
 
-      // Create hash from:
-      // 1. Folder name
-      // 2. Number of audio files  
-      // 3. First file name and size
-      // 4. Last file name and size
-      // 5. Total folder size (approximate)
-
-      final folderName = path.basename(folderPath);
+      // Use display name for SAF if available, fallback to basename
+      final folderName = await NativeScanner.getDisplayName(folderPath) ?? path.basename(folderPath);
       final fileCount = audioFiles.length;
       
       final firstFile = audioFiles.first;
       final lastFile = audioFiles.last;
       
-      final firstFileInfo = '${path.basename(firstFile.path)}_${await firstFile.length()}';
-      final lastFileInfo = '${path.basename(lastFile.path)}_${await lastFile.length()}';
+      // Use name and length for fingerprinting
+      final firstFileInfo = '${firstFile.name}_${firstFile.length}';
+      final lastFileInfo = '${lastFile.name}_${lastFile.length}';
       
       // Calculate approximate total size from sample files
       int totalSize = 0;
       final sampleSize = (audioFiles.length / 5).ceil().clamp(1, 10);
-      for (int i = 0; i < sampleSize && i < audioFiles.length; i += audioFiles.length ~/ sampleSize) {
-        totalSize += await audioFiles[i].length();
+      for (int i = 0; i < audioFiles.length; i += audioFiles.length ~/ sampleSize) {
+        totalSize += audioFiles[i].length;
       }
 
       final hashInput = '$folderName|$fileCount|$firstFileInfo|$lastFileInfo|$totalSize';
@@ -954,8 +966,9 @@ class StorageService {
       debugPrint("Generated content hash for $folderPath: $hash");
       return hash;
       
-    } catch (e) {
+    } catch (e, stack) {
       debugPrint("Error generating content hash for $folderPath: $e");
+      debugPrint(stack.toString());
       return '';
     }
   }
@@ -1034,7 +1047,7 @@ class StorageService {
 
       // Strategy 1: Check if path migration exists
       final migratedPath = _pathMigrationsCache[missingPath];
-      if (migratedPath != null && await Directory(migratedPath).exists()) {
+      if (migratedPath != null && await NativeScanner.exists(migratedPath)) {
         final currentHash = await generateContentHash(migratedPath);
         if (currentHash == expectedHash) {
           debugPrint("Found via path migration: $missingPath -> $migratedPath");
@@ -1044,7 +1057,7 @@ class StorageService {
 
       // Strategy 2: Check content hash lookup
       final hashPath = _contentHashesCache[expectedHash];
-      if (hashPath != null && hashPath != missingPath && await Directory(hashPath).exists()) {
+      if (hashPath != null && hashPath != missingPath && await NativeScanner.exists(hashPath)) {
         final currentHash = await generateContentHash(hashPath);
         if (currentHash == expectedHash) {
           debugPrint("Found via content hash: $missingPath -> $hashPath");
@@ -1437,6 +1450,15 @@ class StorageService {
   Future<bool> isCompleted(String audiobookId) async {
     try {
       // Check cache first for faster response
+      if (_completedBooksCache.contains(audiobookId)) return true;
+      
+      // If cache hasn't been populated yet, load it once
+      final prefs = await _preferences;
+      final completedBooks = prefs.getStringList(completedBooksKey) ?? [];
+      
+      // Update cache
+      _completedBooksCache.addAll(completedBooks);
+      
       return _completedBooksCache.contains(audiobookId);
     } catch (e) {
       debugPrint("Error checking if audiobook is completed: $e");
@@ -1564,17 +1586,24 @@ class StorageService {
       }
       
       final prefs = await _preferences;
-      final titlesList = prefs.getStringList(customTitlesKey) ?? [];
-
-      // Convert list back to map
+      final rawCustomTitles = prefs.get(customTitlesKey);
       final Map<String, String> customTitles = {};
-      for (final item in titlesList) {
-        final parts = item.split('|');
-        if (parts.length >= 2) {
-          // Join any remaining parts in case the title itself contains |
-          final id = parts[0];
-          final title = parts.sublist(1).join('|');
-          customTitles[id] = title;
+
+      if (rawCustomTitles is String) {
+        try {
+          customTitles.addAll(Map<String, String>.from(jsonDecode(rawCustomTitles)));
+        } catch (e) {
+          debugPrint('Error loading json titles: $e');
+        }
+      } else if (rawCustomTitles is List) {
+        final titlesList = rawCustomTitles.cast<String>();
+        for (final item in titlesList) {
+          final parts = item.split('|');
+          if (parts.length >= 2) {
+            final id = parts[0];
+            final title = parts.sublist(1).join('|');
+            customTitles[id] = title;
+          }
         }
       }
       
@@ -1611,10 +1640,9 @@ class StorageService {
       // If progress is 100%, mark book as completed
       if (progressPercentage >= 0.99) {
         await markAsCompleted(audiobookId);
-      } else if (progressPercentage > 0) {
-        // If book has progress but not completed, ensure it's not in completed list
-        await unmarkAsCompleted(audiobookId);
-      }
+      } 
+      // Removed automatic unmarkAsCompleted here. 
+      // Completion status should be stickier and mostly user-controlled or explicitly reached.
     } catch (e) {
       debugPrint("Error saving progress cache for $audiobookId: $e");
     }
@@ -1637,10 +1665,45 @@ class StorageService {
     try {
       final prefs = await _preferences;
       final key = '$durationModePrefix$audiobookId';
-      // Default to false (Chapter Mode) if not found
-      return prefs.getBool(key) ?? false;
+      
+      // Try getting as bool first (new format)
+      try {
+        return prefs.getBool(key) ?? false;
+      } catch (e) {
+        // Fallback for legacy String data
+        final value = prefs.get(key); // Get raw value
+        if (value is String) {
+          final boolValue = value.toLowerCase() == 'true';
+          // Auto-migrate to boolean
+          await prefs.setBool(key, boolValue);
+          debugPrint("Migrated legacy duration mode for $audiobookId: $boolValue");
+          return boolValue;
+        }
+        return false;
+      }
     } catch (e) {
       debugPrint("Error loading duration mode: $e");
+      return false;
+    }
+  }
+
+  // --- Snow Effect Persistence ---
+  static const String _snowEnabledKey = 'snow_effect_enabled';
+
+  Future<void> saveSnowPreference(bool isEnabled) async {
+    try {
+      final prefs = await _preferences;
+      await prefs.setBool(_snowEnabledKey, isEnabled);
+    } catch (e) {
+      debugPrint("Error saving snow preference: $e");
+    }
+  }
+
+  Future<bool> loadSnowPreference() async {
+    try {
+      final prefs = await _preferences;
+      return prefs.getBool(_snowEnabledKey) ?? false;
+    } catch (e) {
       return false;
     }
   }
@@ -1867,200 +1930,102 @@ class StorageService {
     _persistDirtyCaches();
   }
 
-  /// Export all user data as a JSON file - COMPREHENSIVE BACKUP
-  /// Captures: progress, positions, speeds, statistics, streaks, achievements, challenges, themes
+  /// Creates an internal backup for redundancy
+  Future<void> _saveInternalBackup(Map<String, dynamic> allData) async {
+    try {
+      final directory = await getApplicationDocumentsDirectory();
+      final backupDir = Directory(path.join(directory.path, 'backups'));
+      if (!await backupDir.exists()) {
+        await backupDir.create(recursive: true);
+      }
+
+      // Keep only last 5 backups
+      final files = await backupDir.list().where((e) => e is File).toList();
+      if (files.length >= 5) {
+        files.sort((a, b) => a.statSync().modified.compareTo(b.statSync().modified));
+        // Delete the oldest files, keeping only the 4 newest (since we're about to add 1 more)
+        final filesToDelete = files.length - 4;
+        for (var i = 0; i < filesToDelete; i++) {
+          try { await files[i].delete(); } catch (_) {}
+        }
+      }
+
+      final now = DateTime.now().toIso8601String().replaceAll(':', '_');
+      final file = File(path.join(backupDir.path, 'auto_backup_$now.json'));
+      await file.writeAsString(jsonEncode(allData));
+      debugPrint('📦 ✅ Internal redundancy backup saved: ${file.path}');
+    } catch (e) {
+      debugPrint('📦 ❌ Failed to save internal backup: $e');
+    }
+  }
+
+  /// High-level method to perform a flexible backup (cloud or local)
+  Future<String?> performFlexibleBackup() async {
+    try {
+      final now = DateTime.now().toIso8601String().replaceAll(':', '_');
+      final suggestedName = 'widdle_reader_backup_$now.json';
+      
+      // 1. Pick destination
+      final String? targetUri = await NativeScanner.createFile(suggestedName, 'application/json');
+      if (targetUri == null) return null;
+
+      // 2. Export
+      return await exportUserDataToUri(targetUri);
+    } catch (e) {
+      debugPrint('📦 ❌ Error performing flexible backup: $e');
+      return null;
+    }
+  }
+
+  /// Exports user data to a specific SAF URI or folder path
+  Future<String?> exportUserDataToUri(String targetPath) async {
+    try {
+      debugPrint('📦 exportUserDataToUri called with: $targetPath');
+      
+      final allData = await gatherAllBackupData();
+      if (allData == null) {
+        debugPrint('📦 ❌ gatherAllBackupData returned null');
+        return null;
+      }
+
+      // Save internal copy for redundancy (this always works)
+      await _saveInternalBackup(allData);
+
+      final jsonString = jsonEncode(allData);
+      final bytes = Uint8List.fromList(utf8.encode(jsonString));
+      debugPrint('📦 Backup string length: ${jsonString.length}');
+      debugPrint('📦 Backup data size: ${bytes.length} bytes (${(bytes.length / 1024).toStringAsFixed(2)} KB)');
+      
+      if (bytes.length > 2 * 1024 * 1024) {
+        debugPrint('📦 ⚠️ CRITICAL WARNING: Backup size exceeds 2MB limit for MethodChannel. Failure is likely.');
+      }
+      
+      // Always try to write directly to the path first (no fileName).
+      // If the path is from createFile(), it's already a writable document URI.
+      // If writeBytes receives a directory URI without fileName, it will fail gracefully.
+      debugPrint('📦 Attempting direct write to: $targetPath');
+      final result = await NativeScanner.writeBytes(targetPath, bytes);
+      
+      if (result != null) {
+        debugPrint('📦 ✅ Comprehensive backup exported to $result');
+        return result;
+      } else {
+        debugPrint('📦 ❌ writeBytes returned null for $targetPath');
+        return null;
+      }
+    } catch (e, stackTrace) {
+      debugPrint('📦 ❌ Error exporting user data to URI: $e');
+      debugPrint('📦 Stack trace: $stackTrace');
+      return null;
+    }
+  }
+
+  /// Exports user data to the app's documents directory (Internal)
   Future<File?> exportUserData() async {
     try {
-      debugPrint('📦 Starting comprehensive backup export...');
-      
-      // First make sure we persist all caches
-      await _persistDirtyCaches();
-      
-      final prefs = await _preferences;
-      final allData = <String, dynamic>{
-        'version': currentDataVersion,
-        'timestamp': DateTime.now().toIso8601String(),
-        'timestampMs': DateTime.now().millisecondsSinceEpoch,
-        'backupType': 'comprehensive',
-        'data': <String, dynamic>{},
-      };
-      
-      // ===== 1. PROGRESS CACHE =====
-      final progressData = <String, dynamic>{};
-      for (final key in prefs.getKeys()) {
-        if (key.startsWith(progressCachePrefix) && !key.endsWith(backupSuffix)) {
-          final audiobookId = key.substring(progressCachePrefix.length);
-          final value = prefs.getDouble(key);
-          if (value != null) {
-            progressData[audiobookId] = value;
-          }
-        }
-      }
-      allData['data']['progress'] = progressData;
-      debugPrint('📦 Exported ${progressData.length} progress entries');
-      
-      // ===== 2. POSITION DATA =====
-      final positionData = <String, dynamic>{};
-      for (final key in prefs.getKeys()) {
-        if (key.startsWith(lastPositionPrefix) && !key.endsWith(backupSuffix)) {
-          final audiobookId = key.substring(lastPositionPrefix.length);
-          final value = prefs.getString(key);
-          if (value != null) {
-            positionData[audiobookId] = value;
-          }
-        }
-      }
-      allData['data']['positions'] = positionData;
-      debugPrint('📦 Exported ${positionData.length} position entries');
-      
-      // ===== 3. PLAYBACK SPEEDS (NEW) =====
-      final speedData = <String, dynamic>{};
-      for (final key in prefs.getKeys()) {
-        if (key.startsWith('playback_speed_') && !key.endsWith(backupSuffix)) {
-          final audiobookId = key.substring('playback_speed_'.length);
-          final value = prefs.getDouble(key);
-          if (value != null) {
-            speedData[audiobookId] = value;
-          }
-        }
-      }
-      allData['data']['playback_speeds'] = speedData;
-      debugPrint('📦 Exported ${speedData.length} playback speed entries');
-      
-      // ===== 4. BOOKMARKS =====
-      final bookmarksData = <String, dynamic>{};
-      for (final key in prefs.getKeys()) {
-        if (key.startsWith('$bookmarksKey:') && !key.endsWith(backupSuffix)) {
-          final audiobookId = key.substring('$bookmarksKey:'.length);
-          final value = prefs.getString(key);
-          if (value != null) {
-            bookmarksData[audiobookId] = value;
-          }
-        }
-      }
-      allData['data']['bookmarks'] = bookmarksData;
-      debugPrint('📦 Exported ${bookmarksData.length} bookmark sets');
-      
-      // ===== 5. COMPLETED BOOKS =====
-      allData['data']['completed_books'] = prefs.getStringList(completedBooksKey) ?? [];
-      
-      // ===== 6. FOLDERS =====
-      allData['data']['folders'] = prefs.getStringList(foldersKey) ?? [];
-      
-      // ===== 7. CUSTOM TITLES =====
-      allData['data']['custom_titles'] = prefs.getStringList(customTitlesKey) ?? [];
-      
-      // ===== 8. TIMESTAMPS =====
-      final timestampData = <String, dynamic>{};
-      for (final key in prefs.getKeys()) {
-        if (key.startsWith(lastPlayedTimestampPrefix) && !key.endsWith(backupSuffix)) {
-          final audiobookId = key.substring(lastPlayedTimestampPrefix.length);
-          final value = prefs.getInt(key);
-          if (value != null) {
-            timestampData[audiobookId] = value;
-          }
-        }
-      }
-      allData['data']['timestamps'] = timestampData;
-      
-      // ===== 9. TAGS =====
-      final userTagsJson = prefs.getString(userTagsKey);
-      if (userTagsJson != null) {
-        allData['data']['user_tags'] = userTagsJson;
-      }
-      final audiobookTagsJson = prefs.getString(audiobookTagsKey);
-      if (audiobookTagsJson != null) {
-        allData['data']['audiobook_tags'] = audiobookTagsJson;
-      }
-      
-      // ===== 10. REVIEWS (NEW) =====
-      await loadAudiobookReviews();
-      if (_reviewsCache.isNotEmpty) {
-        allData['data']['reviews'] = jsonEncode(_reviewsCache);
-        debugPrint('📦 Exported ${_reviewsCache.length} reviews');
-      }
-      
-      // ===== 10. READING SESSIONS (NEW - Full Statistics) =====
-      final sessionsData = <String, dynamic>{};
-      for (final key in prefs.getKeys()) {
-        if (key.startsWith('reading_session_') && !key.endsWith(backupSuffix)) {
-          final value = prefs.getString(key);
-          if (value != null) {
-            sessionsData[key] = value;
-          }
-        }
-      }
-      allData['data']['reading_sessions'] = sessionsData;
-      debugPrint('📦 Exported ${sessionsData.length} reading sessions');
-      
-      // ===== 11. DAILY STATS (NEW) =====
-      final dailyStatsData = <String, dynamic>{};
-      for (final key in prefs.getKeys()) {
-        if (key.startsWith('daily_stats_') && !key.endsWith(backupSuffix)) {
-          final value = prefs.getString(key);
-          if (value != null) {
-            dailyStatsData[key] = value;
-          }
-        }
-      }
-      allData['data']['daily_stats'] = dailyStatsData;
-      debugPrint('📦 Exported ${dailyStatsData.length} daily stats');
-      
-      // ===== 12. STREAK DATA (NEW) =====
-      final streakData = prefs.getString('reading_streak');
-      if (streakData != null) {
-        allData['data']['reading_streak'] = streakData;
-      }
-      
-      // ===== 13. GOALS & SETTINGS (NEW) =====
-      allData['data']['daily_reading_goal'] = prefs.getInt('daily_reading_goal');
-      allData['data']['show_streak'] = prefs.getBool('show_streak');
-      
-      // ===== 14. ACHIEVEMENTS (NEW) =====
-      final unlockedAchievements = prefs.getString('unlocked_achievements');
-      if (unlockedAchievements != null) {
-        allData['data']['unlocked_achievements'] = unlockedAchievements;
-      }
-      
-      // ===== 15. CHALLENGES (NEW) =====
-      final activeChallenges = prefs.getString('active_challenges');
-      if (activeChallenges != null) {
-        allData['data']['active_challenges'] = activeChallenges;
-      }
-      allData['data']['completed_challenges'] = prefs.getInt('completed_challenges');
-      
-      // ===== 16. THEME SETTINGS (NEW) =====
-      allData['data']['theme_mode'] = prefs.getString('theme_mode');
-      allData['data']['seed_color'] = prefs.getInt('seed_color');
-      allData['data']['dynamic_theme'] = prefs.getBool('dynamic_theme');
-      
-      // ===== 17. VIEW PREFERENCES (NEW) =====
-      allData['data']['is_grid_view'] = prefs.getBool('is_grid_view');
-      allData['data']['library_sort_mode'] = prefs.getString('library_sort_mode');
-      
-      // ===== 18. CONTENT HASHES FOR PATH MIGRATION =====
-      final contentHashes = prefs.getString('content_hashes');
-      if (contentHashes != null) {
-        allData['data']['content_hashes'] = contentHashes;
-      }
-      final pathMigrations = prefs.getString('path_migrations');
-      if (pathMigrations != null) {
-        allData['data']['path_migrations'] = pathMigrations;
-      }
-      
-      // ===== 19. EQUALIZER & VOLUME BOOST (NEW) =====
-      final eqData = <String, dynamic>{};
-      for (final key in prefs.getKeys()) {
-        if ((key.startsWith(_eqBookPrefix) || key.startsWith('eq_') || key == 'eq_preset') && !key.endsWith(backupSuffix)) {
-          final value = prefs.get(key);
-          if (value != null) {
-            eqData[key] = value;
-          }
-        }
-      }
-      allData['data']['equalizer'] = eqData;
-      debugPrint('📦 Exported ${eqData.length} equalizer settings');
-      
+      final allData = await gatherAllBackupData();
+      if (allData == null) return null;
+
       // Write to a file in the app's documents directory
       final dir = await getApplicationDocumentsDirectory();
       final now = DateTime.now().toIso8601String().replaceAll(':', '_');
@@ -2074,7 +2039,217 @@ class StorageService {
       
       return file;
     } catch (e) {
-      debugPrint('📦 ❌ Error exporting user data: $e');
+      debugPrint('📦 ❌ Error exporting user data internally: $e');
+      return null;
+    }
+  }
+
+  Future<Map<String, dynamic>?> gatherAllBackupData() async {
+    try {
+      debugPrint('📦 Gathering comprehensive backup data...');
+      
+      // First make sure we persist all caches
+      await _persistDirtyCaches();
+      
+      final prefs = await _preferences;
+      final allData = <String, dynamic>{
+        'version': currentDataVersion,
+        'timestamp': DateTime.now().toIso8601String(),
+        'timestampMs': DateTime.now().millisecondsSinceEpoch,
+        'backupType': 'comprehensive',
+        'device_info': {
+          'platform': Platform.operatingSystem,
+          'os_version': Platform.operatingSystemVersion,
+          'model': Platform.localHostname, 
+        },
+        'data': <String, dynamic>{},
+      };
+
+      final dataMap = allData['data'] as Map<String, dynamic>;
+      
+      // 1. Initialize data containers
+      final progressData = <String, dynamic>{};
+      final positionData = <String, dynamic>{};
+      final speedData = <String, dynamic>{};
+      final bookmarksData = <String, dynamic>{};
+      final sessionsData = <String, dynamic>{};
+      final dailyStatsData = <String, dynamic>{};
+      final timestampData = <String, dynamic>{};
+      final eqData = <String, dynamic>{};
+      final durationModeData = <String, dynamic>{};
+      final completionData = <String, dynamic>{};
+      final manualCoverData = <String, dynamic>{};
+
+      // 2. Single pass optimization for all prefixed/repetitive keys
+      final keys = prefs.getKeys();
+      for (final key in keys) {
+        if (key.endsWith(backupSuffix)) continue;
+
+        // Progress
+        if (key.startsWith(progressCachePrefix)) {
+          final audiobookId = key.substring(progressCachePrefix.length);
+          final value = prefs.getDouble(key);
+          if (value != null) progressData[audiobookId] = value;
+        }
+        // Positions
+        else if (key.startsWith(lastPositionPrefix)) {
+          final audiobookId = key.substring(lastPositionPrefix.length);
+          final value = prefs.getString(key);
+          if (value != null) positionData[audiobookId] = value;
+        }
+        // Playback Speeds
+        else if (key.startsWith(playbackSpeedPrefix)) {
+          final audiobookId = key.substring(playbackSpeedPrefix.length);
+          final value = prefs.getDouble(key);
+          if (value != null) speedData[audiobookId] = value;
+        }
+        // Bookmarks
+        else if (key.startsWith(bookmarksPrefix)) {
+          final audiobookId = key.substring(bookmarksPrefix.length);
+          final value = prefs.getString(key);
+          if (value != null) bookmarksData[audiobookId] = value;
+        }
+        // Timestamps
+        else if (key.startsWith(lastPlayedTimestampPrefix)) {
+          final audiobookId = key.substring(lastPlayedTimestampPrefix.length);
+          final value = prefs.getInt(key);
+          if (value != null) timestampData[audiobookId] = value;
+        }
+        // Reading Sessions
+        else if (key.startsWith(readingSessionPrefix)) {
+          final value = prefs.getString(key);
+          if (value != null) sessionsData[key] = value;
+        }
+        // Daily Stats
+        else if (key.startsWith(dailyStatsPrefix)) {
+          final value = prefs.getString(key);
+          if (value != null) dailyStatsData[key] = value;
+        }
+        // Equalizer (Per-book and Global)
+        else if (key.startsWith(_eqBookPrefix) || key == _eqEnabledKey || key == _eqBoostKey || key == _eqBandsKey || key == 'eq_preset') {
+          final value = prefs.get(key);
+          if (value != null) eqData[key] = value;
+        }
+        // Duration Modes
+        else if (key.startsWith(durationModePrefix)) {
+          final audiobookId = key.substring(durationModePrefix.length);
+          final value = prefs.getBool(key);
+          if (value != null) durationModeData[audiobookId] = value;
+        }
+        // Completion Flags
+        else if (key.startsWith(completionPrefix)) {
+          final audiobookId = key.substring(completionPrefix.length);
+          final value = prefs.getBool(key);
+          if (value != null) completionData[audiobookId] = value;
+        }
+        // Manual Covers
+        else if (key.startsWith(manualCoverPrefix)) {
+          final audiobookId = key.substring(manualCoverPrefix.length);
+          final value = prefs.getBool(key);
+          if (value != null) manualCoverData[audiobookId] = value;
+        }
+      }
+
+      // 3. Assign gathered data to the map
+      dataMap['progress'] = progressData;
+      dataMap['positions'] = positionData;
+      dataMap['playback_speeds'] = speedData;
+      dataMap['bookmarks'] = bookmarksData;
+      dataMap['timestamps'] = timestampData;
+      dataMap['equalizer'] = eqData;
+      dataMap['duration_modes'] = durationModeData;
+      dataMap['completion_flags'] = completionData;
+      dataMap['manual_covers'] = manualCoverData;
+      
+      // SAFETY: Limit reading sessions to the last 1000 to keep backup size manageable 
+      // if it ever becomes an issue for power users. 1000 is ~1-2 years of daily listening.
+      if (sessionsData.length > 1000) {
+        debugPrint('📦 Warning: Truncating reading sessions for backup (Total: ${sessionsData.length})');
+        final sortedKeys = sessionsData.keys.toList()..sort();
+        final recentKeys = sortedKeys.sublist(sortedKeys.length - 1000);
+        final prunedSessions = <String, dynamic>{};
+        for (final k in recentKeys) {
+          prunedSessions[k] = sessionsData[k];
+        }
+        dataMap['reading_sessions'] = prunedSessions;
+      } else {
+        dataMap['reading_sessions'] = sessionsData;
+      }
+      
+      // Limit daily stats to last 366 days (1 year)
+      if (dailyStatsData.length > 366) {
+        final sortedKeys = dailyStatsData.keys.toList()..sort();
+        final recentKeys = sortedKeys.sublist(sortedKeys.length - 366);
+        final prunedStats = <String, dynamic>{};
+        for (final k in recentKeys) {
+          prunedStats[k] = dailyStatsData[k];
+        }
+        dataMap['daily_stats'] = prunedStats;
+      } else {
+        dataMap['daily_stats'] = dailyStatsData;
+      }
+
+      debugPrint('📦 Counts - Progress: ${progressData.length}, Positions: ${positionData.length}, Sessions: ${dataMap['reading_sessions'].length}');
+
+      // 4. Handle lists and singular keys
+      dataMap['completed_books'] = prefs.getStringList(completedBooksKey) ?? [];
+      dataMap['folders'] = prefs.getStringList(foldersKey) ?? [];
+      
+      final rawCustomTitles = prefs.get(customTitlesKey);
+      if (rawCustomTitles is String) {
+        try {
+          dataMap['custom_titles'] = jsonDecode(rawCustomTitles);
+        } catch (_) {}
+      } else if (rawCustomTitles is List) {
+        dataMap['custom_titles'] = rawCustomTitles;
+      } else {
+        dataMap['custom_titles'] = [];
+      }
+      
+      final userTagsJson = prefs.getString(userTagsKey);
+      if (userTagsJson != null) dataMap['user_tags'] = userTagsJson;
+      
+      final audiobookTagsJson = prefs.getString(audiobookTagsKey);
+      if (audiobookTagsJson != null) dataMap['audiobook_tags'] = audiobookTagsJson;
+      
+      await loadAudiobookReviews();
+      if (_reviewsCache.isNotEmpty) {
+        dataMap['reviews'] = jsonEncode(_reviewsCache);
+      }
+      
+      final streakData = prefs.getString(readingStreakKey);
+      if (streakData != null) dataMap[readingStreakKey] = streakData;
+      
+      dataMap[dailyReadingGoalKey] = prefs.getInt(dailyReadingGoalKey);
+      dataMap[showReadingStreakKey] = prefs.getBool(showReadingStreakKey);
+      
+      final unlockedAchievements = prefs.getString(unlockedAchievementsKey);
+      if (unlockedAchievements != null) dataMap[unlockedAchievementsKey] = unlockedAchievements;
+      
+      final activeChallenges = prefs.getString(activeChallengesKey);
+      if (activeChallenges != null) dataMap[activeChallengesKey] = activeChallenges;
+      dataMap[completedChallengesKey] = prefs.getInt(completedChallengesKey);
+      
+      dataMap['theme_mode'] = prefs.getString('theme_mode');
+      dataMap['seed_color'] = prefs.getInt('seed_color');
+      dataMap['dynamic_theme'] = prefs.getBool('dynamic_theme');
+      dataMap['is_grid_view'] = prefs.getBool('is_grid_view');
+      dataMap['library_sort_mode'] = prefs.getString('library_sort_mode');
+      
+      final contentHashes = prefs.getString('content_hashes');
+      if (contentHashes != null) dataMap['content_hashes'] = contentHashes;
+
+      // CRITICAL: We NO LONGER include book_metadata (chapter lists) 
+      // or equalizer/migrations in these comprehensive backups to keep them lean.
+      // These will be reconstructed from the source folders during rescan.
+
+      final finalJson = jsonEncode(allData);
+      debugPrint('📦 Comprehensive backup size: ${(finalJson.length / 1024).toStringAsFixed(2)} KB');
+      debugPrint('📦 Data Map composition: ${dataMap.keys.toList()}');
+      
+      return allData;
+    } catch (e) {
+      debugPrint('📦 ❌ Critical error gathering backup data: $e');
       return null;
     }
   }
@@ -2088,8 +2263,10 @@ class StorageService {
       final jsonString = await file.readAsString();
       final backupData = jsonDecode(jsonString) as Map<String, dynamic>;
       
-      // Check version compatibility
+      // Legacy detection or version check
+      final bool isWrapped = backupData.containsKey('data');
       final version = backupData['version'] as int? ?? 0;
+      
       if (version > currentDataVersion) {
         debugPrint('📦 Backup file version ($version) is newer than current version ($currentDataVersion)');
         return false;
@@ -2099,12 +2276,76 @@ class StorageService {
       await createDataBackup();
       
       final prefs = await _preferences;
-      final data = backupData['data'] as Map<String, dynamic>;
+      final Map<String, dynamic> data = isWrapped 
+          ? backupData['data'] as Map<String, dynamic>
+          : backupData; // Legacy format is the flat map itself
+      
+      debugPrint('📦 Format: ${isWrapped ? "New (Wrapped)" : "Legacy (Flat)"}');
+      
+      // ===== 0. PATH-TO-URI TRANSLATION LAYER =====
+      // Build a mapping from old absolute paths to new SAF URIs using content hashes
+      final Map<String, String> translationMap = {}; 
+      final backupHashesJson = data['content_hashes'] as String?;
+      
+      if (backupHashesJson != null) {
+        try {
+          final Map<String, dynamic> backupHashes = jsonDecode(backupHashesJson);
+          // key: Hash, value: OldPath (from backup)
+          
+          // Scan current folders in the newly scanned library for matches
+          final currentFolders = (prefs.getStringList(foldersKey) ?? []);
+          debugPrint('📦 Scanning ${currentFolders.length} current folders for path translation...');
+          
+          final List<String> translationFailures = [];
+
+          for (final currentUri in currentFolders) {
+            final currentHash = await generateContentHash(currentUri);
+            
+            // Strategy 1: Content Hash Match (Most Reliable)
+            if (currentHash.isNotEmpty && backupHashes.containsKey(currentHash)) {
+              final oldPath = backupHashes[currentHash]!.toString();
+              if (oldPath != currentUri) {
+                translationMap[oldPath] = currentUri;
+                debugPrint('📦 Translation mapped (Hash): $oldPath -> $currentUri');
+                continue;
+              }
+            }
+
+            // Strategy 2: Basename Match (Fallback for multi-file/Outliers issue)
+            final currentBasename = await NativeScanner.getDisplayName(currentUri) ?? path.basename(currentUri);
+            bool foundByName = false;
+            
+            for (final entry in backupHashes.entries) {
+              final oldPath = entry.value.toString();
+              final oldBasename = path.basename(oldPath); // Note: old paths likely used / separator
+              
+              if (currentBasename.toLowerCase() == oldBasename.toLowerCase()) {
+                translationMap[oldPath] = currentUri;
+                debugPrint('📦 Translation mapped (Name Fallback): $oldPath -> $currentUri');
+                foundByName = true;
+                break;
+              }
+            }
+            
+            if (!foundByName && currentHash.isEmpty) {
+              translationFailures.add(currentUri);
+            }
+          }
+
+          if (translationFailures.isNotEmpty) {
+            debugPrint('📦 Warning: ${translationFailures.length} folders could not be mapped to backup data.');
+          }
+        } catch (e) {
+          debugPrint('📦 Error building translation map: $e');
+        }
+      }
       
       // ===== 1. PROGRESS CACHE =====
       final progressData = data['progress'] as Map<String, dynamic>? ?? {};
       for (final entry in progressData.entries) {
-        final key = '$progressCachePrefix${entry.key}';
+        final originalPath = entry.key;
+        final translatedPath = translationMap[originalPath] ?? originalPath;
+        final key = '$progressCachePrefix$translatedPath';
         await prefs.setDouble(key, double.parse(entry.value.toString()));
       }
       debugPrint('📦 Imported ${progressData.length} progress entries');
@@ -2113,8 +2354,15 @@ class StorageService {
       final positionData = data['positions'] as Map<String, dynamic>? ?? {};
       for (final entry in positionData.entries) {
         if (entry.value != null) {
-          final key = '$lastPositionPrefix${entry.key}';
-          await prefs.setString(key, entry.value.toString());
+          final originalPath = entry.key;
+          final translatedPath = translationMap[originalPath] ?? originalPath;
+          final key = '$lastPositionPrefix$translatedPath';
+          
+          // Remap path inside the position string if it's there
+          String positionValue = entry.value.toString();
+          positionValue = _translatePathsInJson(positionValue, translationMap);
+          
+          await prefs.setString(key, positionValue);
         }
       }
       debugPrint('📦 Imported ${positionData.length} position entries');
@@ -2123,7 +2371,9 @@ class StorageService {
       final speedData = data['playback_speeds'] as Map<String, dynamic>? ?? {};
       for (final entry in speedData.entries) {
         if (entry.value != null) {
-          await prefs.setDouble('playback_speed_${entry.key}', 
+          final originalPath = entry.key;
+          final translatedPath = translationMap[originalPath] ?? originalPath;
+          await prefs.setDouble('playback_speed_$translatedPath', 
               double.tryParse(entry.value.toString()) ?? 1.0);
         }
       }
@@ -2132,22 +2382,37 @@ class StorageService {
       // ===== 4. BOOKMARKS =====
       final bookmarksData = data['bookmarks'] as Map<String, dynamic>? ?? {};
       for (final entry in bookmarksData.entries) {
-        final key = '$bookmarksKey:${entry.key}';
-        await prefs.setString(key, entry.value.toString());
+        final originalPath = entry.key;
+        final translatedPath = translationMap[originalPath] ?? originalPath;
+        final key = '$bookmarksPrefix$translatedPath';
+        
+        String bookmarksValue = entry.value.toString();
+        bookmarksValue = _translatePathsInJson(bookmarksValue, translationMap);
+        
+        await prefs.setString(key, bookmarksValue);
       }
       debugPrint('📦 Imported ${bookmarksData.length} bookmark sets');
       
       // ===== 5. COMPLETED BOOKS =====
       final currentCompletedBooks = (prefs.getStringList(completedBooksKey) ?? []).toSet();
       final backupCompletedBooks = (data['completed_books'] as List?)?.map((e) => e.toString()).toList() ?? [];
-      currentCompletedBooks.addAll(backupCompletedBooks);
+      
+      // Translate individual paths in the completed list
+      final translatedCompletedBooks = backupCompletedBooks.map((p) => translationMap[p] ?? p).toList();
+      
+      currentCompletedBooks.addAll(translatedCompletedBooks);
       await prefs.setStringList(completedBooksKey, currentCompletedBooks.toList());
       
       // ===== 6. FOLDERS =====
-      final currentFolders = (prefs.getStringList(foldersKey) ?? []).toSet();
-      final backupFolders = (data['folders'] as List?)?.map((e) => e.toString()).toList() ?? [];
-      currentFolders.addAll(backupFolders);
-      final mergedFolders = currentFolders.toList();
+      final currentFoldersSet = (prefs.getStringList(foldersKey) ?? []).toSet();
+      final backupFoldersRaw = (data['folders'] as List?)?.map((e) => e.toString()).toList() ?? [];
+      
+      // Crucial: many users might still use old paths in 'folders'
+      // We translate them to current URIs
+      final translatedFolders = backupFoldersRaw.map((p) => translationMap[p] ?? p).toList();
+      
+      currentFoldersSet.addAll(translatedFolders);
+      final mergedFolders = currentFoldersSet.toList();
       await prefs.setStringList(foldersKey, mergedFolders);
       _foldersCache = mergedFolders; // Update cache
       
@@ -2176,7 +2441,9 @@ class StorageService {
       // ===== 8. TIMESTAMPS =====
       final timestampData = data['timestamps'] as Map<String, dynamic>? ?? {};
       for (final entry in timestampData.entries) {
-        final key = '$lastPlayedTimestampPrefix${entry.key}';
+        final originalPath = entry.key;
+        final translatedPath = translationMap[originalPath] ?? originalPath;
+        final key = '$lastPlayedTimestampPrefix$translatedPath';
         await prefs.setInt(key, int.parse(entry.value.toString()));
       }
       
@@ -2207,9 +2474,12 @@ class StorageService {
 
       // Audiobook Tags
       final currentAudiobookTagsJson = prefs.getString(audiobookTagsKey);
-      final backupAudiobookTagsJson = data['audiobook_tags'] as String?;
+      String? backupAudiobookTagsJson = data['audiobook_tags'] as String?;
 
       if (backupAudiobookTagsJson != null) {
+        // Remap paths within the tag assignment map
+        backupAudiobookTagsJson = _translatePathsInJson(backupAudiobookTagsJson, translationMap);
+        
         if (currentAudiobookTagsJson == null) {
           await prefs.setString(audiobookTagsKey, backupAudiobookTagsJson);
         } else {
@@ -2230,7 +2500,8 @@ class StorageService {
 
       // ===== 10. REVIEWS (NEW) =====
       if (data['reviews'] != null) {
-        final backupReviewsJson = data['reviews'] as String;
+        String backupReviewsJson = data['reviews'] as String;
+        backupReviewsJson = _translatePathsInJson(backupReviewsJson, translationMap);
         
         // Ensure cache is loaded
         if (!_reviewsLoaded) {
@@ -2251,7 +2522,9 @@ class StorageService {
       final sessionsData = data['reading_sessions'] as Map<String, dynamic>? ?? {};
       for (final entry in sessionsData.entries) {
         if (entry.value != null) {
-          await prefs.setString(entry.key, entry.value.toString());
+          String sessionValue = entry.value.toString();
+          sessionValue = _translatePathsInJson(sessionValue, translationMap);
+          await prefs.setString(entry.key, sessionValue);
         }
       }
       debugPrint('📦 Imported ${sessionsData.length} reading sessions');
@@ -2260,38 +2533,40 @@ class StorageService {
       final dailyStatsData = data['daily_stats'] as Map<String, dynamic>? ?? {};
       for (final entry in dailyStatsData.entries) {
         if (entry.value != null) {
-          await prefs.setString(entry.key, entry.value.toString());
+          String statsValue = entry.value.toString();
+          statsValue = _translatePathsInJson(statsValue, translationMap);
+          await prefs.setString(entry.key, statsValue);
         }
       }
       debugPrint('📦 Imported ${dailyStatsData.length} daily stats');
       
       // ===== 12. STREAK DATA (NEW) =====
-      final streakData = data['reading_streak'] as String?;
+      final streakData = data[readingStreakKey] as String?;
       if (streakData != null) {
-        await prefs.setString('reading_streak', streakData);
+        await prefs.setString(readingStreakKey, streakData);
       }
       
       // ===== 13. GOALS & SETTINGS (NEW) =====
-      if (data['daily_reading_goal'] != null) {
-        await prefs.setInt('daily_reading_goal', data['daily_reading_goal'] as int);
+      if (data[dailyReadingGoalKey] != null) {
+        await prefs.setInt(dailyReadingGoalKey, (data[dailyReadingGoalKey] as num).toInt());
       }
-      if (data['show_streak'] != null) {
-        await prefs.setBool('show_streak', data['show_streak'] as bool);
+      if (data[showReadingStreakKey] != null) {
+        await prefs.setBool(showReadingStreakKey, data[showReadingStreakKey] as bool);
       }
       
       // ===== 14. ACHIEVEMENTS (NEW) =====
-      final unlockedAchievements = data['unlocked_achievements'] as String?;
+      final unlockedAchievements = data[unlockedAchievementsKey] as String?;
       if (unlockedAchievements != null) {
-        await prefs.setString('unlocked_achievements', unlockedAchievements);
+        await prefs.setString(unlockedAchievementsKey, unlockedAchievements);
       }
       
       // ===== 15. CHALLENGES (NEW) =====
-      final activeChallenges = data['active_challenges'] as String?;
+      final activeChallenges = data[activeChallengesKey] as String?;
       if (activeChallenges != null) {
-        await prefs.setString('active_challenges', activeChallenges);
+        await prefs.setString(activeChallengesKey, activeChallenges);
       }
-      if (data['completed_challenges'] != null) {
-        await prefs.setInt('completed_challenges', data['completed_challenges'] as int);
+      if (data[completedChallengesKey] != null) {
+        await prefs.setInt(completedChallengesKey, (data[completedChallengesKey] as num).toInt());
       }
       
       // ===== 16. THEME SETTINGS (NEW) =====
@@ -2299,7 +2574,7 @@ class StorageService {
         await prefs.setString('theme_mode', data['theme_mode'].toString());
       }
       if (data['seed_color'] != null) {
-        await prefs.setInt('seed_color', data['seed_color'] as int);
+        await prefs.setInt('seed_color', (data['seed_color'] as num).toInt());
       }
       if (data['dynamic_theme'] != null) {
         await prefs.setBool('dynamic_theme', data['dynamic_theme'] as bool);
@@ -2325,19 +2600,70 @@ class StorageService {
       if (data['equalizer'] != null) {
         final eqData = data['equalizer'] as Map<String, dynamic>;
         for (final entry in eqData.entries) {
-          final key = entry.key;
+          final originalKey = entry.key;
+          String translatedKey = originalKey;
+          
+          // Remap key if it contains an audiobook ID (path)
+          translationMap.forEach((oldPath, newUri) {
+             if (translatedKey.contains(oldPath)) {
+               translatedKey = translatedKey.replaceAll(oldPath, newUri);
+             }
+          });
+
           final value = entry.value;
           if (value is bool) {
-            await prefs.setBool(key, value);
+            await prefs.setBool(translatedKey, value);
           } else if (value is double) {
-            await prefs.setDouble(key, value);
+            await prefs.setDouble(translatedKey, value);
           } else if (value is int) {
-            await prefs.setInt(key, value);
+            await prefs.setInt(translatedKey, value);
           } else if (value is String) {
-            await prefs.setString(key, value);
+            await prefs.setString(translatedKey, value);
           }
         }
         debugPrint('📦 Imported ${eqData.length} equalizer settings');
+      }
+
+      // ===== 20. DURATION MODES (NEW) =====
+      final durationModes = data['duration_modes'] as Map<String, dynamic>? ?? {};
+      for (final entry in durationModes.entries) {
+        final originalPath = entry.key;
+        final translatedPath = translationMap[originalPath] ?? originalPath;
+        final key = '$durationModePrefix$translatedPath';
+        
+        // Ensure we save as boolean
+        if (entry.value is bool) {
+          await prefs.setBool(key, entry.value as bool);
+        } else if (entry.value is String) {
+          // Fallback for any legacy string data (if any existed incorrectly)
+          await prefs.setBool(key, entry.value.toString().toLowerCase() == 'true');
+        }
+      }
+      debugPrint('📦 Imported ${durationModes.length} duration modes');
+
+      // ===== 21. COMPLETION FLAGS (NEW) =====
+      final completionFlags = data['completion_flags'] as Map<String, dynamic>? ?? {};
+      for (final entry in completionFlags.entries) {
+        final originalPath = entry.key;
+        final translatedPath = translationMap[originalPath] ?? originalPath;
+        final key = '$completionPrefix$translatedPath';
+        await prefs.setBool(key, entry.value as bool);
+      }
+      debugPrint('📦 Imported ${completionFlags.length} completion flags');
+
+      // ===== 22. MANUAL COVERS (NEW) =====
+      final manualCovers = data['manual_covers'] as Map<String, dynamic>? ?? {};
+      for (final entry in manualCovers.entries) {
+        final originalPath = entry.key;
+        final translatedPath = translationMap[originalPath] ?? originalPath;
+        final key = '$manualCoverPrefix$translatedPath';
+        await prefs.setBool(key, entry.value as bool);
+      }
+      debugPrint('📦 Imported ${manualCovers.length} manual cover flags');
+
+      // ===== 23. NOTIFICATION SETTINGS (NEW) =====
+      if (backupData['notifications_enabled'] != null) {
+        await prefs.setBool(_notificationsEnabledKey, backupData['notifications_enabled'] as bool);
       }
       
       // Clear all caches to force reload from imported data
@@ -2436,6 +2762,44 @@ class StorageService {
     } catch (e) {
       debugPrint("Error getting cached cover art path for $audiobookId: $e");
     }
+    return null;
+  }
+
+  /// Get a resolvable URI for cover art (internal cache or physical book folder)
+  /// This is essential for media notifications and Android Auto.
+  Future<String?> getCoverArtUri(String audiobookId) async {
+    // 1. Try internal cache first (standard)
+    final cached = await getCachedCoverArtPath(audiobookId);
+    if (cached != null) return cached;
+
+    // 2. Try the book folder directly (fallback for consistency)
+    // On Android, audiobookId is representing the folder URI/path
+    try {
+       // Check for common cover art filenames
+       final possibleFiles = ['EmbeddedCover.jpg', 'cover.jpg', 'Cover.jpg', 'Folder.jpg', 'folder.jpg'];
+       
+       if (Platform.isAndroid && audiobookId.startsWith('content://')) {
+          // For SAF folders, we list the directory to find the cover
+          final contents = await NativeScanner.listDirectory(audiobookId);
+          for (final fileName in possibleFiles) {
+            final match = contents.where((e) => e.name == fileName && !e.isDirectory).firstOrNull;
+            if (match != null) {
+              return match.path; // This is a SAF content:// URI which the native side can resolve
+            }
+          }
+       } else {
+          // Standard local filesystem
+          for (final fileName in possibleFiles) {
+            final filePath = path.join(audiobookId, fileName);
+            if (await File(filePath).exists()) {
+              return filePath;
+            }
+          }
+       }
+    } catch (e) {
+      debugPrint("Error resolving fallback cover art for $audiobookId: $e");
+    }
+    
     return null;
   }
 
@@ -2737,7 +3101,7 @@ class StorageService {
       // Check direct path migration mapping
       if (_pathMigrationsCache.containsKey(oldPath)) {
         final newPath = _pathMigrationsCache[oldPath]!;
-        if (await Directory(newPath).exists()) {
+        if (await NativeScanner.exists(newPath)) {
           return newPath;
         }
       }
@@ -2758,7 +3122,7 @@ class StorageService {
         // Check if this content hash maps to a current path
         if (_contentHashesCache.containsKey(contentHash)) {
           final currentPath = _contentHashesCache[contentHash]!;
-          if (await Directory(currentPath).exists() && currentPath != oldPath) {
+          if (await NativeScanner.exists(currentPath) && currentPath != oldPath) {
             // Found a match - update path migration mapping
             _pathMigrationsCache[oldPath] = currentPath;
             _dirtyPathMigrationsCache = true;
@@ -2906,8 +3270,82 @@ class StorageService {
   }
 
   /// Helper to convert a path to a safe filename
+  /// Uses SHA-256 hash for long paths to avoid filesystem limits.
   String _getSafeFileName(String input) {
-    // Replace non-alphanumeric characters with underscores
-    return input.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_');
+    // 1. Basic sanitization
+    final safe = input.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_');
+    
+    // 2. Check length limit (keep well under 255 to allow for extensions and parent paths)
+    // Linux/Android max filename is 255 bytes. We leave room for .jpg and overhead.
+    if (safe.length <= 128) {
+      return safe;
+    }
+    
+    // 3. Use SHA-256 for long paths to ensure uniqueness and validity
+    final bytes = utf8.encode(input);
+    final digest = sha256.convert(bytes);
+    return digest.toString();
+  }
+
+  /// Sets a flag indicating the cover art was manually selected by the user
+  Future<void> setManualCoverFlag(String audiobookId, bool isManual) async {
+    try {
+      final prefs = await _preferences;
+      final key = '$manualCoverPrefix${_getSafeFileName(audiobookId)}';
+      if (isManual) {
+        await prefs.setBool(key, true);
+      } else {
+        await prefs.remove(key);
+      }
+    } catch (e) {
+      debugPrint("Error setting manual cover flag: $e");
+    }
+  }
+
+  /// Checks if the cover art for an audiobook was manually selected
+  Future<bool> hasManualCover(String audiobookId) async {
+    try {
+      final prefs = await _preferences;
+      final key = '$manualCoverPrefix${_getSafeFileName(audiobookId)}';
+      return prefs.getBool(key) ?? false;
+    } catch (e) {
+      debugPrint("Error checking manual cover flag: $e");
+      return false;
+    }
+  }
+
+  /// Sets the primary search root for audiobooks
+  Future<void> setRootPath(String path) async {
+    try {
+      final prefs = await _preferences;
+      await prefs.setString(rootPathKey, path);
+    } catch (e) {
+      debugPrint("Error saving root path: $e");
+    }
+  }
+
+  /// Gets the primary search root for audiobooks
+  Future<String?> getRootPath() async {
+    try {
+      final prefs = await _preferences;
+      return prefs.getString(rootPathKey);
+    } catch (e) {
+      debugPrint("Error loading root path: $e");
+      return null;
+    }
+  }
+  String _translatePathsInJson(String jsonString, Map<String, String> translationMap) {
+    if (translationMap.isEmpty) return jsonString;
+    String result = jsonString;
+    translationMap.forEach((oldPath, newUri) {
+      // Basic replacement for internal keys/values
+      result = result.replaceAll(oldPath, newUri);
+      
+      // Also handle escaped slashes which are common in JSON
+      final escapedOldPath = oldPath.replaceAll('/', '\\/');
+      final escapedNewUri = newUri.replaceAll('/', '\\/');
+      result = result.replaceAll(escapedOldPath, escapedNewUri);
+    });
+    return result;
   }
 }
