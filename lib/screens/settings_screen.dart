@@ -117,7 +117,24 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> with SingleTick
               SliverAppBar(
                 floating: true,
                 pinned: true,
-        title: const Text('Settings'),
+                title: Row(
+                  children: [
+                    const SizedBox(
+                      width: 28,
+                      height: 28,
+                      child: AppLogo(size: 28, showTitle: false),
+                    ),
+                    const SizedBox(width: 12),
+                    Text(
+                      'Settings',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: colorScheme.primary,
+                      ),
+                    ),
+                  ],
+                ),
                 leading: Hero(
                   tag: 'back_button',
                   child: Material(
@@ -627,8 +644,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> with SingleTick
                 ),
                 Switch(
                   value: themeProvider.isDynamicThemeEnabled,
-                  onChanged: (value) async {
-                    await themeProvider.setDynamicThemeEnabled(value);
+                  onChanged: (value) {
+                    // Start the process but don't await to keep UI snappy
+                    themeProvider.setDynamicThemeEnabled(value);
                     
                     // If enabling and currently playing, extract color from audiobook
                     if (value && mounted) {
@@ -636,7 +654,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> with SingleTick
                       final currentBook = audioService.currentAudiobook;
                       
                       if (currentBook?.coverArt != null) {
-                        await themeProvider.updateThemeFromImage(
+                        // Use unawaited for background extraction
+                        themeProvider.updateThemeFromImage(
                           MemoryImage(currentBook!.coverArt!),
                         );
                       }
@@ -839,7 +858,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> with SingleTick
 
             // Version
             Text(
-              'Version 1.7.0',
+              'Version 1.9.0',
               style: textTheme.bodyMedium?.copyWith(
                 color: colorScheme.onSurfaceVariant,
               ),

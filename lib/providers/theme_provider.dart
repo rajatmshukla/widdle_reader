@@ -142,10 +142,8 @@ class ThemeProvider extends ChangeNotifier {
         debugPrint('Error saving dynamic theme preference: $e');
       }
       
-      // If disabling, revert to saved seed color
-      if (!enabled) {
-        notifyListeners();
-      }
+      // Revert or update UI state immediately
+      notifyListeners();
     }
   }
 

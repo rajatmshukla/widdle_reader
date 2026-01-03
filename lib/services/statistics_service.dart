@@ -27,6 +27,7 @@ class StatisticsService {
   static const String statsBackupSuffix = '_backup';
   static const String dailyGoalKey = 'daily_reading_goal';
   static const String showStreakKey = 'show_reading_streak';
+  static const String showHoursAndMinutesKey = 'show_hours_and_minutes';
 
   // Cached instance
   SharedPreferences? _prefs;
@@ -651,6 +652,28 @@ class StatisticsService {
     return sessions;
   }
 
+  /// Get sessions in a date range
+  Future<List<ReadingSession>> getSessionsInRange(DateTime start, DateTime end) async {
+    final sessions = <ReadingSession>[];
+    try {
+      final prefs = await _preferences;
+      final keys = prefs.getKeys().where((key) => key.startsWith(sessionPrefix));
+      
+      for (final key in keys) {
+        final jsonString = prefs.getString(key);
+        if (jsonString != null) {
+          final session = ReadingSession.fromJson(jsonDecode(jsonString));
+          if (session.endTime.isAfter(start) && session.endTime.isBefore(end)) {
+            sessions.add(session);
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('Error loading sessions in range: $e');
+    }
+    return sessions;
+  }
+
   /// Get recent reading sessions (history log)
   Future<List<ReadingSession>> getRecentSessions(int limit) async {
     final sessions = <ReadingSession>[];
@@ -1072,6 +1095,154 @@ class StatisticsService {
       debugPrint('📊 Streak visibility updated to $show');
     } catch (e) {
       debugPrint('Error saving show streak setting: $e');
+    }
+  }
+
+  /// Get show hours and minutes setting
+  Future<bool> getShowHoursAndMinutes() async {
+    try {
+      final prefs = await _preferences;
+      return prefs.getBool(showHoursAndMinutesKey) ?? true; // Default true
+    } catch (e) {
+      debugPrint('Error loading show hours and minutes setting: $e');
+      return true;
+    }
+  }
+
+  /// Get hourly activity breakdown (Last 30 days)
+  Future<Map<int, int>> getHourlyActivity() async {
+    try {
+      final now = DateTime.now();
+      final thirtyDaysAgo = now.subtract(const Duration(days: 30));
+      final sessions = await getSessionsInRange(thirtyDaysAgo, now);
+      
+      final Map<int, int> activity = {};
+      for (int i = 0; i < 24; i++) activity[i] = 0;
+
+      for (var session in sessions) {
+        final hour = session.startTime.hour;
+        activity[hour] = (activity[hour] ?? 0) + session.durationSeconds;
+      }
+      return activity;
+    } catch (e) {
+      debugPrint('Error getting hourly activity: $e');
+      return {};
+    }
+  }
+
+  /// Get weekday vs weekend activity (Last 30 days)
+  Future<Map<int, int>> getWeekdayActivity() async {
+    try {
+      final now = DateTime.now();
+      final thirtyDaysAgo = now.subtract(const Duration(days: 30));
+      final statsMap = await getDailyStatsRange(thirtyDaysAgo, now);
+      
+      final Map<int, int> activity = {};
+      for (int i = 1; i <= 7; i++) activity[i] = 0;
+
+      for (var stats in statsMap.values) {
+        final date = DateTime.parse(stats.date);
+        final weekday = date.weekday;
+        activity[weekday] = (activity[weekday] ?? 0) + stats.totalSeconds;
+      }
+      return activity;
+    } catch (e) {
+      debugPrint('Error getting weekday activity: $e');
+      return {};
+    }
+  }
+
+  /// Get genre distribution (Last 90 days)
+  Future<Map<String, int>> getGenreDistribution(Map<String, Set<String>> bookTags) async {
+    try {
+      final now = DateTime.now();
+      final ninetyDaysAgo = now.subtract(const Duration(days: 90));
+      final statsMap = await getDailyStatsRange(ninetyDaysAgo, now);
+      
+      final Map<String, int> distribution = {};
+
+      for (var stats in statsMap.values) {
+        for (var entry in stats.bookDurations.entries) {
+          final bookId = entry.key;
+          final seconds = entry.value;
+          
+          final tags = bookTags[bookId] ?? {'Uncategorized'};
+          for (var tag in tags) {
+            distribution[tag] = (distribution[tag] ?? 0) + seconds;
+          }
+        }
+      }
+      return distribution;
+    } catch (e) {
+      debugPrint('Error getting genre distribution: $e');
+      return {};
+    }
+  }
+
+  /// Get completion funnel statistics
+  Future<Map<String, dynamic>> getCompletionFunnel(List<dynamic> allBooks) async {
+    try {
+      int started = 0;
+      int completed = 0;
+      // We can't easily calculate "average finish days" without progress history and finished timestamps
+      // But we can show Total vs Completed.
+      
+      for (var book in allBooks) {
+        // Assume book has progress or status
+        // For now, let's look at tags or simple completion logic if available
+        // This is a placeholder since we need the specific Audiobook model fields
+        if (book.isFavorited) started++; // Placeholder logic
+      }
+
+      return {
+        'total': allBooks.length,
+        'started': started,
+        'completed': completed,
+      };
+    } catch (e) {
+      debugPrint('Error getting completion funnel: $e');
+      return {'total': 0, 'started': 0, 'completed': 0};
+    }
+  }
+
+  /// Get monthly momentum (Last 6 months)
+  Future<Map<String, int>> getMonthlyMomentum() async {
+    try {
+      final now = DateTime.now();
+      final sixMonthsAgo = DateTime(now.year, now.month - 5, 1);
+      final statsMap = await getDailyStatsRange(sixMonthsAgo, now);
+      
+      final Map<String, int> momentum = {};
+      
+      // Initialize months
+      for (int i = 0; i < 6; i++) {
+        final monthDate = DateTime(now.year, now.month - i, 1);
+        final monthKey = '${monthDate.year}-${monthDate.month.toString().padLeft(2, '0')}';
+        momentum[monthKey] = 0;
+      }
+
+      for (var stats in statsMap.values) {
+        final date = DateTime.parse(stats.date);
+        final monthKey = '${date.year}-${date.month.toString().padLeft(2, '0')}';
+        if (momentum.containsKey(monthKey)) {
+          momentum[monthKey] = (momentum[monthKey] ?? 0) + stats.totalSeconds;
+        }
+      }
+      return momentum;
+    } catch (e) {
+      debugPrint('Error getting monthly momentum: $e');
+      return {};
+    }
+  }
+
+  /// Set show hours and minutes setting
+  Future<void> setShowHoursAndMinutes(bool value) async {
+    try {
+      final prefs = await _preferences;
+      await prefs.setBool(showHoursAndMinutesKey, value);
+      debugPrint('📊 Show hours and minutes updated to $value');
+    } catch (e) {
+      debugPrint('Error saving show hours and minutes setting: $e');
     }
   }
 }

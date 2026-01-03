@@ -984,8 +984,8 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
                                       builder: (context, widgetRef, child) {
                                         final sortOption = ref.watch(librarySortOptionProvider);
                                         
-                                        // Apply sorting
-                                        provider.sortAudiobooks(sortOption);
+                                        // Apply sorting (don't save to disk during build)
+                                        provider.sortAudiobooks(sortOption, saveToDisk: false);
                                         
                                         var completedBooks = provider.completedBooksOnly;
                                         
@@ -1015,8 +1015,8 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
                                       builder: (context, widgetRef, child) {
                                         final sortOption = ref.watch(librarySortOptionProvider);
                                         
-                                        // Apply sorting
-                                        provider.sortAudiobooks(sortOption);
+                                        // Apply sorting (don't save to disk during build)
+                                        provider.sortAudiobooks(sortOption, saveToDisk: false);
                                         
                                         var ongoingBooks = provider.ongoingBooks;
                                         
@@ -1432,6 +1432,9 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
   final screenWidth = MediaQuery.of(context).size.width;
   final books = booksToShow ?? audiobookProvider.audiobooks;
   
+  // Get text scale factor to adapt card heights for large fonts
+  final textScale = MediaQuery.textScalerOf(context).scale(1.0);
+  
   // Calculate columns based on mode
   int crossAxisCount;
   double childAspectRatio;
@@ -1439,11 +1442,13 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
   if (isPortraitGrid) {
     // Portrait Grid Mode
     crossAxisCount = screenWidth > 600 ? 3 : 2;
-    childAspectRatio = 0.65; // Taller cards to prevent overflow with 2-line titles
+    // Make cards taller when text is scaled up (lower ratio = taller card)
+    // Adjusted formula to be less aggressive to prevent excessive height
+    childAspectRatio = 0.65 / (textScale * 0.85 + 0.15).clamp(1.0, 1.4);
   } else {
     // Landscape Mode (existing logic)
     crossAxisCount = screenWidth > 1200 ? 4 : (screenWidth > 800 ? 3 : 2);
-    childAspectRatio = 1.8; // Wider cards for landscape
+    childAspectRatio = 1.8 / textScale.clamp(1.0, 1.3); // Adapt for landscape too
   }
 
   return GridView.builder(

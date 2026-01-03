@@ -1352,6 +1352,42 @@ class StorageService {
     return null; // Return null if not found, invalid, or error
   }
 
+  /// Batch loads all library-related caches (timestamps, completion status)
+  /// This is much faster for large collections than loading one by one.
+  Future<void> batchLoadLibraryCaches() async {
+    try {
+      final prefs = await _preferences;
+      final keys = prefs.getKeys();
+      
+      int timestampCount = 0;
+      
+      for (final key in keys) {
+        if (key.startsWith(lastPlayedTimestampPrefix)) {
+          final id = key.substring(lastPlayedTimestampPrefix.length);
+          final timestamp = prefs.getInt(key) ?? 0;
+          _timestampCache[id] = timestamp;
+          timestampCount++;
+        } else if (key.startsWith(completionPrefix)) {
+          final id = key.substring(completionPrefix.length);
+          final isCompleted = prefs.getBool(key) ?? false;
+          if (isCompleted) {
+            _completedBooksCache.add(id);
+          }
+        }
+      }
+      
+      // Also load existing completed_books list for backward compatibility
+      final completedList = prefs.getStringList(completedBooksKey) ?? [];
+      for (final id in completedList) {
+        _completedBooksCache.add(id);
+      }
+      
+      debugPrint('Batch loaded library caches: $timestampCount timestamps, ${_completedBooksCache.length} completed books');
+    } catch (e) {
+      debugPrint("Error in batchLoadLibraryCaches: $e");
+    }
+  }
+
   /// Updates the last played timestamp to current time
   Future<void> updateLastPlayedTimestamp(String audiobookId) async {
     try {
@@ -1359,7 +1395,6 @@ class StorageService {
       
       // Update cache and mark as dirty
       _timestampCache[audiobookId] = now;
-      _dirtyTimestampCache.add(audiobookId);
       
       // Also update in shared preferences
       final prefs = await _preferences;

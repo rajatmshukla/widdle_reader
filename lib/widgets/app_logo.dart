@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import '../providers/theme_provider.dart';
+import '../main.dart'; // To access MyApp.isHolidaySeason
 
 class AppLogo extends StatelessWidget {
   final double size;
@@ -45,10 +46,11 @@ class AppLogo extends StatelessWidget {
               ),
             ],
           ),
-          child: SvgPicture.asset(
-            'assets/icons/app_logo_holidays.png',
+          child: Image.asset(
+            'assets/icons/app_logo.png',
             width: size * 0.88,
             height: size * 0.88,
+            fit: BoxFit.contain,
           ),
         ),
         if (showTitle) ...[

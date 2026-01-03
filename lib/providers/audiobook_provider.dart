@@ -361,45 +361,69 @@ class AudiobookProvider extends ChangeNotifier with WidgetsBindingObserver {
   /// Check if the provider is still mounted (for safety)
   bool get mounted => true; // ChangeNotifier is always considered mounted
 
-  /// Loads the last played timestamps for all audiobooks
+  /// Loads the last played timestamps for all audiobooks efficiently
   Future<void> _loadLastPlayedTimestamps() async {
-    _lastPlayedTimestamps.clear();
-    _completedBooks.clear();
-    _newBooks.clear();
+    _logDebug("Loading last played timestamps in batch...");
+    
+    // Batch load all timestamps and completion statuses from storage service
+    await _storageService.batchLoadLibraryCaches();
+    
+    // Create temporary maps to avoid inconsistent state during loading
+    final Map<String, int> newTimestamps = {};
+    final Map<String, bool> newCompleted = {};
+    final Map<String, bool> newNewBooks = {};
 
     for (final book in _audiobooks) {
-      // Get last played timestamp
+      // Get last played timestamp from service (now cached)
       final timestamp = await _storageService.getLastPlayedTimestamp(book.id);
-      _lastPlayedTimestamps[book.id] = timestamp;
+      newTimestamps[book.id] = timestamp;
 
-      // Check if book is completed
+      // Check if book is completed (now cached)
       final isCompleted = await _storageService.isCompleted(book.id);
-      _completedBooks[book.id] = isCompleted;
+      newCompleted[book.id] = isCompleted;
 
-      // Calculate progress percentage to confirm completion status
+      // Calculate progress percentage to confirm completion status (checks cache)
       final progress = await _storageService.loadProgressCache(book.id);
       if (progress != null && progress >= 0.99) {
-        _completedBooks[book.id] = true;
-        await _storageService.markAsCompleted(book.id);
+        newCompleted[book.id] = true;
+        // Don't await this inside the loop to avoid slowing down startup
+        unawaited(_storageService.markAsCompleted(book.id));
       }
 
       // If timestamp is 0, the book has never been played (it's new)
-      _newBooks[book.id] = timestamp == 0;
+      newNewBooks[book.id] = timestamp == 0;
     }
 
+    // Atomically swap the maps to ensure consistent state for sorting
+    _lastPlayedTimestamps.clear();
+    _lastPlayedTimestamps.addAll(newTimestamps);
+    
+    _completedBooks.clear();
+    _completedBooks.addAll(newCompleted);
+    
+    _newBooks.clear();
+    _newBooks.addAll(newNewBooks);
+
+    _logDebug("Finished loading timestamps for ${_audiobooks.length} books.");
+
     // Sort audiobooks based on completion status and last played time
-    _sortAudiobooksByStatus();
+    _sortAudiobooksByStatus(saveToDisk: false); // Initial sort doesn't need to re-save immediately
   }
 
   /// Sorts audiobooks based on the provided sort option
-  void sortAudiobooks(LibrarySortOption sortOption) {
-    // Update the current sort option regardless of whether we skip sorting
-    _currentSortOption = sortOption;
-    
-    // Skip sorting if the option hasn't changed and we have books
+  /// [saveToDisk] whether to persist the new order to stable storage
+  void sortAudiobooks(LibrarySortOption sortOption, {bool saveToDisk = true}) {
+    // Skip if sorting a totally empty list
     if (_audiobooks.isEmpty) {
-      return; // No books to sort
+      _currentSortOption = sortOption;
+      return; 
     }
+    
+    // Optimization: If we're already sorted this way and not forcing a re-save, skip
+    // BUT we must allow re-sorting if a book was recently played (which updates timestamps)
+    // We'll trust the caller to decide if saveToDisk is appropriate.
+    
+    _currentSortOption = sortOption;
     
     switch (sortOption) {
       case LibrarySortOption.alphabeticalAZ:
@@ -469,6 +493,11 @@ class AudiobookProvider extends ChangeNotifier with WidgetsBindingObserver {
         _audiobooks.sort((a, b) {
           final aTimestamp = _lastPlayedTimestamps[a.id] ?? 0;
           final bTimestamp = _lastPlayedTimestamps[b.id] ?? 0;
+          
+          // If timestamps are equal, maintain stable order via title
+          if (aTimestamp == bTimestamp) {
+             return getTitleForAudiobook(a).compareTo(getTitleForAudiobook(b));
+          }
           return bTimestamp.compareTo(aTimestamp);
         });
         break;
@@ -478,6 +507,9 @@ class AudiobookProvider extends ChangeNotifier with WidgetsBindingObserver {
         _audiobooks.sort((a, b) {
           final aTimestamp = _lastPlayedTimestamps[a.id] ?? 0;
           final bTimestamp = _lastPlayedTimestamps[b.id] ?? 0;
+          if (aTimestamp == bTimestamp) {
+             return getTitleForAudiobook(a).compareTo(getTitleForAudiobook(b));
+          }
           return aTimestamp.compareTo(bTimestamp);
         });
         break;
@@ -503,27 +535,33 @@ class AudiobookProvider extends ChangeNotifier with WidgetsBindingObserver {
         
       case LibrarySortOption.completionStatus:
         // Sort by completion status (incomplete first, then completed, within each group by recency)
-    _audiobooks.sort((a, b) {
-      final aCompleted = _completedBooks[a.id] ?? false;
-      final bCompleted = _completedBooks[b.id] ?? false;
+        _audiobooks.sort((a, b) {
+          final aCompleted = _completedBooks[a.id] ?? false;
+          final bCompleted = _completedBooks[b.id] ?? false;
 
-      // If one book is completed and the other isn't, the completed one goes to the bottom
-      if (aCompleted && !bCompleted) {
-        return 1; // a (completed) goes after b
-      } else if (!aCompleted && bCompleted) {
-        return -1; // a (not completed) goes before b
-      }
+          // If one book is completed and the other isn't, the completed one goes to the bottom
+          if (aCompleted && !bCompleted) {
+            return 1; // a (completed) goes after b
+          } else if (!aCompleted && bCompleted) {
+            return -1; // a (not completed) goes before b
+          }
 
-      // If both are completed or both are not completed, sort by recency
-      final aTimestamp = _lastPlayedTimestamps[a.id] ?? 0;
-      final bTimestamp = _lastPlayedTimestamps[b.id] ?? 0;
-      return bTimestamp.compareTo(aTimestamp);
-    });
+          // If both are completed or both are not completed, sort by recency
+          final aTimestamp = _lastPlayedTimestamps[a.id] ?? 0;
+          final bTimestamp = _lastPlayedTimestamps[b.id] ?? 0;
+          if (aTimestamp == bTimestamp) {
+             return getTitleForAudiobook(a).compareTo(getTitleForAudiobook(b));
+          }
+          return bTimestamp.compareTo(aTimestamp);
+        });
         break;
     }
     
-    // Save the sorted order to storage
-    _saveSortedOrder();
+    // Save the sorted order ONLY when requested (e.g., from manual sort or session end)
+    // CRITICAL: prevents saving garbage/partial orders during background loading
+    if (saveToDisk) {
+      _saveSortedOrder();
+    }
     
     // Notify listeners to update the UI
     notifyListeners();
@@ -590,11 +628,11 @@ class AudiobookProvider extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
-  /// Sorts audiobooks with completed books at the bottom and others by recently played (legacy method, now replaced by sortAudiobooks)
-  void _sortAudiobooksByStatus() {
+  /// Sorts audiobooks with completed books at the bottom and others by recently played
+  void _sortAudiobooksByStatus({bool saveToDisk = true}) {
     // Use the current sort option if available, otherwise default to completion status
     final sortOption = _currentSortOption ?? LibrarySortOption.lastPlayedRecent;
-    sortAudiobooks(sortOption);
+    sortAudiobooks(sortOption, saveToDisk: saveToDisk);
   }
 
   /// Sets the current sort option (called from UI when sort preference is loaded/changed)

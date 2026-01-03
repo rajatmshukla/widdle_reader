@@ -249,7 +249,7 @@ class _AudiobookTileState extends State<AudiobookTile>
         );
   }
 
-  // Grid layout (vertical card for grid view)
+  // Grid layout (vertical card for grid view) - Optimized for accessibility
   Widget _buildGridTile(
     BuildContext context,
     ColorScheme colorScheme,
@@ -257,6 +257,12 @@ class _AudiobookTileState extends State<AudiobookTile>
     bool isNew,
     bool isCompleted,
   ) {
+    // Get the text scale factor to adapt layout
+    final textScale = MediaQuery.textScalerOf(context).scale(1.0);
+    // For very large fonts, give even more space to text
+    final coverFlex = textScale > 1.3 ? 1 : 2;
+    final detailsFlex = textScale > 1.3 ? 3 : 2;
+
     return Card(
       elevation: 4,
       clipBehavior: Clip.antiAlias,
@@ -286,9 +292,8 @@ class _AudiobookTileState extends State<AudiobookTile>
           Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // Cover image area (expanded)
+              // Cover image area (Takes all remaining space)
               Expanded(
-                flex: 3,
                 child: Stack(
                   fit: StackFit.expand,
                   children: [
@@ -296,7 +301,7 @@ class _AudiobookTileState extends State<AudiobookTile>
                     buildCoverWidget(
                       context,
                       widget.audiobook,
-                      size: 200, // Large size for quality
+                      size: 200, // Restore scale for quality
                       customTitle: displayTitle,
                     ),
                     // Gradient overlay for text readability at bottom
@@ -304,7 +309,7 @@ class _AudiobookTileState extends State<AudiobookTile>
                       bottom: 0,
                       left: 0,
                       right: 0,
-                      height: 60,
+                      height: 40,
                       child: Container(
                         decoration: BoxDecoration(
                           gradient: LinearGradient(
@@ -312,7 +317,7 @@ class _AudiobookTileState extends State<AudiobookTile>
                             end: Alignment.bottomCenter,
                             colors: [
                               Colors.transparent,
-                              Colors.black.withOpacity(0.7),
+                              Colors.black.withOpacity(0.6),
                             ],
                           ),
                         ),
@@ -322,40 +327,43 @@ class _AudiobookTileState extends State<AudiobookTile>
                 ),
               ),
 
-              // Details area
-              Expanded(
-                flex: 2,
-                child: Padding(
-                  padding: const EdgeInsets.all(8.0),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
+              // Details area (Takes only what it needs)
+              // This ensures bottom padding is small/fixed (5-8px)
+              Padding(
+                padding: const EdgeInsets.only(left: 8.0, right: 8.0, top: 6.0, bottom: 6.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min, // Wrap content height
+                  children: [
+                    // Title
+                    Text(
+                      displayTitle,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 13,
+                      ),
+                      maxLines: textScale > 1.2 ? 3 : 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 2),
+                    // Author - only show if font is not extremely large
+                    if (widget.audiobook.author != null && textScale <= 1.5)
                       Text(
-                        displayTitle,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w600,
-                          fontSize: 13,
+                        widget.audiobook.author!,
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: colorScheme.onSurfaceVariant,
                         ),
-                        maxLines: 2,
+                        maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
-                      const SizedBox(height: 4),
-                      if (widget.audiobook.author != null)
-                        Text(
-                          widget.audiobook.author!,
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: colorScheme.onSurfaceVariant,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      const Spacer(),
-                      _buildCompactMetadataRow(context, colorScheme),
-                      const SizedBox(height: 6),
-                      _buildCompactProgressIndicator(context, colorScheme),
-                    ],
-                  ),
+                    const SizedBox(height: 4),
+                    // Metadata always visible
+                    _buildCompactMetadataRow(context, colorScheme),
+                    const SizedBox(height: 4),
+                    // Progress always visible
+                    _buildCompactProgressIndicator(context, colorScheme),
+                  ],
                 ),
               ),
             ],
@@ -378,7 +386,7 @@ class _AudiobookTileState extends State<AudiobookTile>
     );
   }
 
-  // Portrait layout (vertical card)
+  // Portrait layout (vertical card) - Optimized for accessibility
   Widget _buildPortraitTile(
     BuildContext context,
     ColorScheme colorScheme,
@@ -386,6 +394,11 @@ class _AudiobookTileState extends State<AudiobookTile>
     bool isNew,
     bool isCompleted,
   ) {
+    // Get the text scale factor to adapt layout
+    final textScale = MediaQuery.textScalerOf(context).scale(1.0);
+    // Reduce cover size for larger fonts
+    final coverSize = textScale > 1.3 ? 60.0 : 80.0;
+
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 3),
       child: Card(
@@ -414,18 +427,20 @@ class _AudiobookTileState extends State<AudiobookTile>
 
             // Main content
             Padding(
-              padding: const EdgeInsets.all(12.0),
+              padding: const EdgeInsets.all(10.0),
               child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Cover image
-                  _buildCoverImage(context, displayTitle, 80.0),
+                  // Cover image (smaller for large fonts)
+                  _buildCoverImage(context, displayTitle, coverSize),
 
-                  const SizedBox(width: 16),
+                  const SizedBox(width: 12),
 
-                  // Book details
+                  // Book details (expanded area)
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
                       children: [
                         // Title
                         Text(
@@ -436,16 +451,16 @@ class _AudiobookTileState extends State<AudiobookTile>
                             fontWeight: FontWeight.w600,
                             letterSpacing: 0.3,
                           ),
-                          maxLines: 2,
+                          maxLines: textScale > 1.2 ? 3 : 2,
                           overflow: TextOverflow.ellipsis,
                         ),
 
-                        const SizedBox(height: 8),
+                        const SizedBox(height: 6),
 
                         // Progress indicator
                         _buildProgressIndicator(context, colorScheme),
 
-                        const SizedBox(height: 8),
+                        const SizedBox(height: 6),
 
                         // Metadata row
                         _buildMetadataRow(context, colorScheme),
@@ -453,12 +468,12 @@ class _AudiobookTileState extends State<AudiobookTile>
                     ),
                   ),
 
-                  // Right arrow
-                  const SizedBox(width: 8),
+                  // Right arrow (smaller)
+                  const SizedBox(width: 4),
                   Icon(
                     Icons.arrow_forward_ios_rounded,
-                    size: 14,
-                    color: Colors.grey.withOpacity(0.5),
+                    size: 12,
+                    color: Colors.grey.withOpacity(0.4),
                   ),
                 ],
               ),

@@ -1097,12 +1097,11 @@ class SimpleAudioService with WidgetsBindingObserver {
     
     // DELAYED MARK: Don't set to true yet, wait for successful application
     
-    // Delay slightly to ensure audio is flowing before enabling effects
-    // This is crucial on many Android devices to avoid "silent" starts
-    Future.delayed(const Duration(milliseconds: 600), () async {
-      if (!_player.playing) return; // Abort if user paused quickly
+    // Reduced delay for snappier application
+    Future.delayed(const Duration(milliseconds: 300), () async {
+      if (!_player.playing) return;
       
-      debugPrint('📊 [EQ] Applying settings on playback start');
+      debugPrint('📊 [EQ] Snappy application on playback start');
       await applyBookEqualizerSettings(force: true);
       _eqAppliedThisSession = true;
     });
@@ -1141,12 +1140,23 @@ class SimpleAudioService with WidgetsBindingObserver {
         await _storageService.saveEqualizerBandGain(i, gains[i], audiobookId: _currentEqBookId);
       }
       
-      // 2. Apply to hardware immediately with no delay
-      final parameters = await _equalizer!.parameters;
-      final bands = parameters.bands;
-      
-      for (int i = 0; i < gains.length && i < bands.length; i++) {
-        await bands[i].setGain(gains[i]);
+      // 2. Apply to hardware immediately
+      if (await getEqualizerEnabled()) {
+        // Ensure enabled on hardware
+        if (!await _equalizer!.enabled) {
+          await _equalizer!.setEnabled(true);
+        }
+        
+        final parameters = await _equalizer!.parameters;
+        final bands = parameters.bands;
+        
+        for (int i = 0; i < gains.length && i < bands.length; i++) {
+          await bands[i].setGain(gains[i]);
+        }
+        
+        // Nudge to ensure it takes effect immediately on some DSPs
+        await _equalizer!.setEnabled(false);
+        await _equalizer!.setEnabled(true);
       }
     } catch (e) {
       debugPrint('Error setting preset gains: $e');

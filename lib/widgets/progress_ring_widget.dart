@@ -17,7 +17,10 @@ class ProgressRingWidget extends StatefulWidget {
     required this.targetMinutes,
     this.metricLabel = 'Today',
     this.onTap,
+    this.showHoursMode = false,
   });
+
+  final bool showHoursMode;
 
   @override
   State<ProgressRingWidget> createState() => _ProgressRingWidgetState();
@@ -109,16 +112,27 @@ class _ProgressRingWidgetState extends State<ProgressRingWidget>
     // Determine display values
     String displayValue;
     String displayUnit;
-    
-    if (widget.currentSeconds > 0 && widget.currentSeconds < 60) {
+
+    final totalMinutes = widget.currentSeconds > 0 
+        ? (widget.currentSeconds / 60).round()
+        : widget.currentMinutes;
+
+    if (widget.showHoursMode && totalMinutes >= 60) {
+      final hours = totalMinutes ~/ 60;
+      final minutes = totalMinutes % 60;
+      
+      if (minutes == 0) {
+        displayValue = '$hours';
+        displayUnit = hours == 1 ? 'hour' : 'hours';
+      } else {
+        displayValue = '${hours}h ${minutes}m';
+        displayUnit = ''; // Unit already included in displayValue
+      }
+    } else if (widget.currentSeconds > 0 && widget.currentSeconds < 60) {
       displayValue = '${widget.currentSeconds}';
       displayUnit = 'seconds';
     } else {
-      // If seconds provided, calculate minutes (rounded)
-      final minutes = widget.currentSeconds > 0 
-          ? (widget.currentSeconds / 60).round()
-          : widget.currentMinutes;
-      displayValue = '$minutes';
+      displayValue = '$totalMinutes';
       displayUnit = 'minutes';
     }
 
@@ -164,83 +178,71 @@ class _ProgressRingWidgetState extends State<ProgressRingWidget>
                     ),
                   ),
                   // Center content
-                  Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text(
-                        displayValue,
-                        style: textTheme.displayLarge?.copyWith(
-                          fontWeight: FontWeight.bold,
-                          color: progressColor,
-                          fontSize: 56,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        displayUnit,
-                        style: textTheme.bodyMedium?.copyWith(
-                          color: colorScheme.onSurfaceVariant,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        widget.metricLabel,
-                        style: textTheme.labelLarge?.copyWith(
-                          color: colorScheme.onSurface.withOpacity(0.7),
-                        ),
-                      ),
-                      if (widget.targetMinutes > 0) ...[
-                        const SizedBox(height: 4),
+                  Padding(
+                    padding: const EdgeInsets.all(24.0),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
                         Text(
-                          'Goal: ${widget.targetMinutes}min',
+                          widget.metricLabel.toUpperCase(),
                           style: textTheme.labelSmall?.copyWith(
-                            color: colorScheme.onSurfaceVariant,
+                            color: colorScheme.onSurface.withOpacity(0.5),
+                            letterSpacing: 1.2,
+                            fontWeight: FontWeight.bold,
                           ),
                         ),
-                      ],
-                    ],
-                  ),
-                  // Achievement indicator - Moved to bottom and integrated
-                  if (progress >= 1.0)
-                    Positioned(
-                      bottom: 20,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 6,
-                        ),
-                        decoration: BoxDecoration(
-                          color: progressColor,
-                          borderRadius: BorderRadius.circular(20),
-                          boxShadow: [
-                            BoxShadow(
-                              color: progressColor.withOpacity(0.3),
-                              blurRadius: 8,
-                              offset: const Offset(0, 2),
+                        const SizedBox(height: 4),
+                        FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Text(
+                            displayUnit.isEmpty ? displayValue : displayValue,
+                            style: textTheme.displayLarge?.copyWith(
+                              fontWeight: FontWeight.w900,
+                              color: progressColor,
+                              fontSize: 40,
                             ),
-                          ],
+                            textAlign: TextAlign.center,
+                          ),
                         ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Text(
-                              '🔥',
-                              style: TextStyle(fontSize: 16),
+                        if (displayUnit.isNotEmpty)
+                          Text(
+                            displayUnit,
+                            style: textTheme.bodySmall?.copyWith(
+                              color: colorScheme.onSurfaceVariant,
+                              fontWeight: FontWeight.bold,
                             ),
-                            const SizedBox(width: 4),
-                            Text(
-                              'Goal Reached!',
-                              style: TextStyle(
-                                color: colorScheme.onPrimary,
-                                fontSize: 12,
-                                fontWeight: FontWeight.bold,
+                          ),
+                        const SizedBox(height: 8),
+                        // Goal reached or Total Goal
+                        if (progress >= 1.0)
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text('🔥', style: const TextStyle(fontSize: 14)),
+                              const SizedBox(width: 4),
+                              Text(
+                                'GOAL REACHED',
+                                style: TextStyle(
+                                  color: progressColor,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w900,
+                                  letterSpacing: 0.5,
+                                ),
                               ),
+                            ],
+                          )
+                        else if (widget.targetMinutes > 0)
+                          Text(
+                            'GOAL: ${widget.targetMinutes}m',
+                            style: textTheme.labelSmall?.copyWith(
+                              color: colorScheme.onSurfaceVariant.withOpacity(0.8),
+                              fontWeight: FontWeight.bold,
+                              letterSpacing: 0.5,
                             ),
-                          ],
-                        ),
-                      ),
+                          ),
+                      ],
                     ),
+                  ),
                 ],
               ),
             ),

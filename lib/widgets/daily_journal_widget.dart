@@ -1,10 +1,9 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:provider/provider.dart' as provider;
+import '../widgets/progress_ring_widget.dart';
 import '../models/reading_statistics.dart';
-import '../providers/audiobook_provider.dart';
 import '../providers/audiobook_provider.dart';
 
 class DailyJournalWidget extends ConsumerStatefulWidget {
@@ -12,14 +11,20 @@ class DailyJournalWidget extends ConsumerStatefulWidget {
   final DateTime initialDate;
   final Color seedColor;
   final ValueChanged<DateTime>? onDateChanged;
-
+  final int dailyGoalMinutes; // New: Pass daily goal
+  final int currentSeconds;   // New: Pass precise seconds for the ring
   const DailyJournalWidget({
     super.key,
     required this.dailyStats,
     required this.initialDate,
     required this.seedColor,
     this.onDateChanged,
+    required this.dailyGoalMinutes,
+    required this.currentSeconds,
+    required this.showHoursMode,
   });
+
+  final bool showHoursMode;
 
   @override
   ConsumerState<DailyJournalWidget> createState() => _DailyJournalWidgetState();
@@ -51,12 +56,22 @@ class _DailyJournalWidgetState extends ConsumerState<DailyJournalWidget> {
   }
 
   String _formatDuration(int seconds) {
-    if (seconds < 60) return '${seconds}s';
-    final minutes = (seconds / 60).round();
-    if (minutes < 60) return '${minutes}m';
-    final hours = minutes ~/ 60;
-    final remainingMinutes = minutes % 60;
-    return '${hours}h ${remainingMinutes}m';
+    int totalMinutes = (seconds / 60).round();
+    
+    // Logic: 
+    // - If below 60 mins -> Always show as mins.
+    // - If showHoursMode is true AND >= 60 mins -> Show as hrs/mins.
+    
+    if (!widget.showHoursMode || totalMinutes < 60) {
+      if (seconds < 60 && seconds > 0) return '${seconds}s';
+      return '${totalMinutes}m';
+    }
+    
+    int hours = totalMinutes ~/ 60;
+    int minutes = totalMinutes % 60;
+    
+    if (minutes == 0) return '${hours}h';
+    return '${hours}h ${minutes}m';
   }
   
   String _getDateString(DateTime date) {
@@ -144,29 +159,16 @@ class _DailyJournalWidgetState extends ConsumerState<DailyJournalWidget> {
           
           const Divider(height: 1),
           
-          // Summary
+          // Summary with Embedded Progress Ring
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 24.0),
             child: Column(
               children: [
-                Text(
-                  _formatDuration(stats.totalSeconds),
-                  style: TextStyle(
-                    fontSize: 36,
-                    fontWeight: FontWeight.w900,
-                    color: widget.seedColor,
-                    height: 1.0,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'TOTAL READING TIME',
-                  style: TextStyle(
-                    fontSize: 10,
-                    letterSpacing: 1.5,
-                    fontWeight: FontWeight.bold,
-                    color: Theme.of(context).textTheme.bodySmall?.color,
-                  ),
+                ProgressRingWidget(
+                  currentSeconds: widget.currentSeconds,
+                  targetMinutes: widget.dailyGoalMinutes,
+                  metricLabel: isToday ? 'Today' : 'Total',
+                  showHoursMode: widget.showHoursMode,
                 ),
               ],
             ),
