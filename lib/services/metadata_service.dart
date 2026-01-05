@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 import 'package:just_audio/just_audio.dart';
+import 'cue_parser.dart';
 import 'package:flutter_media_metadata/flutter_media_metadata.dart';
 
 import '../models/audiobook.dart';
@@ -152,6 +153,10 @@ class MetadataService {
     Duration totalDuration = Duration.zero;
     Uint8List? coverArt;
     String? author;
+    String? album;
+    String? year;
+    String? narrator;
+    String? description;
 
     try {
       final List<String> audioFilePaths = [];
@@ -164,6 +169,8 @@ class MetadataService {
         await Future.delayed(const Duration(milliseconds: 500));
         entities = await NativeScanner.listDirectory(folderPath);
       }
+      
+      final List<String> cueFilePaths = [];
       
       for (final entity in entities) {
         try {
@@ -181,6 +188,8 @@ class MetadataService {
               audioFilePaths.add(entity.path);
             } else if (_coverArtFormats.contains(extension)) {
               imageFilePaths.add(entity.path);
+            } else if (extension == '.cue') {
+              cueFilePaths.add(entity.path);
             }
           }
         } catch (e) {
@@ -221,6 +230,19 @@ class MetadataService {
         }
       }
 
+      // 2.5 Try to parse .cue file if present
+      CueMetadata? cueMetadata;
+      if (cueFilePaths.isNotEmpty) {
+        _logDebug("  Found .cue file(s), attempting to parse: ${cueFilePaths.first}");
+        cueMetadata = await CueParser.parse(cueFilePaths.first, folderPath);
+        if (cueMetadata != null) {
+          _logDebug("  Successfully parsed .cue file with ${cueMetadata.tracks.length} tracks.");
+          if (author == null && cueMetadata.performer != null) {
+            author = cueMetadata.performer;
+          }
+        }
+      }
+
       // 3. MANDATORY: Process audio files for chapters, duration, and author
       // This ALSO acts as the fall-back for embedded cover art
       // PERFORMANCE FIX: Only extract cover from audio if we DON'T have a local one.
@@ -231,55 +253,75 @@ class MetadataService {
           (e.name.toLowerCase() == 'cover.jpg' || e.name.toLowerCase() == 'embeddedcover.jpg'));
       
       try {
-        // Chunk size of 5 for parallel processing to avoid overwhelming system resources
-        const int chunkSize = 5; 
-        for (var i = 0; i < audioFilePaths.length; i += chunkSize) {
-          final end = (i + chunkSize < audioFilePaths.length) ? i + chunkSize : audioFilePaths.length;
-          final batch = audioFilePaths.sublist(i, end);
+        // PERFORMANCE FIX: Process files sequentially to avoid AudioPlayer state collisions.
+        // Parallel batching was causing 'abort' errors in just_audio during metadata fallback.
+        for (final filePath in audioFilePaths) {
+           final shouldExtractCover = coverArt == null && !hasPhysicalCover;
+           final result = await _processAudioFileRobust(
+              filePath, 
+              folderPath, 
+              audioPlayer, 
+              extractCoverArt: shouldExtractCover, 
+              extractAuthor: author == null,
+              forceFfmpegCover: !hasPhysicalCover && coverArt == null && p.extension(filePath).toLowerCase() == '.m4b',
+              audioFileCount: audioFilePaths.length,
+           );
           
-          final List<Future<_ChapterProcessingResult?>> futures = batch.map((filePath) {
-             final shouldExtractCover = coverArt == null && !hasPhysicalCover;
-             return _processAudioFileRobust(
-                filePath, 
-                folderPath, 
-                audioPlayer, // Note: Shared player might be tricky if not thread-safe, but just_audio usually handles sequential calls. 
-                // However, parallel calls on ONE player object is bad.
-                // We should instantiate a player per task OR fallback to native metadata only for parallel.
-                // Actually, _processAudioFileRobust creates player? No, it takes it as arg.
-                // FIX: Let's rely on NativeScanner (isolates) which is thread-safe on native side.
-                // For duration fallback using AudioPlayer, we must be careful.
-                // We will create a new player per parallel task to be safe, or stick to NativeScanner.
-                extractCoverArt: shouldExtractCover, 
-                extractAuthor: author == null,
-                forceFfmpegCover: !hasPhysicalCover && coverArt == null && p.extension(filePath).toLowerCase() == '.m4b',
-             );
-          }).toList();
+          if (result != null) {
+            // If we have CUE metadata for this specific file, use that instead of generic chapters
+            bool usedCue = false;
+            if (cueMetadata != null) {
+              final baseName = p.basename(filePath).toLowerCase();
+              final fileHasCueTracks = cueMetadata.tracks.any((t) => 
+                t.fileName.toLowerCase() == baseName || 
+                p.basenameWithoutExtension(t.fileName).toLowerCase() == p.basenameWithoutExtension(baseName)
+              );
 
-          final results = await Future.wait(futures);
-          
-          for (final result in results) {
-            if (result != null) {
+              if (fileHasCueTracks) {
+                final cueChapters = CueParser.convertToChapters(
+                  cueMetadata, 
+                  folderPath, 
+                  [filePath], 
+                  result.chapters.fold(Duration.zero, (prev, element) => prev + (element.duration ?? Duration.zero))
+                );
+                
+                if (cueChapters.isNotEmpty) {
+                  _logDebug("  Applying ${cueChapters.length} .cue chapters to ${p.basename(filePath)}");
+                  chapters.addAll(cueChapters);
+                  for (var chapter in cueChapters) {
+                     totalDuration += chapter.duration ?? Duration.zero;
+                  }
+                  usedCue = true;
+                }
+              }
+            }
+
+            if (!usedCue) {
               chapters.addAll(result.chapters);
               for (var chapter in result.chapters) {
                  totalDuration += chapter.duration ?? Duration.zero;
               }
-              
-              if (author == null && result.author != null) author = result.author;
-              
-              // Capture embedded cover
-              if (result.coverArt != null && result.coverArt!.isNotEmpty) {
-                if (coverArt == null) {
-                  _logDebug("  Found embedded cover art in a chapter file");
-                  coverArt = result.coverArt;
-                  await StorageService().saveCachedCoverArt(folderPath, coverArt!);
-                }
+            }
+            
+            if (author == null && result.author != null) author = result.author;
+            if (album == null && result.album != null) album = result.album;
+            if (year == null && result.year != null) year = result.year;
+            if (narrator == null && result.narrator != null) narrator = result.narrator;
+            if (description == null && result.description != null) description = result.description;
+            
+            // Capture embedded cover
+            if (result.coverArt != null && result.coverArt!.isNotEmpty) {
+              if (coverArt == null) {
+                _logDebug("  Found embedded cover art in a chapter file");
+                coverArt = result.coverArt;
+                await StorageService().saveCachedCoverArt(folderPath, coverArt!);
+              }
 
-                if (!hasPhysicalCover) {
-                   // Save physically but don't await/block
-                   NativeScanner.writeBytes(folderPath, result.coverArt!, fileName: 'EmbeddedCover.jpg')
-                      .then((_) => _logDebug("  Background: Extracted local cover"))
-                      .catchError((e) => null);
-                }
+              if (!hasPhysicalCover) {
+                 // Save physically but don't await/block
+                 NativeScanner.writeBytes(folderPath, result.coverArt!, fileName: 'EmbeddedCover.jpg')
+                    .then((_) => _logDebug("  Background: Extracted local cover"))
+                    .catchError((e) => null);
               }
             }
           }
@@ -309,19 +351,24 @@ class MetadataService {
       // USER REQUEST: Prioritize metadata title (Album tag or Title tag)
       if (audioFilePaths.isNotEmpty) {
         try {
-          // We can use the information from the first file to set the book title
-          final firstFileRet = await NativeScanner.getMetadata(audioFilePaths.first, extractCover: false);
-          if (firstFileRet != null) {
-            final album = firstFileRet['album'] as String?;
-            final tagTitle = firstFileRet['title'] as String?;
-            
-            if (audioFilePaths.length == 1) {
-              if (album != null && album.trim().isNotEmpty) {
-                _logDebug("  Single file: Using Album tag for book title: $album");
-                bookTitle = album.trim();
-              } else if (tagTitle != null && tagTitle.trim().isNotEmpty) {
-                _logDebug("  Single file: Using Title tag for book title: $tagTitle");
-                bookTitle = tagTitle.trim();
+          if (cueMetadata != null && cueMetadata.album != null && cueMetadata.album!.isNotEmpty) {
+            _logDebug("  Using .cue Album for book title: ${cueMetadata.album}");
+            bookTitle = cueMetadata.album!;
+          } else {
+            // We can use the information from the first file to set the book title
+            final firstFileRet = await NativeScanner.getMetadata(audioFilePaths.first, extractCover: false);
+            if (firstFileRet != null) {
+              final album = firstFileRet['album'] as String?;
+              final tagTitle = firstFileRet['title'] as String?;
+              
+              if (audioFilePaths.length == 1) {
+                if (album != null && album.trim().isNotEmpty) {
+                  _logDebug("  Single file: Using Album tag for book title: $album");
+                  bookTitle = album.trim();
+                } else if (tagTitle != null && tagTitle.trim().isNotEmpty) {
+                  _logDebug("  Single file: Using Title tag for book title: $tagTitle");
+                  bookTitle = tagTitle.trim();
+                }
               }
             }
           }
@@ -339,6 +386,10 @@ class MetadataService {
         id: folderPath,
         title: bookTitle, // AudiobookProvider will handle using customTitles if valid
         author: author,
+        album: album,
+        year: year,
+        description: description,
+        narrator: narrator,
         chapters: chapters,
         totalDuration: totalDuration,
         coverArt: coverArt,
@@ -369,6 +420,7 @@ class MetadataService {
     bool extractCoverArt = true,
     bool extractAuthor = true,
     bool forceFfmpegCover = false,
+    int audioFileCount = 1,
   }) async {
     final fileName = _cleanTitle(filePath);
     String chapterTitle = p.basenameWithoutExtension(fileName);
@@ -387,7 +439,9 @@ class MetadataService {
 
         if (nativeMetadata != null) {
           retrieverMetadata = nativeMetadata;
-          chapterTitle = nativeMetadata['title'] ?? chapterTitle;
+          if (audioFileCount == 1) {
+            chapterTitle = nativeMetadata['title'] ?? chapterTitle;
+          }
           author = nativeMetadata['artist'] ?? nativeMetadata['albumArtist'];
           
           if (nativeMetadata['duration'] != null) {
@@ -412,7 +466,9 @@ class MetadataService {
         
         if (nativeMetadata != null) {
           retrieverMetadata = nativeMetadata;
-          chapterTitle = nativeMetadata['title'] ?? chapterTitle;
+          if (audioFileCount == 1) {
+            chapterTitle = nativeMetadata['title'] ?? chapterTitle;
+          }
           author = nativeMetadata['artist'] ?? nativeMetadata['albumArtist'];
           
           if (nativeMetadata['duration'] != null) {
@@ -469,9 +525,10 @@ class MetadataService {
       return null;
     }
 
-    // STEP 4: Check for Embedded Chapters using FFmpeg if this is a single large file
-    // Only do this if it's the only audio file or a large one
-    if (chapterDuration > const Duration(minutes: 10)) {
+    List<Chapter>? finalChapters;
+    // USER REQUEST: For multi-file books, stick to file names. 
+    // Only search for embedded chapters if it's a single-file book.
+    if (audioFileCount == 1 && chapterDuration > const Duration(minutes: 10)) {
        try {
          final embeddedChapters = await FFmpegHelper.extractChapters(
            filePath: filePath, 
@@ -480,19 +537,68 @@ class MetadataService {
          
          if (embeddedChapters.isNotEmpty) {
            _logDebug("Found ${embeddedChapters.length} embedded chapters in $fileName");
-           return _ChapterProcessingResult(
-             chapters: embeddedChapters,
-             coverArt: coverArt,
-             author: author,
-           );
+           
+           // USER FIX: Ensure chapters cover the full file duration
+           final List<Chapter> filledChapters = [];
+           Duration currentPos = Duration.zero;
+           
+           for (int i = 0; i < embeddedChapters.length; i++) {
+             final ch = embeddedChapters[i];
+             
+             // If there's a gap before this chapter, fill it
+             if (ch.start > currentPos + const Duration(seconds: 2)) {
+               filledChapters.add(Chapter(
+                 id: "${filePath}_gap_$i",
+                 title: i == 0 ? "Introduction" : "Chapter ${i} (Cont.)",
+                 audiobookId: folderPath,
+                 sourcePath: filePath,
+                 start: currentPos,
+                 end: ch.start,
+                 duration: ch.start - currentPos,
+               ));
+             }
+             
+             filledChapters.add(ch);
+             currentPos = ch.end ?? currentPos;
+           }
+           
+           // If there's a gap after the last chapter, fill it
+           if (currentPos < chapterDuration - const Duration(seconds: 2)) {
+             filledChapters.add(Chapter(
+               id: "${filePath}_gap_end",
+               title: "Chapter ${embeddedChapters.length} (Cont.)",
+               audiobookId: folderPath,
+               sourcePath: filePath,
+               start: currentPos,
+               end: chapterDuration,
+               duration: chapterDuration - currentPos,
+             ));
+           }
+           
+           finalChapters = filledChapters;
          }
        } catch (e) {
          _logDebug("FFmpeg chapter extraction failed for $fileName: $e");
        }
     }
 
+    // STEP 5: Supplementary tags via FFmpeg for rich metadata info
+    String? year = retrieverMetadata?['date'] as String?;
+    String? narrator = retrieverMetadata?['composer'] as String? ?? 
+                       retrieverMetadata?['writer'] as String? ?? 
+                       retrieverMetadata?['author'] as String?;
+    String? description;
+
+    // Use FFmpeg for extended tags if it's an M4B or single file
+    if (p.extension(filePath).toLowerCase() == '.m4b' || audioFileCount <= 2) {
+      final extendedTags = await FFmpegHelper.getExtendedMetadata(filePath: filePath);
+      narrator ??= extendedTags['composer'] ?? extendedTags['writer'] ?? extendedTags['narrator'];
+      description = extendedTags['comment'] ?? extendedTags['description'] ?? extendedTags['synopsis'];
+      year ??= extendedTags['date'] ?? extendedTags['creation_time'];
+    }
+
     return _ChapterProcessingResult(
-      chapters: [
+      chapters: finalChapters ?? [
         Chapter(
           id: filePath,
           title: chapterTitle,
@@ -507,6 +613,9 @@ class MetadataService {
       author: author,
       album: retrieverMetadata?['album'] as String?,
       metadataTitle: retrieverMetadata?['title'] as String?,
+      year: year,
+      narrator: narrator,
+      description: description,
     );
   }
 
@@ -556,6 +665,7 @@ class MetadataService {
     try {
       final List<String> audioFilePaths = [];
       final List<String> imageFilePaths = [];
+      final List<String> cueFilePaths = [];
       String? author;
       
       final entities = await NativeScanner.listDirectory(folderPath);
@@ -575,6 +685,8 @@ class MetadataService {
               audioFilePaths.add(entity.path);
             } else if (['.jpg', '.jpeg', '.png', '.webp'].contains(extension)) {
               imageFilePaths.add(entity.path);
+            } else if (extension == '.cue') {
+              cueFilePaths.add(entity.path);
             }
           }
         } catch (e) {
@@ -587,6 +699,17 @@ class MetadataService {
       }
 
       audioFilePaths.sort((a, b) => _naturalCompare(p.basename(a), p.basename(b)));
+
+      // Try to parse .cue file if present
+      CueMetadata? cueMetadata;
+      if (cueFilePaths.isNotEmpty) {
+        cueMetadata = await CueParser.parse(cueFilePaths.first, folderPath);
+        if (cueMetadata != null) {
+          if (author == null && cueMetadata.performer != null) {
+            author = cueMetadata.performer;
+          }
+        }
+      }
 
       final List<Chapter> basicChapters = audioFilePaths.map((path) {
         final fileName = _cleanTitle(path);
@@ -606,6 +729,11 @@ class MetadataService {
 
       final displayName = await NativeScanner.getDisplayName(folderPath);
       String bookTitle = _cleanTitle(displayName ?? p.basename(folderPath));
+
+      if (cueMetadata != null && cueMetadata.album != null && cueMetadata.album!.isNotEmpty) {
+        bookTitle = cueMetadata.album!;
+      }
+
       Uint8List? coverArt;
 
       // COVER ART SELECTION CHAIN
@@ -843,6 +971,9 @@ class _ChapterProcessingResult {
   final String? author;
   final String? album;
   final String? metadataTitle;
+  final String? year;
+  final String? description;
+  final String? narrator;
 
   _ChapterProcessingResult({
     required this.chapters,
@@ -850,5 +981,8 @@ class _ChapterProcessingResult {
     this.author,
     this.album,
     this.metadataTitle,
+    this.year,
+    this.description,
+    this.narrator,
   });
 }

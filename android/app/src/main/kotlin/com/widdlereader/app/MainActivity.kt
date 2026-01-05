@@ -401,6 +401,8 @@ class MainActivity: AudioServiceActivity() {
                 }
                 "readBytes" -> {
                     val path = call.argument<String>("path") ?: ""
+                    val fileName = call.argument<String>("fileName")
+                    
                     if (path.isEmpty()) {
                         result.error("INVALID_PATH", "Path is empty", null)
                         return@setMethodCallHandler
@@ -410,15 +412,41 @@ class MainActivity: AudioServiceActivity() {
                         if (path.startsWith("content://")) {
                             val uri = Uri.parse(path)
                             val resolver = applicationContext.contentResolver
-                            resolver.openInputStream(uri)?.use { inputStream ->
+                            
+                            var targetUri = uri
+                            if (fileName != null) {
+                                // Try treated as directory tree
+                                try {
+                                    val dirDoc = DocumentFile.fromTreeUri(applicationContext, uri)
+                                    if (dirDoc != null && dirDoc.exists() && dirDoc.isDirectory) {
+                                        val fileDoc = dirDoc.findFile(fileName)
+                                        if (fileDoc != null) {
+                                            targetUri = fileDoc.uri
+                                        } else {
+                                            // Fallback: search in descendants if needed, but normally findFile is enough
+                                            result.error("FILE_NOT_FOUND", "File '$fileName' not found in directory: $path", null)
+                                            return@setMethodCallHandler
+                                        }
+                                    }
+                                } catch (e: Exception) {
+                                    Log.w(TAG, "readBytes: Directory logic failed for $path: ${e.message}")
+                                }
+                            }
+
+                            resolver.openInputStream(targetUri)?.use { inputStream ->
                                 result.success(inputStream.readBytes())
-                            } ?: result.error("READ_ERROR", "Could not open input stream", null)
+                            } ?: result.error("READ_ERROR", "Could not open input stream for $targetUri", null)
                         } else {
-                            val file = java.io.File(path)
-                            if (file.exists()) {
-                                result.success(file.readBytes())
+                            val targetFile = if (fileName != null) {
+                                java.io.File(path, fileName)
                             } else {
-                                result.error("FILE_NOT_FOUND", "File does not exist: $path", null)
+                                java.io.File(path)
+                            }
+                            
+                            if (targetFile.exists()) {
+                                result.success(targetFile.readBytes())
+                            } else {
+                                result.error("FILE_NOT_FOUND", "File does not exist: ${targetFile.absolutePath}", null)
                             }
                         }
                     } catch (e: Exception) {
@@ -550,6 +578,10 @@ class MainActivity: AudioServiceActivity() {
                         metadata["artist"] = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST) ?: retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUMARTIST)
                         metadata["album"] = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUM)
                         metadata["duration"] = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull()
+                        metadata["date"] = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DATE)
+                        metadata["composer"] = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_COMPOSER)
+                        metadata["writer"] = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_WRITER)
+                        metadata["author"] = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_AUTHOR)
                         metadata["fileSize"] = fileSize
                         
                         if (shouldExtractCover) {

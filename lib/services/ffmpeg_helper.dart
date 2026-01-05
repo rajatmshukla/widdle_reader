@@ -202,4 +202,35 @@ class FFmpegHelper {
     }
     return null;
   }
+
+  /// Extracts comprehensive metadata tags from an audio file using FFprobe.
+  /// This is useful for tags not covered by MediaMetadataRetriever (like 'comment').
+  static Future<Map<String, String>> getExtendedMetadata({
+    required String filePath,
+  }) async {
+    try {
+      debugPrint("FFprobe: Fetching extended metadata for $filePath");
+      String actualPath = filePath;
+      
+      if (filePath.startsWith('content://')) {
+        final safPath = await FFmpegKitConfig.getSafParameter(filePath, "r");
+        if (safPath != null) {
+          actualPath = safPath;
+        }
+      }
+
+      final session = await FFprobeKit.getMediaInformation(actualPath);
+      final information = session.getMediaInformation();
+      if (information == null) return {};
+
+      final tags = information.getTags();
+      if (tags == null) return {};
+
+      // Map dynamic to String for consistency
+      return tags.map((key, value) => MapEntry(key.toString(), value.toString()));
+    } catch (e) {
+      debugPrint("Error fetching extended metadata with FFmpeg: $e");
+    }
+    return {};
+  }
 }

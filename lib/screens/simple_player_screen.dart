@@ -629,6 +629,174 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
     );
   }
 
+  // Show book info bottom sheet
+  void _showBookInfoSheet() {
+    if (_audiobook == null) return;
+    
+    final colorScheme = Theme.of(context).colorScheme;
+    
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (context) => DraggableScrollableSheet(
+        initialChildSize: 0.6,
+        minChildSize: 0.4,
+        maxChildSize: 0.9,
+        builder: (_, scrollController) => Container(
+          decoration: BoxDecoration(
+            color: colorScheme.surface,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+          ),
+          child: Column(
+            children: [
+              // Handlebar
+              Center(
+                child: Container(
+                  margin: const EdgeInsets.symmetric(vertical: 12),
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: colorScheme.onSurfaceVariant.withOpacity(0.4),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              
+              Expanded(
+                child: ListView(
+                  controller: scrollController,
+                  padding: const EdgeInsets.all(24),
+                  children: [
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Small cover thumbnail
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(12),
+                          child: buildCoverWidget(
+                            context,
+                            _audiobook!,
+                            size: 100,
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                _audiobook!.title,
+                                style: TextStyle(
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.bold,
+                                  color: colorScheme.onSurface,
+                                ),
+                              ),
+                              if (_audiobook!.author != null)
+                                Text(
+                                  _audiobook!.author!,
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    color: colorScheme.primary,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              const SizedBox(height: 8),
+                              if (_audiobook!.narrator != null)
+                                Row(
+                                  children: [
+                                    Icon(Icons.mic_none_rounded, size: 14, color: colorScheme.onSurfaceVariant),
+                                    const SizedBox(width: 4),
+                                    Expanded(
+                                      child: Text(
+                                        "Narrated by: ${_audiobook!.narrator}",
+                                        style: TextStyle(fontSize: 13, color: colorScheme.onSurfaceVariant),
+                                        maxLines: 3,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    
+                    const SizedBox(height: 24),
+                    const Divider(),
+                    const SizedBox(height: 16),
+                    
+                    if (_audiobook!.album != null)
+                      _buildInfoRow(Icons.library_music_outlined, "Album/Series", _audiobook!.album!, colorScheme),
+                    
+                    if (_audiobook!.year != null)
+                      _buildInfoRow(Icons.calendar_today_rounded, "Year", _audiobook!.year!, colorScheme),
+                    
+                    _buildInfoRow(Icons.timer_outlined, "Total Duration", formatDurationStandard(_audiobook!.totalDuration), colorScheme),
+                    
+                    const SizedBox(height: 24),
+                    if (_audiobook!.description != null && _audiobook!.description!.isNotEmpty) ...[
+                      Text(
+                        "Description",
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: colorScheme.onSurface,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        _audiobook!.description!,
+                        style: TextStyle(
+                          fontSize: 14,
+                          height: 1.5,
+                          color: colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                    
+                    const SizedBox(height: 40),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInfoRow(IconData icon, String label, String value, ColorScheme colorScheme) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        children: [
+          Icon(icon, size: 20, color: colorScheme.primary.withOpacity(0.7)),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant),
+                ),
+                Text(
+                  value,
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: colorScheme.onSurface),
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
@@ -662,106 +830,134 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
           },
         ),
         actions: [
-          // Bookmarks button
-          IconButton(
-            icon: Container(
-              padding: const EdgeInsets.all(6),
-              decoration: BoxDecoration(
-                color: colorScheme.surfaceContainerHighest.withAlpha(
-                  (0.7 * 255).round(),
-                ),
-                borderRadius: BorderRadius.circular(12),
+          // Use a FittedBox to ensure icons never overlap the leading button on small screens
+          Flexible(
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerRight,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Book Info button
+                  IconButton(
+                    icon: Container(
+                      padding: const EdgeInsets.all(6),
+                      decoration: BoxDecoration(
+                        color: colorScheme.surfaceContainerHighest.withAlpha(
+                          (0.7 * 255).round(),
+                        ),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Icon(Icons.info_outline_rounded),
+                    ),
+                    tooltip: 'Book Info',
+                    onPressed: _audiobook != null ? _showBookInfoSheet : null,
+                  ),
+                  
+                  // Bookmarks button
+                  IconButton(
+                    icon: Container(
+                      padding: const EdgeInsets.all(6),
+                      decoration: BoxDecoration(
+                        color: colorScheme.surfaceContainerHighest.withAlpha(
+                          (0.7 * 255).round(),
+                        ),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Icon(Icons.bookmarks),
+                    ),
+                    tooltip: 'Bookmarks',
+                    onPressed: _audiobook != null ? _showBookmarksScreen : null,
+                  ),
+                  
+                  // Add bookmark button
+                  IconButton(
+                    icon: Container(
+                      padding: const EdgeInsets.all(6),
+                      decoration: BoxDecoration(
+                        color: colorScheme.surfaceContainerHighest.withAlpha(
+                          (0.7 * 255).round(),
+                        ),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Icon(Icons.bookmark_add),
+                    ),
+                    tooltip: 'Add Bookmark',
+                    onPressed: _audiobook != null ? _showAddBookmarkDialog : null,
+                  ),
+                  
+                  // Sleep timer button - using CountdownTimerWidget
+                  IconButton(
+                    icon: Container(
+                      padding: const EdgeInsets.all(6),
+                      decoration: BoxDecoration(
+                        color: colorScheme.surfaceContainerHighest.withAlpha(
+                          (0.7 * 255).round(),
+                        ),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: CountdownTimerWidget(
+                        size: 24.0,
+                        showIcon: true,
+                        onTap: null, // We're using IconButton's onPressed instead
+                      ),
+                    ),
+                    tooltip: 'Sleep Timer',
+                    onPressed: _showSleepTimerDialog,
+                  ),
+                  
+                  // Equalizer button
+                  IconButton(
+                    icon: Container(
+                      padding: const EdgeInsets.all(6),
+                      decoration: BoxDecoration(
+                        color: colorScheme.surfaceContainerHighest.withAlpha(
+                          (0.7 * 255).round(),
+                        ),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Icon(Icons.candlestick_chart_rounded),
+                    ),
+                    tooltip: 'Equalizer & Effects',
+                    onPressed: () {
+                      showModalBottomSheet(
+                        context: context,
+                        backgroundColor: Colors.transparent,
+                        isScrollControlled: true,
+                        builder: (_) => const EqualizerSheet(),
+                      );
+                    },
+                  ),
+        
+                  // Car Mode button
+                  IconButton(
+                    icon: Container(
+                      padding: const EdgeInsets.all(6),
+                      decoration: BoxDecoration(
+                        color: _isCarMode 
+                            ? colorScheme.primary 
+                            : colorScheme.surfaceContainerHighest.withAlpha((0.7 * 255).round()),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Icon(
+                        Icons.directions_car_filled_rounded,
+                        color: _isCarMode ? colorScheme.onPrimary : colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    tooltip: 'Car Mode',
+                    onPressed: () {
+                      setState(() {
+                        _isCarMode = !_isCarMode;
+                      });
+                    },
+                  ),
+        
+                  // Add padding at the end
+                  const SizedBox(width: 8),
+                ],
               ),
-              child: const Icon(Icons.bookmarks),
             ),
-            tooltip: 'Bookmarks',
-            onPressed: _audiobook != null ? _showBookmarksScreen : null,
           ),
-          
-          // Add bookmark button
-          IconButton(
-            icon: Container(
-              padding: const EdgeInsets.all(6),
-              decoration: BoxDecoration(
-                color: colorScheme.surfaceContainerHighest.withAlpha(
-                  (0.7 * 255).round(),
-                ),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: const Icon(Icons.bookmark_add),
-            ),
-            tooltip: 'Add Bookmark',
-            onPressed: _audiobook != null ? _showAddBookmarkDialog : null,
-          ),
-          
-          // Sleep timer button - using CountdownTimerWidget
-          IconButton(
-            icon: Container(
-              padding: const EdgeInsets.all(6),
-              decoration: BoxDecoration(
-                color: colorScheme.surfaceContainerHighest.withAlpha(
-                  (0.7 * 255).round(),
-                ),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: CountdownTimerWidget(
-                size: 24.0,
-                showIcon: true,
-                onTap: null, // We're using IconButton's onPressed instead
-              ),
-            ),
-            tooltip: 'Sleep Timer',
-            onPressed: _showSleepTimerDialog,
-          ),
-          
-          // Equalizer button
-          IconButton(
-            icon: Container(
-              padding: const EdgeInsets.all(6),
-              decoration: BoxDecoration(
-                color: colorScheme.surfaceContainerHighest.withAlpha(
-                  (0.7 * 255).round(),
-                ),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: const Icon(Icons.candlestick_chart_rounded),
-            ),
-            tooltip: 'Equalizer & Effects',
-            onPressed: () {
-              showModalBottomSheet(
-                context: context,
-                backgroundColor: Colors.transparent,
-                isScrollControlled: true,
-                builder: (_) => const EqualizerSheet(),
-              );
-            },
-          ),
-
-          // Car Mode button
-          IconButton(
-            icon: Container(
-              padding: const EdgeInsets.all(6),
-              decoration: BoxDecoration(
-                color: _isCarMode 
-                    ? colorScheme.primary 
-                    : colorScheme.surfaceContainerHighest.withAlpha((0.7 * 255).round()),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Icon(
-                Icons.directions_car_filled_rounded,
-                color: _isCarMode ? colorScheme.onPrimary : colorScheme.onSurfaceVariant,
-              ),
-            ),
-            tooltip: 'Car Mode',
-            onPressed: () {
-              setState(() {
-                _isCarMode = !_isCarMode;
-              });
-            },
-          ),
-
-          // Add padding at the end
-          const SizedBox(width: 8),
         ],
       ),
       body: _isLoading
@@ -1236,7 +1432,7 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
                   ),
                   title: Text(
                     chapter.title,
-                    maxLines: 1,
+                    maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       fontWeight: isPlaying ? FontWeight.bold : FontWeight.normal,

@@ -25,6 +25,7 @@ import 'services/statistics_service.dart';
 import 'services/achievement_service.dart';
 import 'services/notification_service.dart';
 import 'services/widget_service.dart';
+import 'services/pulse_sync_service.dart';
 import 'widgets/snow_overlay.dart'; // Import global snow overlay
 
 // Define a global navigator key to access context from anywhere
@@ -134,6 +135,13 @@ Future<void> _initializeDataIntegrity() async {
     await widgetService.initialize();
     _logDebug("Widget service initialized");
     
+    // Initialize Pulse Sync Service for cross-device sync
+    final pulseSyncService = PulseSyncService();
+    await pulseSyncService.initialize();
+    // Initial sync on startup
+    await pulseSyncService.pulseIn();
+    _logDebug("Pulse Sync Service initialized and initial sync complete");
+    
     _logDebug("Data integrity system initialized successfully");
   } catch (e) {
     _logDebug("Error initializing data integrity system: $e");
@@ -185,15 +193,17 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     _logDebug("App lifecycle state changed to: $state");
     if (state == AppLifecycleState.paused) {
-      // App is in background, persist cached data
+      // App is in background, persist cached data and sync out
       _storageService.forcePersistCaches();
+      PulseSyncService().pulseOut();
     } else if (state == AppLifecycleState.resumed) {
-      // App is in foreground again, check data health
+      // App is in foreground again, check data health and sync in
       _storageService.checkDataHealth();
+      PulseSyncService().pulseIn();
     } else if (state == AppLifecycleState.detached) {
       // App is terminated, ensure we clean up properly
-      // Note: This might not always be called by the OS
       _storageService.forcePersistCaches();
+      PulseSyncService().pulseOut();
     }
   }
 

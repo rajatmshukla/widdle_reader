@@ -4,6 +4,7 @@ import '../models/bookmark.dart';
 import '../models/chapter.dart';
 import '../services/storage_service.dart';
 import '../utils/helpers.dart';
+import '../services/pulse_sync_service.dart';
 
 class BookmarksScreen extends StatefulWidget {
   final Audiobook audiobook;
@@ -131,6 +132,8 @@ class _BookmarksScreenState extends State<BookmarksScreen> {
             title: Text(bookmark.name),
             subtitle: Text(
               '${chapter.title} • ${formatDetailedDuration(bookmark.position)}',
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
               style: TextStyle(color: colorScheme.onSurfaceVariant),
             ),
             trailing: Row(
@@ -184,6 +187,7 @@ class _BookmarksScreenState extends State<BookmarksScreen> {
               if (newName.isNotEmpty) {
                 final updatedBookmark = bookmark.copyWith(name: newName);
                 await _storageService.saveBookmark(updatedBookmark);
+                PulseSyncService().pulseOut();
                 if (mounted) {
                   Navigator.pop(context);
                   _loadBookmarks();
@@ -210,11 +214,12 @@ class _BookmarksScreenState extends State<BookmarksScreen> {
           ),
           FilledButton(
             onPressed: () async {
-              await _storageService.deleteBookmark(
-                widget.audiobook.id,
-                bookmark.id,
-              );
-              if (mounted) {
+                await _storageService.deleteBookmark(
+                  widget.audiobook.id,
+                  bookmark.id,
+                );
+                PulseSyncService().pulseOut();
+                if (mounted) {
                 Navigator.pop(context);
                 _loadBookmarks();
               }
@@ -245,6 +250,7 @@ class _BookmarksScreenState extends State<BookmarksScreen> {
           FilledButton(
             onPressed: () async {
               await _storageService.deleteAllBookmarks(widget.audiobook.id);
+              PulseSyncService().pulseOut();
               if (mounted) {
                 Navigator.pop(context);
                 _loadBookmarks();

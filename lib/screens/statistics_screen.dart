@@ -474,7 +474,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> with WidgetsBinding
             },
           ),
           
-          const SizedBox(height: 32),
+          const SizedBox(height: 16),
           
           // 3. Reading Activity (Heatmap)
           _buildHeatmap(context),
@@ -514,6 +514,11 @@ class _StatisticsScreenState extends State<StatisticsScreen> with WidgetsBinding
           // 5. Challenges
           const ChallengeListWidget(),
           
+          const SizedBox(height: 24),
+
+          // 6. Personality Card
+          const PersonalityCard(),
+
           const SizedBox(height: 24),
         ],
       ),

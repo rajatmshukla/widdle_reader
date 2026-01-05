@@ -62,6 +62,7 @@ class StorageService {
   static const playbackSpeedPrefix = 'playback_speed_';
   static const durationModePrefix = 'duration_mode_'; // New key for duration mode preference
   static const manualCoverPrefix = 'manual_cover_'; // USER REQUEST: Flag for user-selected covers
+  static const pulseSyncEnabledKey = 'pulse_sync_enabled'; // USER REQUEST: Settings toggle
 
   
   // Tag-related keys (from tag provider)
@@ -733,7 +734,6 @@ class StorageService {
     }
   }
 
-  /// Saves the library view mode preference (true for grid, false for list)
   Future<void> saveViewModePreference(bool isGridView) async {
     try {
       final prefs = await _preferences;
@@ -741,6 +741,27 @@ class StorageService {
       debugPrint("Saved view mode preference: ${isGridView ? 'Grid' : 'List'}");
     } catch (e) {
       debugPrint("Error saving view mode preference: $e");
+    }
+  }
+
+  /// Save Pulse Sync enabled preference
+  Future<void> savePulseSyncEnabled(bool enabled) async {
+    try {
+      final prefs = await _preferences;
+      await prefs.setBool(pulseSyncEnabledKey, enabled);
+      debugPrint("Saved Pulse Sync preference: $enabled");
+    } catch (e) {
+      debugPrint("Error saving Pulse Sync preference: $e");
+    }
+  }
+
+  /// Load Pulse Sync enabled preference (defaults to true)
+  Future<bool> isPulseSyncEnabled() async {
+    try {
+      final prefs = await _preferences;
+      return prefs.getBool(pulseSyncEnabledKey) ?? true;
+    } catch (e) {
+      return true;
     }
   }
 
@@ -3382,5 +3403,89 @@ class StorageService {
       result = result.replaceAll(escapedOldPath, escapedNewUri);
     });
     return result;
+  }
+
+  // ===========================
+  // PULSE SYNC HELPERS 💓
+  // ===========================
+
+  /// Extracts all syncable data from the app's storage
+  Future<Map<String, dynamic>> getAllSyncData() async {
+    final prefs = await _preferences;
+    final keys = prefs.getKeys();
+    final data = <String, dynamic>{};
+
+    for (final key in keys) {
+      if (key.endsWith(backupSuffix)) continue;
+
+      // Filter for syncable keys
+      if (key.startsWith(progressCachePrefix) ||
+          key.startsWith(lastPositionPrefix) ||
+          key.startsWith(lastPlayedTimestampPrefix) ||
+          key.startsWith(completionPrefix) ||
+          key.startsWith(bookmarksPrefix) ||
+          key.startsWith(readingSessionPrefix) ||
+          key.startsWith(dailyStatsPrefix) ||
+          key.startsWith(playbackSpeedPrefix) ||
+          key.startsWith(durationModePrefix) ||
+          key.startsWith(_eqBookPrefix) ||
+          key.startsWith(manualCoverPrefix) ||
+          key == completedBooksKey ||
+          key == reviewsKey ||
+          key == customTitlesKey ||
+          key == readingStreakKey ||
+          key == unlockedAchievementsKey ||
+          key == activeChallengesKey ||
+          key == completedChallengesKey ||
+          key == userTagsKey ||
+          key == audiobookTagsKey ||
+          key == dailyReadingGoalKey ||
+          key == showReadingStreakKey) {
+        
+        final value = prefs.get(key);
+        if (value != null) {
+          data[key] = value;
+        }
+      }
+    }
+    return data;
+  }
+
+  /// Injects a batch of sync data into storage (Merges intelligently!)
+  Future<void> injectSyncData(Map<String, dynamic> syncData) async {
+    final prefs = await _preferences;
+    
+    for (final entry in syncData.entries) {
+      final key = entry.key;
+      final value = entry.value;
+
+      try {
+        if (value is String) {
+          await prefs.setString(key, value);
+        } else if (value is bool) {
+          await prefs.setBool(key, value);
+        } else if (value is int) {
+          await prefs.setInt(key, value);
+        } else if (value is double) {
+          await prefs.setDouble(key, value);
+        } else if (value is List<dynamic>) {
+          // JSON decoding from Pulse file might return List<dynamic>
+          await prefs.setStringList(key, value.map((e) => e.toString()).toList());
+        }
+      } catch (e) {
+        debugPrint('Error injecting sync data for key $key: $e');
+      }
+    }
+
+    // Force clear caches to ensure UI gets fresh data
+    _progressCache.clear();
+    _positionCache.clear();
+    _timestampCache.clear();
+    _completedBooksCache.clear();
+    _foldersCache.clear();
+    _customTitlesCache.clear();
+    _playbackSpeedCache.clear();
+    
+    _notifyRestoreListeners(); // Signal providers to reload
   }
 }

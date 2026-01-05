@@ -12,6 +12,7 @@ import 'package:path/path.dart' as p; // For path operations
 
 // Import local models and services
 import '../models/audiobook.dart';
+import '../services/pulse_sync_service.dart';
 
 import '../models/chapter.dart';
 import '../models/tag.dart'; // Contains LibrarySortOption
@@ -21,6 +22,7 @@ import '../services/auto_tag_service.dart';
 import '../services/cover_art_service.dart';
 import '../services/native_scanner.dart';
 import '../providers/tag_provider.dart';
+import '../services/pulse_sync_service.dart';
 
 // CRITICAL FIX: Add release-safe logging
 void _logDebug(String message) {
@@ -141,6 +143,11 @@ class AudiobookProvider extends ChangeNotifier with WidgetsBindingObserver {
     if (state == AppLifecycleState.resumed) {
       _logDebug("App resumed. Syncing library to remove deleted books...");
       syncDeletedBooksOnly();
+      // Ensure specific pulse sync check on resume in case main handler missed or for redundancy
+      PulseSyncService().pulseIn();
+    } else if (state == AppLifecycleState.paused || state == AppLifecycleState.inactive) {
+      // Pulse out on background/inactive
+      PulseSyncService().pulseOut();
     }
   }
   
@@ -261,6 +268,9 @@ class AudiobookProvider extends ChangeNotifier with WidgetsBindingObserver {
 
     // Update the display
     notifyListeners();
+    
+    // Pulse out custom title
+    PulseSyncService().pulseOut();
   }
 
   /// Updates the cover art for an audiobook
@@ -621,6 +631,9 @@ class AudiobookProvider extends ChangeNotifier with WidgetsBindingObserver {
           reviewTimestamp: now,
         );
         notifyListeners();
+        
+        // Pulse out review
+        PulseSyncService().pulseOut();
       }
     } catch (e) {
       _logDebug("Error saving review for $audiobookId: $e");
@@ -1248,6 +1261,10 @@ class AudiobookProvider extends ChangeNotifier with WidgetsBindingObserver {
         id: path,
         title: metadata['title'] as String? ?? p.basename(path),
         author: metadata['author'] as String?,
+        album: metadata['album'] as String?,
+        year: metadata['year'] as String?,
+        description: metadata['description'] as String?,
+        narrator: metadata['narrator'] as String?,
         chapters: chapters,
         totalDuration: Duration(milliseconds: metadata['totalDurationMs'] as int? ?? 0),
         coverArt: coverArt,
@@ -1285,6 +1302,10 @@ class AudiobookProvider extends ChangeNotifier with WidgetsBindingObserver {
         id: path,
         title: cachedInfo['title'] as String? ?? p.basename(path),
         author: cachedInfo['author'] as String?,
+        album: cachedInfo['album'] as String?,
+        year: cachedInfo['year'] as String?,
+        description: cachedInfo['description'] as String?,
+        narrator: cachedInfo['narrator'] as String?,
         chapters: chapters,
         totalDuration: Duration(milliseconds: cachedInfo['totalDurationMs'] as int? ?? 0),
         coverArt: coverArt, // Now passed in
@@ -1310,6 +1331,10 @@ class AudiobookProvider extends ChangeNotifier with WidgetsBindingObserver {
       final basicInfo = {
         'title': book.title,
         'author': book.author,
+        'album': book.album,
+        'year': book.year,
+        'description': book.description,
+        'narrator': book.narrator,
         'chapterCount': book.chapters.length,
         'totalDurationMs': book.totalDuration.inMilliseconds,
         'folderModified': stat.modified.millisecondsSinceEpoch,
@@ -1335,6 +1360,10 @@ class AudiobookProvider extends ChangeNotifier with WidgetsBindingObserver {
       final metadata = {
         'title': book.title,
         'author': book.author,
+        'album': book.album,
+        'year': book.year,
+        'description': book.description,
+        'narrator': book.narrator,
         'totalDurationMs': book.totalDuration.inMilliseconds,
         'chapters': book.chapters.map((chapter) => {
           'id': chapter.id,
@@ -1547,6 +1576,9 @@ class AudiobookProvider extends ChangeNotifier with WidgetsBindingObserver {
                 final idx = _audiobooks.indexWhere((b) => b.id == book.id);
                 if (idx != -1) {
                   _audiobooks[idx] = updatedBook;
+                  // Cache the updated metadata
+                  await _cacheBasicBookInfo(updatedBook, book.id);
+                  await _cacheDetailedMetadata(updatedBook);
                   notifyListeners();
                 }
              }
@@ -1570,6 +1602,18 @@ class AudiobookProvider extends ChangeNotifier with WidgetsBindingObserver {
               final audiobook = await _metadataService.getAudiobookDetails(path);
               _audiobooks.add(audiobook);
               _newBooks[path] = true; // Mark as new
+              
+              // Cache the new book metadata
+              await _cacheBasicBookInfo(audiobook, path);
+              await _cacheDetailedMetadata(audiobook);
+              
+              // Register with file tracking system
+              await _storageService.registerAudiobook(
+                path,
+                title: audiobook.title,
+                author: audiobook.author,
+                chapterCount: audiobook.chapters.length,
+              );
             } catch (e) {
               _logDebug("Error loading new book during sync: $path - $e");
             }

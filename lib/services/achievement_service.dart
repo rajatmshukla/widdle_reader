@@ -7,6 +7,7 @@ import '../models/achievement_definitions.dart';
 import 'statistics_service.dart';
 import 'storage_service.dart';
 import 'notification_service.dart';
+import 'pulse_sync_service.dart';
 
 /// Service for managing achievements and badge unlocking
 class AchievementService {
@@ -329,6 +330,9 @@ class AchievementService {
           .toList();
       await prefs.setString(unlockedAchievementsKey, jsonEncode(jsonList));
       await prefs.setInt(lastCheckTimestampKey, DateTime.now().millisecondsSinceEpoch);
+      
+      // Pulse out new achievements
+      PulseSyncService().pulseOut();
     } catch (e) {
       debugPrint('Error saving achievements: $e');
     }

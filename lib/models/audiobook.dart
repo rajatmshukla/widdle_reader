@@ -5,6 +5,10 @@ class Audiobook {
   final String id; // Use folder path as unique ID
   final String title;
   final String? author; // Add author field
+  final String? album;        // For book series or album name
+  final String? year;         // Publication or release year
+  final String? description;  // Long-form blurb or description
+  final String? narrator;     // The voice actor
   final List<Chapter> chapters;
   Duration totalDuration;
   double? rating;        // 1-5 star rating
@@ -17,7 +21,11 @@ class Audiobook {
   Audiobook({
     required this.id,
     required this.title,
-    this.author, // Add author parameter to constructor
+    this.author,
+    this.album,
+    this.year,
+    this.description,
+    this.narrator,
     required this.chapters,
     this.totalDuration = Duration.zero,
     this.coverArt,
@@ -62,6 +70,10 @@ class Audiobook {
       'id': id,
       'title': title,
       'author': author,
+      'album': album,
+      'year': year,
+      'description': description,
+      'narrator': narrator,
       'totalDuration': totalDuration.inMilliseconds,
       'tags': tags.toList(),
       'isFavorited': isFavorited,
@@ -76,6 +88,10 @@ class Audiobook {
       id: json['id'] as String,
       title: json['title'] as String,
       author: json['author'] as String?,
+      album: json['album'] as String?,
+      year: json['year'] as String?,
+      description: json['description'] as String?,
+      narrator: json['narrator'] as String?,
       chapters: [], // Would need to be handled separately
       totalDuration: Duration(milliseconds: json['totalDuration'] as int? ?? 0),
       tags: Set<String>.from(json['tags'] as List? ?? []),
@@ -92,6 +108,10 @@ class Audiobook {
     String? id,
     String? title,
     String? author,
+    String? album,
+    String? year,
+    String? description,
+    String? narrator,
     List<Chapter>? chapters,
     Duration? totalDuration,
     Uint8List? coverArt,
@@ -105,6 +125,10 @@ class Audiobook {
       id: id ?? this.id,
       title: title ?? this.title,
       author: author ?? this.author,
+      album: album ?? this.album,
+      year: year ?? this.year,
+      description: description ?? this.description,
+      narrator: narrator ?? this.narrator,
       chapters: chapters ?? this.chapters,
       totalDuration: totalDuration ?? this.totalDuration,
       coverArt: coverArt ?? this.coverArt,

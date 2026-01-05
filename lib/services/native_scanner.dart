@@ -116,14 +116,18 @@ class NativeScanner {
   }
 
   /// Reads bytes from a file or SAF Uri.
-  static Future<Uint8List?> readBytes(String path) async {
+  static Future<Uint8List?> readBytes(String path, {String? fileName}) async {
     if (!Platform.isAndroid) {
-      final file = File(path);
+      final targetPath = fileName != null ? p_pkg.join(path, fileName) : path;
+      final file = File(targetPath);
       if (await file.exists()) return await file.readAsBytes();
       return null;
     }
     try {
-      final result = await _channel.invokeMethod('readBytes', {'path': path});
+      final result = await _channel.invokeMethod('readBytes', {
+        'path': path,
+        'fileName': fileName,
+      });
       if (result != null) return result as Uint8List;
       return null;
     } on PlatformException catch (e) {

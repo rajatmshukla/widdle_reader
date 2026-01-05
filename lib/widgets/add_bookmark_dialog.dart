@@ -4,6 +4,7 @@ import '../models/bookmark.dart';
 import '../services/storage_service.dart';
 import '../utils/helpers.dart';
 import '../models/chapter.dart';
+import '../services/pulse_sync_service.dart';
 
 class AddBookmarkDialog extends StatefulWidget {
   final Audiobook audiobook;
@@ -82,6 +83,9 @@ class _AddBookmarkDialogState extends State<AddBookmarkDialog> {
 
     await _storageService.saveBookmark(bookmark);
     
+    // Pulse out bookmark
+    PulseSyncService().pulseOut();
+    
     if (mounted) {
       Navigator.pop(context, true);
     }
@@ -112,6 +116,8 @@ class _AddBookmarkDialogState extends State<AddBookmarkDialog> {
           children: [
             Text(
               'Chapter: ${chapter.title}',
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 fontSize: 14,
                 color: colorScheme.onSurfaceVariant,

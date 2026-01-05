@@ -14,6 +14,7 @@ import '../services/storage_service.dart';
 import '../services/statistics_service.dart';
 import '../services/engagement_manager.dart';
 import '../services/widget_service.dart';
+import '../services/pulse_sync_service.dart';
 
 class SimpleAudioService with WidgetsBindingObserver {
   // Singleton instance
@@ -234,6 +235,9 @@ class SimpleAudioService with WidgetsBindingObserver {
           
           // 5. Update home screen widget to show paused state
           _updateHomeWidget(isPlaying: false);
+
+          // 6. Pulse out on pause
+          PulseSyncService().pulseOut();
         }
       }
       _updateMediaSessionPlaybackState();
@@ -402,12 +406,14 @@ class SimpleAudioService with WidgetsBindingObserver {
       debugPrint('Error ending stats session during stop: $e');
     }
 
-    // 3. Stop player if playing
     if (_currentAudiobook != null && _player.playing) {
       await saveCurrentPosition();
       await _player.pause();
       _userPaused = true; // Mark as explicitly paused
     }
+    
+    // Pulse out on stop
+    PulseSyncService().pulseOut();
   }
 
   // Load an audiobook

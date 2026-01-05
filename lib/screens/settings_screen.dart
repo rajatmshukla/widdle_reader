@@ -15,6 +15,7 @@ import 'package:share_plus/share_plus.dart';
 import '../services/storage_service.dart';
 import '../services/native_scanner.dart';
 import '../services/notification_service.dart';
+import '../services/pulse_sync_service.dart';
 import '../providers/audiobook_provider.dart';
 import '../providers/tag_provider.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -236,6 +237,20 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> with SingleTick
             delay: 300,
           ),
 
+          // Sync Section (New)
+          _buildSectionWithDelay(
+            'Sync',
+            Icons.sync_rounded,
+             textTheme,
+             colorScheme,
+             delay: 325,
+          ),
+           const SizedBox(height: 12),
+           _buildAnimatedCard(
+             _buildSyncCard(colorScheme, textTheme),
+             delay: 340,
+           ),
+
           // Notifications section
           _buildSectionWithDelay(
             'Notifications',
@@ -344,6 +359,20 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> with SingleTick
                     _buildDataManagementCard(colorScheme, textTheme),
                     delay: 125,
                   ),
+
+                  // Sync Section (New)
+                  _buildSectionWithDelay(
+                    'Sync',
+                    Icons.sync_rounded,
+                     textTheme,
+                     colorScheme,
+                     delay: 135,
+                  ),
+                   const SizedBox(height: 12),
+                   _buildAnimatedCard(
+                     _buildSyncCard(colorScheme, textTheme),
+                     delay: 145,
+                   ),
 
                   // Notifications section
                   _buildSectionWithDelay(
@@ -858,7 +887,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> with SingleTick
 
             // Version
             Text(
-              'Version 1.9.0',
+              'Version 2.0.0',
               style: textTheme.bodyMedium?.copyWith(
                 color: colorScheme.onSurfaceVariant,
               ),
@@ -1814,6 +1843,193 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> with SingleTick
         );
       }
     }
+  }
+
+  Widget _buildSyncCard(ColorScheme colorScheme, TextTheme textTheme) {
+    return Card(
+      margin: const EdgeInsets.only(bottom: 16),
+      elevation: 0,
+      color: colorScheme.surfaceContainerLow,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            FutureBuilder<bool>(
+              future: StorageService().isPulseSyncEnabled(),
+              initialData: true,
+              builder: (context, snapshot) {
+                final isEnabled = snapshot.data ?? true;
+                return SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: Text(
+                    'Cross-Device Pulse Sync',
+                    style: textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  subtitle: Text(
+                    'Sync progress and stats via a shared file (.widdle_pulse.json) in your library folder.',
+                    style: textTheme.bodySmall?.copyWith(
+                      color: colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                  value: isEnabled,
+                  onChanged: (value) async {
+                    await StorageService().savePulseSyncEnabled(value);
+                    setState(() {}); // Rebuild to update switch
+                    
+                    if (value) {
+                       // Trigger an immediate sync if enabled
+                       PulseSyncService().pulseIn();
+                    }
+                  },
+                );
+              },
+            ),
+             const SizedBox(height: 8),
+            
+            // Setup Guide
+            ExpansionTile(
+              title: Text(
+                'How to set up syncing',
+                style: textTheme.bodyMedium?.copyWith(
+                  fontWeight: FontWeight.w600,
+                  color: colorScheme.primary,
+                ),
+              ),
+              iconColor: colorScheme.primary,
+              collapsedIconColor: colorScheme.primary,
+              tilePadding: EdgeInsets.zero,
+              childrenPadding: const EdgeInsets.only(bottom: 12),
+              children: [
+                _buildStepItem(
+                  '1', 
+                  'Install a file sync app', 
+                  'Use a tool like Syncthing, Autosync, or Resilio Sync on both devices.',
+                  colorScheme, textTheme
+                ),
+                const SizedBox(height: 12),
+                _buildStepItem(
+                  '2', 
+                  'Sync your Audiobooks folder', 
+                  'Configure the tool to sync your main Audiobooks library folder between your devices.',
+                  colorScheme, textTheme
+                ),
+                const SizedBox(height: 12),
+                _buildStepItem(
+                  '3', 
+                  'Enable Pulse Sync', 
+                  'Turn on this toggle. Widdle Reader will automatically read and write to the shared .widdle_pulse.json file.',
+                  colorScheme, textTheme
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: colorScheme.surface,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: colorScheme.outlineVariant.withOpacity(0.5),
+                ),
+              ),
+              child: Column(
+                children: [
+                   Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(Icons.info_outline, size: 20, color: colorScheme.primary),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          'Requires you to sync your library folder using a third-party tool (e.g., Syncthing, Autosync).',
+                          style: textTheme.bodySmall,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Divider(height: 16, color: colorScheme.outlineVariant.withOpacity(0.3)),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(Icons.tips_and_updates_outlined, size: 20, color: colorScheme.tertiary),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          'Tip: Pause playback before switching devices. This forces an immediate sync export, ensuring your other device picks up exactly where you left off.',
+                          style: textTheme.bodySmall?.copyWith(
+                            color: colorScheme.onSurface,
+                            fontStyle: FontStyle.italic,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+
+  Widget _buildStepItem(
+    String number, 
+    String title, 
+    String description, 
+    ColorScheme colorScheme, 
+    TextTheme textTheme
+  ) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: 24,
+          height: 24,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: colorScheme.primaryContainer,
+            shape: BoxShape.circle,
+          ),
+          child: Text(
+            number,
+            style: TextStyle(
+              color: colorScheme.onPrimaryContainer,
+              fontWeight: FontWeight.bold,
+              fontSize: 12,
+            ),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: textTheme.bodyMedium?.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                description,
+                style: textTheme.bodySmall?.copyWith(
+                  color: colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
   }
 
 }

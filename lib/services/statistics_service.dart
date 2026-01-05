@@ -4,6 +4,8 @@ import 'dart:convert';
 import 'dart:async';
 import '../models/reading_session.dart';
 import '../models/reading_statistics.dart';
+import 'pulse_sync_service.dart';
+import 'storage_service.dart';
 
 // Safe debug logging - only prints in debug mode
 void _logStats(String message) {
@@ -72,7 +74,17 @@ class StatisticsService {
 
   /// Initialize and recover any crashed sessions
   Future<void> initialize() async {
+    // Listen for data restore events (Pulse Sync)
+    StorageService().addRestoreListener(_onDataRestored);
     await _recoverCrashedSession();
+  }
+
+  /// Reload data when sync occurs
+  void _onDataRestored() {
+    _logStats("Stats restored from sync. Reloading counters...");
+    // Any in-memory stats that rely on prefs should be re-fetched here if needed
+    // For now, most stats are fetched on demand from prefs, but we can verify streak
+    _updateStreak(); // Trigger a streak check
   }
 
   /// Recover a session that may have been interrupted by crash/kill
@@ -510,6 +522,9 @@ class StatisticsService {
       _logStats('📊 Saving session with key: $key');
       await prefs.setString(key, jsonString);
       _logStats('📊 ✅ Session saved successfully');
+      
+      // Pulse out session
+      PulseSyncService().pulseOut();
     } catch (e, stackTrace) {
       _logStats('📊 ❌ EXCEPTION saving session: $e');
       if (kDebugMode) debugPrint('📊 Stack trace: $stackTrace');
@@ -803,6 +818,9 @@ class StatisticsService {
     try {
       final prefs = await _preferences;
       await prefs.setString(streakDataKey, jsonEncode(streak.toJson()));
+      
+      // Pulse out streak
+      PulseSyncService().pulseOut();
     } catch (e) {
       debugPrint('Error saving streak: $e');
     }

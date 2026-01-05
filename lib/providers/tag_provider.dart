@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'dart:math' as math;
 
 import '../models/tag.dart';
+import '../services/pulse_sync_service.dart';
 
 // Provider for the current tag sort option with persistence
 final tagSortOptionProvider = StateNotifierProvider<TagSortOptionNotifier, TagSortOption>((ref) {
@@ -660,6 +661,9 @@ class AudiobookTagsNotifier extends StateNotifier<Map<String, Set<String>>> {
     
     final tagsJson = json.encode(serializableData);
     await prefs.setString(_audiobookTagsKey, tagsJson);
+    
+    // Pulse out tag assignments
+    PulseSyncService().pulseOut();
   }
 
   /// Removes all tags from an audiobook (used when book is deleted)
