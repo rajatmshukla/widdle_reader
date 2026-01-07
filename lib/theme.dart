@@ -20,11 +20,16 @@ class AppTheme {
   }
 
   /// Creates a dark theme with the given seed color
-  static ThemeData darkTheme(Color seedColor) {
+  static ThemeData darkTheme(Color seedColor, {bool useAmoledBlack = false}) {
     // Define base color scheme with the provided seed color
     final colorScheme = ColorScheme.fromSeed(
       seedColor: seedColor,
       brightness: Brightness.dark,
+      surface: useAmoledBlack ? Colors.black : null,
+      surfaceContainer: useAmoledBlack ? Colors.black : null,
+      surfaceContainerLow: useAmoledBlack ? Colors.black : null,
+      surfaceContainerHigh: useAmoledBlack ? Colors.black : null,
+      surfaceContainerHighest: useAmoledBlack ? Colors.black : null,
     );
 
     // Create a modern text theme using Google Fonts
@@ -38,20 +43,20 @@ class AppTheme {
   /// Common theme creation for both light and dark themes
   static ThemeData _createTheme(ColorScheme colorScheme, TextTheme textTheme) {
     return ThemeData(
-      // Enable Material 3
       useMaterial3: true,
       colorScheme: colorScheme,
       textTheme: textTheme,
-
+      scaffoldBackgroundColor: colorScheme.surface,
+      canvasColor: colorScheme.surface,
+      
       // Enhanced typography
       typography: Typography.material2021(platform: TargetPlatform.android),
 
-      // Scaffold background with subtle gradient tint
-      scaffoldBackgroundColor: colorScheme.surface,
-
       // Custom app bar theme with Modern Material 3 styling
       appBarTheme: AppBarTheme(
-        backgroundColor: colorScheme.surfaceContainerLow.withOpacity(0.95),
+        backgroundColor: colorScheme.surface == Colors.black 
+            ? Colors.black 
+            : colorScheme.surfaceContainerLow.withOpacity(0.95),
         centerTitle: false,
         elevation: 0,
         scrolledUnderElevation: 3,
@@ -66,10 +71,19 @@ class AppTheme {
 
       // Enhanced card theme with proper elevation tokens
       cardTheme: CardTheme(
-        color: colorScheme.surfaceContainerLow,
-        elevation: 1,
-        shadowColor: colorScheme.shadow.withOpacity(0.2),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        color: colorScheme.surface == Colors.black 
+            ? Colors.black 
+            : colorScheme.surfaceContainerLow,
+        elevation: colorScheme.surface == Colors.black ? 0 : 1,
+        shadowColor: colorScheme.surface == Colors.black 
+            ? Colors.transparent 
+            : colorScheme.shadow.withOpacity(0.2),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: colorScheme.surface == Colors.black 
+              ? BorderSide(color: colorScheme.outlineVariant.withOpacity(0.2))
+              : BorderSide.none,
+        ),
         margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         clipBehavior: Clip.antiAlias,
       ),
@@ -92,8 +106,12 @@ class AppTheme {
 
       // Bottom sheet theme with proper container surfacing
       bottomSheetTheme: BottomSheetThemeData(
-        backgroundColor: colorScheme.surfaceContainerHigh,
-        modalBackgroundColor: colorScheme.surfaceContainerHighest,
+        backgroundColor: colorScheme.surface == Colors.black 
+            ? Colors.black 
+            : colorScheme.surfaceContainerHigh,
+        modalBackgroundColor: colorScheme.surface == Colors.black 
+            ? Colors.black 
+            : colorScheme.surfaceContainerHighest,
         shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
         ),
@@ -356,6 +374,11 @@ class AppTheme {
   static BoxDecoration gradientBackground(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final bool isDark = colorScheme.brightness == Brightness.dark;
+    
+    // Pure Black special case: return solid black
+    if (isDark && colorScheme.surface == Colors.black) {
+      return const BoxDecoration(color: Colors.black);
+    }
 
     return BoxDecoration(
       gradient: LinearGradient(

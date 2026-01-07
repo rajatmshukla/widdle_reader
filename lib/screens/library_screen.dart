@@ -855,7 +855,9 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
               floating: true, 
               snap: true,
               pinned: true, // Keep the app bar visible and pinned at the top
-              backgroundColor: colorScheme.surfaceContainerLow.withOpacity(0.95),
+              backgroundColor: colorScheme.surface == Colors.black 
+                  ? Colors.black 
+                  : colorScheme.surfaceContainerLow.withOpacity(0.95),
               expandedHeight: 80,
               systemOverlayStyle: SystemUiOverlayStyle(
                 statusBarColor: Colors.transparent,

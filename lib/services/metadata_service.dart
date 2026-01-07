@@ -221,11 +221,13 @@ class MetadataService {
           _logDebug("  Found cover in local folder.");
           await StorageService().saveCachedCoverArt(folderPath, coverArt!);
           
-          // Ensure it exists as EmbeddedCover.jpg but don't overwrite
+          // Ensure it exists as cover.jpg but don't overwrite if any cover exists
           final bool hasExistingCover = entities.any((e) => !e.isDirectory && 
-              (e.name.toLowerCase() == 'cover.jpg' || e.name.toLowerCase() == 'embeddedcover.jpg'));
+              (e.name.toLowerCase() == 'cover.jpg' || 
+               e.name.toLowerCase() == 'cover.jpeg' || 
+               e.name.toLowerCase() == 'embeddedcover.jpg'));
           if (!hasExistingCover) {
-            await NativeScanner.writeBytes(folderPath, coverArt!, fileName: 'EmbeddedCover.jpg');
+            await NativeScanner.writeBytes(folderPath, coverArt!, fileName: 'cover.jpg');
           }
         }
       }
@@ -319,7 +321,7 @@ class MetadataService {
 
               if (!hasPhysicalCover) {
                  // Save physically but don't await/block
-                 NativeScanner.writeBytes(folderPath, result.coverArt!, fileName: 'EmbeddedCover.jpg')
+                  NativeScanner.writeBytes(folderPath, result.coverArt!, fileName: 'cover.jpg')
                     .then((_) => _logDebug("  Background: Extracted local cover"))
                     .catchError((e) => null);
               }
@@ -338,8 +340,8 @@ class MetadataService {
       // ENSURE PHYSICAL COVER: If we have coverArt but no physical file, save it now
       if (coverArt != null && !hasPhysicalCover) {
         try {
-          await NativeScanner.writeBytes(folderPath, coverArt!, fileName: 'EmbeddedCover.jpg');
-          _logDebug("  Ensured physical cover exists: $folderPath/EmbeddedCover.jpg");
+          await NativeScanner.writeBytes(folderPath, coverArt!, fileName: 'cover.jpg');
+          _logDebug("  Ensured physical cover exists: $folderPath/cover.jpg");
         } catch (e) {
           _logDebug("  Failed to save physical cover: $e");
         }
@@ -778,8 +780,8 @@ class MetadataService {
               }
               
               if (!hasPhysicalCover) {
-                await NativeScanner.writeBytes(folderPath, embeddedData, fileName: 'EmbeddedCover.jpg');
-                _logDebug("  Persisted extracted cover art to folder: $folderPath");
+                await NativeScanner.writeBytes(folderPath, embeddedData, fileName: 'cover.jpg');
+                _logDebug("  Persisted extracted cover art to folder: $folderPath/cover.jpg");
               }
             }
           }

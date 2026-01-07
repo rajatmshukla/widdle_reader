@@ -558,6 +558,48 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> with SingleTick
                 ),
               ],
             ),
+            const Divider(height: 32),
+
+            // Pure Black Toggle (Matches Dynamic Theme Style)
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Pure Black',
+                        style: textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Turn dark mode into deep black for supported screens.',
+                        style: textTheme.bodySmall?.copyWith(
+                          color: colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Switch(
+                  value: themeProvider.useAmoledBlack,
+                  onChanged: (value) {
+                    themeProvider.setAmoledBlack(value);
+                  },
+                  thumbIcon: WidgetStateProperty.resolveWith<Icon?>(
+                    (Set<WidgetState> states) {
+                      if (states.contains(WidgetState.selected)) {
+                        return const Icon(Icons.check, color: Colors.white);
+                      }
+                      return null;
+                    },
+                  ),
+                ),
+              ],
+            ),
           ],
         ),
       ),

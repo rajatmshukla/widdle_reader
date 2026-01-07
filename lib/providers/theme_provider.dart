@@ -7,6 +7,7 @@ class ThemeProvider extends ChangeNotifier {
   static const String _themePreferenceKey = 'theme_mode';
   static const String _seedColorKey = 'seed_color';
   static const String _dynamicThemeKey = 'dynamic_theme_enabled';
+  static const String _amoledBlackKey = 'amoled_black_enabled';
 
   /// Current theme mode (light, dark, or system)
   ThemeMode _themeMode = ThemeMode.system;
@@ -17,6 +18,9 @@ class ThemeProvider extends ChangeNotifier {
   /// Whether dynamic theme based on cover art is enabled
   bool _isDynamicThemeEnabled = false;
 
+  /// Whether pure black AMOLED theme is enabled in dark mode
+  bool _useAmoledBlack = false;
+
   /// Get the current theme mode
   ThemeMode get themeMode => _themeMode;
 
@@ -25,6 +29,9 @@ class ThemeProvider extends ChangeNotifier {
 
   /// Get whether dynamic theme is enabled
   bool get isDynamicThemeEnabled => _isDynamicThemeEnabled;
+
+  /// Get whether amoled black is enabled
+  bool get useAmoledBlack => _useAmoledBlack;
 
   /// Initialize the theme provider
   ThemeProvider() {
@@ -53,6 +60,9 @@ class ThemeProvider extends ChangeNotifier {
 
       // Load library view mode (default to Grid View)
       _isGridView = prefs.getBool('library_is_grid_view') ?? true;
+
+      // Load amoled black setting
+      _useAmoledBlack = prefs.getBool(_amoledBlackKey) ?? false;
 
       notifyListeners();
     } catch (e) {
@@ -143,6 +153,23 @@ class ThemeProvider extends ChangeNotifier {
       }
       
       // Revert or update UI state immediately
+      notifyListeners();
+    }
+  }
+
+  /// Enable or disable pure black AMOLED theme
+  Future<void> setAmoledBlack(bool enabled) async {
+    if (_useAmoledBlack != enabled) {
+      _useAmoledBlack = enabled;
+      
+      // Save to preferences
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setBool(_amoledBlackKey, enabled);
+      } catch (e) {
+        debugPrint('Error saving amoled black preference: $e');
+      }
+      
       notifyListeners();
     }
   }

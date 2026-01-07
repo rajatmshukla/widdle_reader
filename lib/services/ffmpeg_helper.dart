@@ -142,65 +142,56 @@ class FFmpegHelper {
         }
       }
 
-      // 1. Get media information to check specifically for video/image streams
-      final session = await FFprobeKit.getMediaInformation(actualPath);
-      final information = session.getMediaInformation();
-      if (information == null) return null;
-
-      final streams = information.getStreams();
-      bool hasAttachedPic = false;
-      for (final stream in streams) {
-        final type = stream.getType();
-        // In audio files, a video stream is almost always the embedded cover art
-        if (type == 'video') {
-          hasAttachedPic = true;
-          break;
-        }
-      }
-
-      if (!hasAttachedPic) {
-        debugPrint("FFmpeg: No video/attached_pic streams found in $filePath");
-        return null;
-      }
-
-      // 2. Use FFmpeg to extract the first video stream to a temporary file
-      // -i input -map 0:v -c copy -frames:v 1 -f image2 out.jpg
+      // 2. Use FFmpeg to extract the video stream to a temporary file
+      // We try multiple commands for maximum compatibility
       final tempFile = File('${Directory.systemTemp.path}/ffmpeg_cover_${DateTime.now().millisecondsSinceEpoch}.jpg');
       
-      // We use -map 0:v:0 to get the first video stream (usually the cover)
-      // -vframes 1 to get only one frame
-      // -q:v 2 for high quality if re-encoding is needed, but -c:v copy is better if it's already mjpeg/png
-      final command = '-i "$actualPath" -map 0:v:0 -c:v copy -frames:v 1 -f image2 "${tempFile.path}" -y';
-      
-      final ffSession = await FFmpegKit.execute(command);
-      final returnCode = await ffSession.getReturnCode();
+      // Attempt 1: Fast copy of first video stream
+      final cmd1 = '-i "$actualPath" -map 0:v:0 -c:v copy -frames:v 1 -f image2 "${tempFile.path}" -y';
+      var ffSession = await FFmpegKit.execute(cmd1);
+      if (ReturnCode.isSuccess(await ffSession.getReturnCode()) && await tempFile.exists()) {
+        return await _readAndDelete(tempFile);
+      }
 
-      if (ReturnCode.isSuccess(returnCode)) {
-        if (await tempFile.exists()) {
-          final bytes = await tempFile.readAsBytes();
-          // Clean up
-          try { await tempFile.delete(); } catch (_) {}
-          debugPrint("FFmpeg: Successfully extracted ${bytes.length} bytes of cover art");
-          return bytes;
-        }
-      } else {
-        debugPrint("FFmpeg: Cover extraction command failed with code $returnCode");
-        // Fallback: Try without -c:v copy in case the format needs re-encoding to jpg
-        final fallbackCommand = '-i "$actualPath" -map 0:v:0 -frames:v 1 -f image2 "${tempFile.path}" -y';
-        final fallbackSession = await FFmpegKit.execute(fallbackCommand);
-        if (ReturnCode.isSuccess(await fallbackSession.getReturnCode())) {
-           if (await tempFile.exists()) {
-             final bytes = await tempFile.readAsBytes();
-             try { await tempFile.delete(); } catch (_) {}
-             debugPrint("FFmpeg: Successfully extracted ${bytes.length} bytes (with re-encode)");
-             return bytes;
-           }
+      // Attempt 2: Re-encode first video stream (safer for different formats)
+      final cmd2 = '-i "$actualPath" -map 0:v:0 -frames:v 1 -f image2 "${tempFile.path}" -y';
+      ffSession = await FFmpegKit.execute(cmd2);
+      if (ReturnCode.isSuccess(await ffSession.getReturnCode()) && await tempFile.exists()) {
+        return await _readAndDelete(tempFile);
+      }
+
+      // Attempt 3: Auto-detect cover (no explicit map)
+      final cmd3 = '-i "$actualPath" -frames:v 1 -f image2 "${tempFile.path}" -y';
+      ffSession = await FFmpegKit.execute(cmd3);
+      if (ReturnCode.isSuccess(await ffSession.getReturnCode()) && await tempFile.exists()) {
+        return await _readAndDelete(tempFile);
+      }
+
+      // Attempt 4: Extract using MJPEG format specifically if it's an MP4/M4B
+      if (filePath.toLowerCase().endsWith('.m4b') || filePath.toLowerCase().endsWith('.mp4')) {
+        final cmd4 = '-i "$actualPath" -map 0:v -vcodec mjpeg -frames:v 1 -f image2 "${tempFile.path}" -y';
+        ffSession = await FFmpegKit.execute(cmd4);
+        if (ReturnCode.isSuccess(await ffSession.getReturnCode()) && await tempFile.exists()) {
+          return await _readAndDelete(tempFile);
         }
       }
+
     } catch (e) {
       debugPrint("Error extracting cover art with FFmpeg: $e");
     }
     return null;
+  }
+
+  static Future<Uint8List?> _readAndDelete(File file) async {
+    try {
+      final bytes = await file.readAsBytes();
+      await file.delete();
+      debugPrint("FFmpeg: Successfully extracted ${bytes.length} bytes of cover art");
+      return bytes;
+    } catch (e) {
+      debugPrint("Error reading/deleting temp cover file: $e");
+      return null;
+    }
   }
 
   /// Extracts comprehensive metadata tags from an audio file using FFprobe.

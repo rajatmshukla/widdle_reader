@@ -216,7 +216,10 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
           title: 'Widdle Reader',
           debugShowCheckedModeBanner: false,
           theme: AppTheme.lightTheme(themeProvider.seedColor),
-          darkTheme: AppTheme.darkTheme(themeProvider.seedColor),
+          darkTheme: AppTheme.darkTheme(
+            themeProvider.seedColor,
+            useAmoledBlack: themeProvider.useAmoledBlack,
+          ),
           themeMode: themeProvider.themeMode,
           
           localizationsDelegates: const [

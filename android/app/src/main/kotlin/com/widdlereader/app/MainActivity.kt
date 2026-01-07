@@ -559,11 +559,11 @@ class MainActivity: AudioServiceActivity() {
                             Log.w(TAG, "Could not determine file size for $path: ${e.message}")
                         }
                         
-                        val maxSizeForCover = 200 * 1024 * 1024L // 200MB
+                        val maxSizeForCover = 5L * 1024 * 1024 * 1024 // 5GB - Audiobooks can be large
                         val shouldExtractCover = call.argument<Boolean>("extractCover") == true && fileSize < maxSizeForCover
                         
                         if (fileSize >= maxSizeForCover) {
-                            Log.d(TAG, "Large file detected (${fileSize / 1024 / 1024}MB), skipping native cover extraction")
+                            Log.d(TAG, "Extremely large file detected (${fileSize / 1024 / 1024}MB), skipping native cover extraction to avoid OOM")
                         }
 
                         if (path.startsWith("content://")) {
