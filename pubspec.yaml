@@ -73,6 +73,7 @@ dependencies:
   home_widget: ^0.6.0  # For home screen widget support
   flutter_svg: ^2.2.2
   flutter_heatmap_calendar: ^1.0.5 # Added for Statistics Screen redesign
+  animations: ^2.0.11
 
 
 # Add this section at the root level of your pubspec.yaml

@@ -298,11 +298,14 @@ class _AudiobookTileState extends State<AudiobookTile>
                   fit: StackFit.expand,
                   children: [
                     // Background blur for cover
-                    buildCoverWidget(
-                      context,
-                      widget.audiobook,
-                      size: 200, // Restore scale for quality
-                      customTitle: displayTitle,
+                    Hero(
+                      tag: 'cover-${widget.audiobook.id}',
+                      child: buildCoverWidget(
+                        context,
+                        widget.audiobook,
+                        size: 200, // Restore scale for quality
+                        customTitle: displayTitle,
+                      ),
                     ),
                     // Gradient overlay for text readability at bottom
                     Positioned(
@@ -611,13 +614,16 @@ class _AudiobookTileState extends State<AudiobookTile>
           ),
         ],
       ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(size * 0.15),
-        child: buildCoverWidget(
-          context,
-          widget.audiobook,
-          size: size,
-          customTitle: displayTitle,
+      child: Hero(
+        tag: 'cover-${widget.audiobook.id}',
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(size * 0.15),
+          child: buildCoverWidget(
+            context,
+            widget.audiobook,
+            size: size,
+            customTitle: displayTitle,
+          ),
         ),
       ),
     );

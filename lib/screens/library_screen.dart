@@ -57,15 +57,19 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
     with WidgetsBindingObserver, SingleTickerProviderStateMixin {
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
+  late PageController _pageController; // For smooth sliding tab transitions
   bool _androidAutoInitialized = false;
   // bool _isSnowing = false; // MOVED TO GLOBAL PROVIDER
-  int _selectedIndex = 0; // 0 = Library, 1 = Completed, 2 = Tags
+  int _selectedIndex = 0; // 0 = Library, 1 = Completed, 2 = Tags, 3 = Reviews
   
   @override  
   void initState() {    
     super.initState();    
     // Register to detect when app becomes active    
     WidgetsBinding.instance.addObserver(this);
+    
+    // Initialize PageController for smooth tab sliding
+    _pageController = PageController(initialPage: _selectedIndex);
     
     // Initialize animation controller
     _animationController = AnimationController(
@@ -132,6 +136,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
 
   @override
   void dispose() {
+    _pageController.dispose();
     _animationController.dispose();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
@@ -938,10 +943,27 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
               Expanded(
                 child: Stack(
                   children: [
-                    // Main content with conditional view based on selected tab
-                    FadeTransition(
-                      opacity: _fadeAnimation,
+                    // Main content with smooth sliding transitions between tabs
+                    AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 300),
+                      switchInCurve: Curves.easeOutCubic,
+                      switchOutCurve: Curves.easeInCubic,
+                      transitionBuilder: (Widget child, Animation<double> animation) {
+                        // Slide transition for a modern, alive feel
+                        final slideAnimation = Tween<Offset>(
+                          begin: const Offset(0.1, 0.0),
+                          end: Offset.zero,
+                        ).animate(animation);
+                        return SlideTransition(
+                          position: slideAnimation,
+                          child: FadeTransition(
+                            opacity: animation,
+                            child: child,
+                          ),
+                        );
+                      },
                       child: Column(
+                        key: ValueKey<int>(_selectedIndex),
                         children: [
                           // Search bar and controls (only show in Library and Completed tabs)
                           if (_selectedIndex == 0 || _selectedIndex == 1)
@@ -1130,6 +1152,12 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
               setState(() {
                 _selectedIndex = index;
               });
+              // Animate to the selected page with smooth sliding
+              _pageController.animateToPage(
+                index,
+                duration: const Duration(milliseconds: 300),
+                curve: Curves.easeInOut,
+              );
             },
             destinations: const [
               NavigationDestination(

@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_quill/flutter_quill.dart'; // For FlutterQuillLocalizations
 import 'package:just_audio_background/just_audio_background.dart';
+import 'package:animations/animations.dart'; // For FadeThroughTransition
 
 import 'providers/audiobook_provider.dart';
 import 'providers/theme_provider.dart';
@@ -241,13 +242,45 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
                   },
                 )
               : const LicenseCheckScreen(),
-          routes: {
-            '/license': (context) => const LicenseCheckScreen(),
-            '/splash': (context) => const SplashScreen(),
-            '/library': (context) => const LibraryScreen(),
-            '/player': (context) => const SimplePlayerScreen(),
-            '/settings': (context) => const SettingsScreen(),
-            '/statistics': (context) => const StatisticsScreen(),
+          // Use onGenerateRoute for explicit, smooth transitions
+          onGenerateRoute: (settings) {
+            Widget page;
+            switch (settings.name) {
+              case '/license':
+                page = const LicenseCheckScreen();
+                break;
+              case '/splash':
+                page = const SplashScreen();
+                break;
+              case '/library':
+                page = const LibraryScreen();
+                break;
+              case '/player':
+                page = const SimplePlayerScreen();
+                break;
+              case '/settings':
+                page = const SettingsScreen();
+                break;
+              case '/statistics':
+                page = const StatisticsScreen();
+                break;
+              default:
+                page = const LibraryScreen();
+            }
+            
+            return PageRouteBuilder(
+              settings: settings,
+              transitionDuration: const Duration(milliseconds: 400),
+              reverseTransitionDuration: const Duration(milliseconds: 350),
+              pageBuilder: (context, animation, secondaryAnimation) => page,
+              transitionsBuilder: (context, animation, secondaryAnimation, child) {
+                return FadeThroughTransition(
+                  animation: animation,
+                  secondaryAnimation: secondaryAnimation,
+                  child: child,
+                );
+              },
+            );
           },
 
           // Global builder for overlays (Snow Effect)

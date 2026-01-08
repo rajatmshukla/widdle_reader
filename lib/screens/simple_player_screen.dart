@@ -1161,12 +1161,15 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
                         ),
                       ],
                     ),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(20),
-                      child: buildCoverWidget(
-                        context,
-                        _audiobook!,
-                        size: screenSize.width * 0.5,
+                    child: Hero(
+                      tag: 'cover-${_audiobook!.id}',
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(20),
+                        child: buildCoverWidget(
+                          context,
+                          _audiobook!,
+                          size: screenSize.width * 0.5,
+                        ),
                       ),
                     ),
                   ),
@@ -1263,12 +1266,15 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
                         ),
                       ],
                     ),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(16),
-                      child: buildCoverWidget(
-                        context,
-                        _audiobook!,
-                        size: screenSize.height * 0.35,
+                    child: Hero(
+                      tag: 'cover-${_audiobook!.id}',
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(16),
+                        child: buildCoverWidget(
+                          context,
+                          _audiobook!,
+                          size: screenSize.height * 0.35,
+                        ),
                       ),
                     ),
                   ),

@@ -175,6 +175,7 @@ class ThemeProvider extends ChangeNotifier {
   }
 
   /// Update theme color from an image (e.g., audiobook cover art)
+  /// Uses a smarter selection to pick the most abundant and visually appealing color
   Future<void> updateThemeFromImage(ImageProvider imageProvider) async {
     if (!_isDynamicThemeEnabled) return;
     
@@ -182,18 +183,70 @@ class ThemeProvider extends ChangeNotifier {
       final PaletteGenerator paletteGenerator = 
           await PaletteGenerator.fromImageProvider(
         imageProvider,
-        maximumColorCount: 20,
+        maximumColorCount: 32, // Increased for better color detection
       );
       
-      // Try to get a vibrant color first, fall back to dominant
-      Color? newColor = paletteGenerator.vibrantColor?.color ??
-          paletteGenerator.dominantColor?.color;
+      // Smart color selection priority:
+      // 1. Muted color (often the most representative and pleasant)
+      // 2. Light Muted (good for covers with muted tones)
+      // 3. Dominant color (most abundant)
+      // 4. Vibrant color (most saturated, but sometimes too bright)
+      // 5. Dark Vibrant (good for darker covers)
+      // 6. Light Vibrant (last resort)
+      
+      Color? newColor;
+      
+      // First, try to get a color that's both abundant and visually pleasant
+      // Muted colors are often the best representation of the artwork's mood
+      if (paletteGenerator.mutedColor != null) {
+        newColor = paletteGenerator.mutedColor!.color;
+      } else if (paletteGenerator.lightMutedColor != null) {
+        newColor = paletteGenerator.lightMutedColor!.color;
+      } else if (paletteGenerator.dominantColor != null) {
+        // Dominant is the most abundant color
+        newColor = paletteGenerator.dominantColor!.color;
+      } else if (paletteGenerator.vibrantColor != null) {
+        newColor = paletteGenerator.vibrantColor!.color;
+      } else if (paletteGenerator.darkVibrantColor != null) {
+        newColor = paletteGenerator.darkVibrantColor!.color;
+      } else if (paletteGenerator.lightVibrantColor != null) {
+        newColor = paletteGenerator.lightVibrantColor!.color;
+      }
+      
+      // If we still don't have a color, pick from the palette colors directly
+      if (newColor == null && paletteGenerator.colors.isNotEmpty) {
+        // Pick the color with the highest population (most abundant)
+        PaletteColor? bestColor;
+        int maxPopulation = 0;
+        for (final color in paletteGenerator.paletteColors) {
+          if (color.population > maxPopulation) {
+            maxPopulation = color.population;
+            bestColor = color;
+          }
+        }
+        newColor = bestColor?.color;
+      }
       
       if (newColor != null) {
+        // Ensure the color isn't too dark or too light for theming
+        final hsl = HSLColor.fromColor(newColor);
+        if (hsl.lightness < 0.15) {
+          // Too dark - lighten it a bit
+          newColor = hsl.withLightness(0.25).toColor();
+        } else if (hsl.lightness > 0.85) {
+          // Too light - darken it a bit
+          newColor = hsl.withLightness(0.75).toColor();
+        }
+        
+        // Boost saturation slightly if it's too muted
+        if (hsl.saturation < 0.2) {
+          final adjustedHsl = HSLColor.fromColor(newColor);
+          newColor = adjustedHsl.withSaturation(0.35).toColor();
+        }
+        
         _seedColor = newColor;
-        // Don't save to preferences - dynamic theme shouldn't override manual selection
         notifyListeners();
-        debugPrint('Dynamic theme updated to: ${newColor.toString()}');
+        debugPrint('Dynamic theme updated to: ${newColor.toString()} (HSL: L=${hsl.lightness.toStringAsFixed(2)}, S=${hsl.saturation.toStringAsFixed(2)})');
       }
     } catch (e) {
       debugPrint('Error extracting color from image: $e');
