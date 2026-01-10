@@ -110,8 +110,8 @@ class _HolidaySplashScreenState extends State<HolidaySplashScreen>
               decoration: BoxDecoration(
                 gradient: RadialGradient(
                   colors: [
-                    Colors.white.withValues(alpha: 0.15),
-                    Colors.white.withValues(alpha: 0.05),
+                    Colors.white.withValues(alpha: 0.2),
+                    Colors.white.withValues(alpha: 0.1),
                     Colors.transparent,
                   ],
                   stops: const [0.0, 0.4, 1.0],
@@ -241,7 +241,7 @@ class _HolidaySplashScreenState extends State<HolidaySplashScreen>
                   style: GoogleFonts.inter(
                     fontSize: 18,
                     fontWeight: FontWeight.w400,
-                    color: Colors.white.withValues(alpha: 0.8),
+                    color: Colors.white.withValues(alpha: 0.7),
                     letterSpacing: 1.2,
                   ),
                 ),
@@ -318,7 +318,7 @@ class _HolidaySplashScreenState extends State<HolidaySplashScreen>
                   style: GoogleFonts.inter(
                     fontSize: 12,
                     fontWeight: FontWeight.w400,
-                    color: const Color(0xFF1A2A4A).withValues(alpha: 0.7),
+                    color: const Color(0xFF1A2A4A).withValues(alpha: 0.6),
                   ),
                 ),
               ],

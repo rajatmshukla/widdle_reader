@@ -57,11 +57,11 @@ class AppTheme {
       appBarTheme: AppBarTheme(
         backgroundColor: colorScheme.surface == Colors.black 
             ? Colors.black 
-            : colorScheme.surfaceContainerLow.withOpacity(0.95),
+            : colorScheme.surfaceContainerLow.withValues(alpha: 0.95),
         centerTitle: false,
         elevation: 0,
         scrolledUnderElevation: 3,
-        shadowColor: colorScheme.shadow.withOpacity(0.3),
+        shadowColor: colorScheme.shadow.withValues(alpha: 0.3),
         titleTextStyle: textTheme.titleLarge?.copyWith(
           fontWeight: FontWeight.w600,
           letterSpacing: 0.25,
@@ -78,11 +78,11 @@ class AppTheme {
         elevation: colorScheme.surface == Colors.black ? 0 : 1,
         shadowColor: colorScheme.surface == Colors.black 
             ? Colors.transparent 
-            : colorScheme.shadow.withOpacity(0.2),
+            : colorScheme.shadow.withValues(alpha: 0.2),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16),
           side: colorScheme.surface == Colors.black 
-              ? BorderSide(color: colorScheme.outlineVariant.withOpacity(0.2))
+              ? BorderSide(color: colorScheme.outlineVariant.withValues(alpha: 0.2))
               : BorderSide.none,
         ),
         margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -93,7 +93,7 @@ class AppTheme {
       dialogTheme: DialogTheme(
         backgroundColor: colorScheme.surfaceContainerHigh,
         elevation: 6,
-        shadowColor: colorScheme.shadow.withOpacity(0.3),
+        shadowColor: colorScheme.shadow.withValues(alpha: 0.3),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
         titleTextStyle: textTheme.headlineSmall?.copyWith(
           fontWeight: FontWeight.w500,
@@ -119,7 +119,7 @@ class AppTheme {
         clipBehavior: Clip.antiAlias,
         elevation: 8,
         modalElevation: 10,
-        dragHandleColor: colorScheme.onSurfaceVariant.withOpacity(0.4),
+        dragHandleColor: colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
         dragHandleSize: const Size(32, 4),
         showDragHandle: true,
       ),
@@ -236,7 +236,7 @@ class AppTheme {
         activeTrackColor: colorScheme.primary,
         inactiveTrackColor: colorScheme.surfaceContainerHighest,
         thumbColor: colorScheme.primary,
-        overlayColor: colorScheme.primary.withOpacity(0.12),
+        overlayColor: colorScheme.primary.withValues(alpha: 0.12),
         trackHeight: 4,
         thumbShape: const RoundSliderThumbShape(
           enabledThumbRadius: 8,
@@ -259,7 +259,7 @@ class AppTheme {
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: colorScheme.outline.withOpacity(0.5), width: 1),
+          borderSide: BorderSide(color: colorScheme.outline.withValues(alpha: 0.5), width: 1),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
@@ -280,7 +280,7 @@ class AppTheme {
           color: colorScheme.onSurfaceVariant,
         ),
         hintStyle: textTheme.bodyLarge?.copyWith(
-          color: colorScheme.onSurfaceVariant.withOpacity(0.6),
+          color: colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
         ),
       ),
 
@@ -312,7 +312,7 @@ class AppTheme {
 
       // Divider theme
       dividerTheme: DividerThemeData(
-        color: colorScheme.outlineVariant.withOpacity(0.5),
+        color: colorScheme.outlineVariant.withValues(alpha: 0.5),
         thickness: 1,
         space: 24,
         indent: 0,
@@ -323,7 +323,7 @@ class AppTheme {
       popupMenuTheme: PopupMenuThemeData(
         color: colorScheme.surfaceContainerHigh,
         elevation: 3,
-        shadowColor: colorScheme.shadow.withOpacity(0.2),
+        shadowColor: colorScheme.shadow.withValues(alpha: 0.2),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         textStyle: textTheme.bodyMedium,
         enableFeedback: true,
@@ -356,7 +356,7 @@ class AppTheme {
       chipTheme: ChipThemeData(
         backgroundColor: colorScheme.surfaceContainerLow,
         selectedColor: colorScheme.secondaryContainer,
-        disabledColor: colorScheme.surfaceContainerLowest.withOpacity(0.6),
+        disabledColor: colorScheme.surfaceContainerLowest.withValues(alpha: 0.6),
         deleteIconColor: colorScheme.onSurfaceVariant,
         labelStyle: textTheme.labelLarge?.copyWith(
           color: colorScheme.onSurfaceVariant,
@@ -398,8 +398,8 @@ class AppTheme {
         end: Alignment.bottomCenter,
         colors: [
           isDark
-              ? colorScheme.primaryContainer.withOpacity(0.2)
-              : colorScheme.primaryContainer.withOpacity(0.2),
+              ? colorScheme.primaryContainer.withValues(alpha: 0.2)
+              : colorScheme.primaryContainer.withValues(alpha: 0.2),
           colorScheme.surface,
         ],
         stops: const [0.2, 0.9],

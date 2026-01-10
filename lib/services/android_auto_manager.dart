@@ -11,6 +11,7 @@ import '../models/audiobook.dart';
 import '../providers/audiobook_provider.dart';
 import '../services/simple_audio_service.dart';
 import '../services/storage_service.dart';
+import 'package:crypto/crypto.dart'; // For stable filename hashing
 
 /// Android Auto Manager
 /// 
@@ -172,10 +173,10 @@ class AndroidAutoManager {
       if (coverPath == null && book.coverArt != null) {
         try {
           final tempDir = await getTemporaryDirectory();
-          final start = DateTime.now().millisecondsSinceEpoch;
-          // Use sanitized ID for filename
-          final sanitizedId = book.id.hashCode.toString();
-          final file = File('${tempDir.path}/aa_cover_$sanitizedId.jpg');
+          // Use MD5 hash for valid, stable filename across app restarts
+          final digest = md5.convert(utf8.encode(book.id));
+          final safeName = 'aa_cover_$digest';
+          final file = File('${tempDir.path}/$safeName.jpg');
           
           if (!await file.exists()) {
              await file.writeAsBytes(book.coverArt!);

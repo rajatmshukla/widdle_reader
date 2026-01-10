@@ -15,6 +15,8 @@ import '../services/statistics_service.dart';
 import '../services/engagement_manager.dart';
 import '../services/widget_service.dart';
 import '../services/pulse_sync_service.dart';
+import 'package:crypto/crypto.dart'; // For stable filename hashing
+import 'dart:convert'; // For utf8 encoding
 
 class SimpleAudioService with WidgetsBindingObserver {
   // Singleton instance
@@ -473,9 +475,9 @@ class SimpleAudioService with WidgetsBindingObserver {
   Future<Uri?> _getCoverArtUri(Uint8List coverArt, String id) async {
     try {
       final tempDir = await getTemporaryDirectory();
-      // FIX: Use hash for filename to prevent filesystem errors with long IDs
-      // We use hashCode as a simple, short unique identifier for temp files
-      final safeName = 'cover_${id.hashCode}'; 
+      // Use MD5 hash for valid, stable filename across app restarts
+      final digest = md5.convert(utf8.encode(id));
+      final safeName = 'cover_$digest'; 
       final file = File('${tempDir.path}/$safeName.jpg');
       
       // Optimized: Only write if didn't exist to save IO

@@ -3488,4 +3488,146 @@ class StorageService {
     
     _notifyRestoreListeners(); // Signal providers to reload
   }
+
+  // ===========================
+  // TEXT READER STORAGE 📖
+  // ===========================
+  
+  static const String _readerPositionPrefix = 'reader_position_';
+  static const String _readerAnnotationsKey = 'reader_annotations';
+
+  /// Saves the current reading position for an eBook
+  Future<void> saveReaderPosition(String ebookId, {
+    int? page, 
+    String? cfi,
+    double? zoom,
+    double? offsetX,
+    double? offsetY,
+  }) async {
+    try {
+      final prefs = await _preferences;
+      final key = '$_readerPositionPrefix$ebookId';
+      final data = {
+        'page': page,
+        'cfi': cfi,
+        'zoom': zoom,
+        'offsetX': offsetX,
+        'offsetY': offsetY,
+        'timestamp': DateTime.now().toIso8601String(),
+      };
+      await prefs.setString(key, jsonEncode(data));
+      debugPrint('📖 Saved reader position for $ebookId: page=$page, cfi=$cfi, zoom=$zoom');
+    } catch (e) {
+      debugPrint('Error saving reader position: $e');
+    }
+  }
+
+
+  /// Loads the last reading position for an eBook
+  Future<Map<String, dynamic>?> loadReaderPosition(String ebookId) async {
+    try {
+      final prefs = await _preferences;
+      final key = '$_readerPositionPrefix$ebookId';
+      final data = prefs.getString(key);
+      if (data != null) {
+        return jsonDecode(data) as Map<String, dynamic>;
+      }
+    } catch (e) {
+      debugPrint('Error loading reader position: $e');
+    }
+    return null;
+  }
+
+  /// Saves a reader annotation (highlight/note)
+  Future<void> saveReaderAnnotation(Map<String, dynamic> annotation) async {
+    try {
+      final prefs = await _preferences;
+      final annotationsJson = prefs.getString(_readerAnnotationsKey);
+      final List<dynamic> annotations = annotationsJson != null 
+          ? jsonDecode(annotationsJson) as List<dynamic>
+          : [];
+      
+      // Remove existing annotation with same ID if updating
+      annotations.removeWhere((a) => a['id'] == annotation['id']);
+      annotations.add(annotation);
+      
+      await prefs.setString(_readerAnnotationsKey, jsonEncode(annotations));
+      debugPrint('📖 Saved annotation: ${annotation['id']}');
+    } catch (e) {
+      debugPrint('Error saving reader annotation: $e');
+    }
+  }
+
+  /// Loads all annotations for an eBook
+  Future<List<Map<String, dynamic>>> loadReaderAnnotations(String ebookId) async {
+    try {
+      final prefs = await _preferences;
+      final annotationsJson = prefs.getString(_readerAnnotationsKey);
+      if (annotationsJson != null) {
+        final List<dynamic> all = jsonDecode(annotationsJson) as List<dynamic>;
+        return all
+            .where((a) => a['ebookId'] == ebookId)
+            .map((a) => Map<String, dynamic>.from(a as Map))
+            .toList();
+      }
+    } catch (e) {
+      debugPrint('Error loading reader annotations: $e');
+    }
+    return [];
+  }
+
+  /// Deletes a reader annotation by ID
+  Future<void> deleteReaderAnnotation(String annotationId) async {
+    try {
+      final prefs = await _preferences;
+      final annotationsJson = prefs.getString(_readerAnnotationsKey);
+      if (annotationsJson != null) {
+        final List<dynamic> annotations = jsonDecode(annotationsJson) as List<dynamic>;
+        annotations.removeWhere((a) => a['id'] == annotationId);
+        await prefs.setString(_readerAnnotationsKey, jsonEncode(annotations));
+        debugPrint('📖 Deleted annotation: $annotationId');
+      }
+    } catch (e) {
+      debugPrint('Error deleting reader annotation: $e');
+    }
+  }
+
+  /// Scans an audiobook folder for eBook files (PDF, EPUB)
+  Future<List<String>> findEbooksInFolder(String audiobookPath) async {
+    final List<String> ebooks = [];
+    final extensions = ['.pdf', '.epub'];
+    
+    try {
+      if (Platform.isAndroid && audiobookPath.startsWith('content://')) {
+        // SAF directory listing
+        final contents = await NativeScanner.listDirectory(audiobookPath);
+        for (final entry in contents) {
+          if (!entry.isDirectory) {
+            final ext = entry.name.toLowerCase();
+            if (extensions.any((e) => ext.endsWith(e))) {
+              ebooks.add(entry.path);
+            }
+          }
+        }
+      } else {
+        // Standard filesystem
+        final dir = Directory(audiobookPath);
+        if (await dir.exists()) {
+          await for (final entity in dir.list()) {
+            if (entity is File) {
+              final ext = entity.path.toLowerCase();
+              if (extensions.any((e) => ext.endsWith(e))) {
+                ebooks.add(entity.path);
+              }
+            }
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('Error scanning for ebooks in $audiobookPath: $e');
+    }
+    
+    debugPrint('📖 Found ${ebooks.length} ebook(s) in folder');
+    return ebooks;
+  }
 }

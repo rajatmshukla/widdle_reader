@@ -22,6 +22,7 @@ import '../models/chapter.dart';
 import 'package:flutter/services.dart'; // Import for HapticFeedback
 import '../services/storage_service.dart'; // Import StorageServices
 import '../widgets/equalizer_sheet.dart'; // Import EqualizerSheet
+import 'text_reader_content.dart'; // Import TextReaderContent for Read mode
 
 
 
@@ -48,6 +49,10 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
   bool _isCarMode = false; // Add Car Mode state
   bool _isTotalDurationMode = false; // Toggle between Chapter and Book duration
   double? _dragValue; // For smooth seeking
+  
+  // Listen/Read PageView navigation
+  final PageController _pageController = PageController();
+  int _currentPageIndex = 0; // 0 = Listen, 1 = Read
 
 
   // Add ItemScrollController and ItemPositionsListener
@@ -334,6 +339,7 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
   void dispose() {
     _chapterSubscription?.cancel(); // Cancel the stream subscription
     _errorSubscription?.cancel();
+    _pageController.dispose(); // Dispose PageController for Listen/Read navigation
     // _chapterListScrollController.dispose(); // Remove old controller disposal
     WidgetsBinding.instance.removeObserver(this);
     _savePositionBeforeDispose();
@@ -805,7 +811,7 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
 
     return Scaffold(
       extendBodyBehindAppBar: true, // Let content flow behind app bar
-      appBar: AppBar(
+      appBar: _currentPageIndex == 1 ? null : AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
         leading: IconButton(
@@ -960,13 +966,58 @@ class _SimplePlayerScreenState extends State<SimplePlayerScreen>
           ),
         ],
       ),
-      body: _isLoading
-          ? _buildLoadingWidget(colorScheme)
-          : (_errorMessage != null
-              ? _buildErrorWidget(colorScheme)
-              : (_isCarMode 
-                  ? _buildCarModeLayout(colorScheme, screenSize) 
-                  : _buildPlayerContent(colorScheme, screenSize, isLandscape))),
+      body: PageView(
+        controller: _pageController,
+        physics: _currentPageIndex == 1 
+            ? const NeverScrollableScrollPhysics() 
+            : const BouncingScrollPhysics(),
+        onPageChanged: (index) {
+          setState(() => _currentPageIndex = index);
+        },
+        children: [
+          // Listen page (index 0)
+          _isLoading
+              ? _buildLoadingWidget(colorScheme)
+              : (_errorMessage != null
+                  ? _buildErrorWidget(colorScheme)
+                  : (_isCarMode 
+                      ? _buildCarModeLayout(colorScheme, screenSize) 
+                      : _buildPlayerContent(colorScheme, screenSize, isLandscape))),
+          // Read page (index 1)
+          TextReaderContent(
+            audiobook: _audiobook,
+            onBackToPlayer: () {
+              _pageController.animateToPage(
+                0,
+                duration: const Duration(milliseconds: 300),
+                curve: Curves.easeInOut,
+              );
+            },
+          ),
+        ],
+      ),
+      bottomNavigationBar: _currentPageIndex == 1 ? null : NavigationBar(
+        selectedIndex: _currentPageIndex,
+        onDestinationSelected: (index) {
+          _pageController.animateToPage(
+            index,
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeInOut,
+          );
+        },
+        destinations: const [
+          NavigationDestination(
+            icon: Icon(Icons.headphones_outlined),
+            selectedIcon: Icon(Icons.headphones),
+            label: 'Listen',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.menu_book_outlined),
+            selectedIcon: Icon(Icons.menu_book),
+            label: 'Read',
+          ),
+        ],
+      ),
     );
   }
 

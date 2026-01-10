@@ -94,20 +94,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> with SingleTick
     final textTheme = Theme.of(context).textTheme;
 
     return Scaffold(
-      // Use an animated theme transition for smooth color changes
-      body: TweenAnimationBuilder<Color?>(
-        tween: ColorTween(
-          begin: colorScheme.surface,
-          end: colorScheme.surface,
-        ),
-        duration: const Duration(milliseconds: 300),
-        builder: (context, color, child) {
-          return AnimatedContainer(
-            duration: const Duration(milliseconds: 300),
-            decoration: AppTheme.gradientBackground(context),
-            child: child,
-          );
-        },
+      body: Container(
+        decoration: AppTheme.gradientBackground(context),
         child: SafeArea(
           child: CustomScrollView(
             physics: const BouncingScrollPhysics(
@@ -587,7 +575,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> with SingleTick
                 Switch(
                   value: themeProvider.useAmoledBlack,
                   onChanged: (value) {
-                    themeProvider.setAmoledBlack(value);
+                    // Use post-frame callback to prevent tree inconsistency during theme rebuild
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      if (mounted) {
+                        themeProvider.setAmoledBlack(value);
+                      }
+                    });
                   },
                   thumbIcon: WidgetStateProperty.resolveWith<Icon?>(
                     (Set<WidgetState> states) {
@@ -716,24 +709,28 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> with SingleTick
                 Switch(
                   value: themeProvider.isDynamicThemeEnabled,
                   onChanged: (value) {
-                    // Start the process but don't await to keep UI snappy
-                    themeProvider.setDynamicThemeEnabled(value);
-                    
-                    // If enabling and currently playing, extract color from audiobook
-                    if (value && mounted) {
-                      final audioService = SimpleAudioService();
-                      final currentBook = audioService.currentAudiobook;
-                      
-                      if (currentBook?.coverArt != null) {
-                        // Use unawaited for background extraction
-                        themeProvider.updateThemeFromImage(
-                          MemoryImage(currentBook!.coverArt!),
-                        );
+                    // Use post-frame callback to prevent tree inconsistency during theme rebuild
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      if (mounted) {
+                        // Start the process
+                        themeProvider.setDynamicThemeEnabled(value);
+                        
+                        // If enabling and currently playing, extract color from audiobook
+                        if (value) {
+                          final audioService = SimpleAudioService();
+                          final currentBook = audioService.currentAudiobook;
+                          
+                          if (currentBook?.coverArt != null) {
+                            themeProvider.updateThemeFromImage(
+                              MemoryImage(currentBook!.coverArt!),
+                            );
+                          }
+                        } else {
+                          // Reset to saved manual color when disabling
+                          setState(() {});
+                        }
                       }
-                    } else if (!value) {
-                      // Reset to saved manual color when disabling
-                      setState(() {});
-                    }
+                    });
                   },
                 ),
               ],

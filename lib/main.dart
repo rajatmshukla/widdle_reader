@@ -29,8 +29,7 @@ import 'services/widget_service.dart';
 import 'services/pulse_sync_service.dart';
 import 'widgets/snow_overlay.dart'; // Import global snow overlay
 
-// Define a global navigator key to access context from anywhere
-final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
+import 'app_globals.dart';
 
 // CRITICAL FIX: Add release-safe logging for main
 void _logDebug(String message) {
@@ -214,6 +213,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       builder: (context, themeProvider, _) {
         return MaterialApp(
           navigatorKey: navigatorKey,
+          scaffoldMessengerKey: rootScaffoldMessengerKey,
           title: 'Widdle Reader',
           debugShowCheckedModeBanner: false,
           theme: AppTheme.lightTheme(themeProvider.seedColor),

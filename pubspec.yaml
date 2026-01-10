@@ -74,6 +74,10 @@ dependencies:
   flutter_svg: ^2.2.2
   flutter_heatmap_calendar: ^1.0.5 # Added for Statistics Screen redesign
   animations: ^2.0.11
+  # Text Reader Feature
+  flutter_epub_viewer: ^1.2.2  # EPUB rendering (1.2.2 is max for SDK 3.7)
+  pdfrx: ^1.0.89              # Fast PDF rendering (kept at 1.x for SDK 3.7 compatibility)
+  marquee: ^2.1.0             # Scrolling long titles
 
 
 # Add this section at the root level of your pubspec.yaml
